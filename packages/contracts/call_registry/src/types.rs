@@ -1,6 +1,7 @@
-use soroban_sdk::{Address, Bytes, Map};
+use soroban_sdk::{contracttype, Address, Bytes, Map};
 
 /// Represents a prediction call with all its metadata
+#[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Call {
     /// Unique identifier for the call
@@ -40,6 +41,7 @@ pub struct Call {
 }
 
 /// Enum representing stake positions on a call
+#[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum StakePosition {
     Up = 1,
@@ -66,6 +68,7 @@ impl StakePosition {
 }
 
 /// Configuration for the contract
+#[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct ContractConfig {
     /// Admin address with privileged operations
@@ -75,11 +78,12 @@ pub struct ContractConfig {
 }
 
 /// Statistics for a call
+#[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct CallStats {
     pub total_up_stake: i128,
     pub total_down_stake: i128,
-    pub total_stakes: u64,
-    pub up_stake_count: u64,
-    pub down_stake_count: u64,
+    pub total_stakes: u32,
+    pub up_stake_count: u32,
+    pub down_stake_count: u32,
 }

@@ -1,20 +1,22 @@
-use soroban_sdk::{Address, Env};
+use soroban_sdk::{contracttype, Address, Env};
 use crate::types::{Call, ContractConfig};
 
-// Storage keys
-const CONFIG_KEY: &str = "config";
-const CALL_COUNTER_KEY: &str = "call_counter";
-const CALL_PREFIX: &str = "call_";
-const STAKER_CALLS_PREFIX: &str = "staker_calls_";
+#[contracttype]
+pub enum DataKey {
+    Config,
+    CallCounter,
+    Call(u64),
+    StakerCalls(Address),
+}
 
 /// Store contract configuration
 pub fn set_config(env: &Env, config: &ContractConfig) {
-    env.storage().instance().set(&CONFIG_KEY, config);
+    env.storage().instance().set(&DataKey::Config, config);
 }
 
 /// Retrieve contract configuration
 pub fn get_config(env: &Env) -> Option<ContractConfig> {
-    env.storage().instance().get(&CONFIG_KEY)
+    env.storage().instance().get(&DataKey::Config)
 }
 
 /// Get the next call ID and increment counter
@@ -22,36 +24,33 @@ pub fn next_call_id(env: &Env) -> u64 {
     let counter: u64 = env
         .storage()
         .instance()
-        .get(&CALL_COUNTER_KEY)
+        .get(&DataKey::CallCounter)
         .unwrap_or(0);
     
     let next_id = counter + 1;
-    env.storage().instance().set(&CALL_COUNTER_KEY, &next_id);
+    env.storage().instance().set(&DataKey::CallCounter, &next_id);
     
     next_id
 }
 
 /// Store a call
 pub fn set_call(env: &Env, call: &Call) {
-    let key = format!("{}{}", CALL_PREFIX, call.id);
-    env.storage().instance().set(&key, call);
+    env.storage().instance().set(&DataKey::Call(call.id), call);
 }
 
 /// Retrieve a call by ID
 pub fn get_call(env: &Env, call_id: u64) -> Option<Call> {
-    let key = format!("{}{}", CALL_PREFIX, call_id);
-    env.storage().instance().get(&key)
+    env.storage().instance().get(&DataKey::Call(call_id))
 }
 
 /// Check if a call exists
 pub fn call_exists(env: &Env, call_id: u64) -> bool {
-    let key = format!("{}{}", CALL_PREFIX, call_id);
-    env.storage().instance().has(&key)
+    env.storage().instance().has(&DataKey::Call(call_id))
 }
 
 /// Track which calls a staker has participated in
 pub fn add_staker_call(env: &Env, staker: &Address, call_id: u64) {
-    let key = format!("{}{}", STAKER_CALLS_PREFIX, staker);
+    let key = DataKey::StakerCalls(staker.clone());
     
     let mut call_ids: soroban_sdk::Vec<u64> = env
         .storage()
@@ -68,10 +67,9 @@ pub fn add_staker_call(env: &Env, staker: &Address, call_id: u64) {
 
 /// Get all calls a staker has participated in
 pub fn get_staker_calls(env: &Env, staker: &Address) -> soroban_sdk::Vec<u64> {
-    let key = format!("{}{}", STAKER_CALLS_PREFIX, staker);
     env.storage()
         .instance()
-        .get(&key)
+        .get(&DataKey::StakerCalls(staker.clone()))
         .unwrap_or_else(|| soroban_sdk::Vec::new(env))
 }
 
@@ -79,7 +77,7 @@ pub fn get_staker_calls(env: &Env, staker: &Address) -> soroban_sdk::Vec<u64> {
 pub fn get_call_counter(env: &Env) -> u64 {
     env.storage()
         .instance()
-        .get(&CALL_COUNTER_KEY)
+        .get(&DataKey::CallCounter)
         .unwrap_or(0)
 }
 

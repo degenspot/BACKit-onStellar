@@ -1,7 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, Address, Bytes, Env, Symbol, Vec as SorobanVec};
-use soroban_token_sdk::TokenClient;
+use soroban_sdk::{contract, contractimpl, Address, Bytes, Env, Vec, token};
 
 mod events;
 mod storage;
@@ -185,7 +184,7 @@ impl CallRegistry {
         };
 
         // Transfer tokens from staker to contract
-        let token_client = TokenClient::new(&env, &call.stake_token);
+        let token_client = token::Client::new(&env, &call.stake_token);
         token_client.transfer(&staker, &env.current_contract_address(), &amount);
 
         // Update stakes
@@ -234,8 +233,8 @@ impl CallRegistry {
     ///
     /// # Returns
     /// Vector of calls created by the address
-    pub fn get_calls_by_creator(env: Env, creator: Address) -> SorobanVec<Call> {
-        let mut calls = SorobanVec::new(&env);
+    pub fn get_calls_by_creator(env: Env, creator: Address) -> Vec<Call> {
+        let mut calls = Vec::new(&env);
         let total_calls = get_call_counter(&env);
 
         for i in 1..=total_calls {
@@ -278,9 +277,9 @@ impl CallRegistry {
     ///
     /// # Returns
     /// Vector of Call structs
-    pub fn get_staker_calls(env: Env, staker: Address) -> SorobanVec<Call> {
+    pub fn get_staker_calls(env: Env, staker: Address) -> Vec<Call> {
         let call_ids = get_staker_calls(&env, &staker);
-        let mut calls = SorobanVec::new(&env);
+        let mut calls = Vec::new(&env);
 
         for call_id in call_ids.iter() {
             if let Some(call) = get_call(&env, call_id) {

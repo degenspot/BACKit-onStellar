@@ -126,13 +126,13 @@ impl OutcomeManager {
         let votes: u32 = env
             .storage()
             .temporary()
-            .get(&TempKey::VoteCount(outcome_hash.clone(), signed.call_id))
+            .get(&TempKey::VoteCount(outcome_hash.clone().into(), signed.call_id))
             .unwrap_or(0);
 
         let votes = votes + 1;
 
         env.storage().temporary().set(
-            &TempKey::VoteCount(outcome_hash.clone(), signed.call_id),
+            &TempKey::VoteCount(outcome_hash.clone().into(), signed.call_id),
             &votes,
         );
 

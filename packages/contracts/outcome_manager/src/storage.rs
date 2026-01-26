@@ -1,5 +1,6 @@
-use soroban_sdk::{Env, BytesN};
+use soroban_sdk::{contracttype, BytesN};
 
+#[contracttype]
 #[derive(Clone)]
 pub struct Outcome {
     pub call_id: u64,
@@ -8,6 +9,7 @@ pub struct Outcome {
     pub timestamp: u64,
 }
 
+#[contracttype]
 #[derive(Clone)]
 pub struct SignedOutcome {
     pub call_id: u64,
@@ -18,6 +20,7 @@ pub struct SignedOutcome {
     pub signature: BytesN<64>,
 }
 
+#[contracttype]
 #[derive(Clone)]
 pub enum InstanceKey {
     Admin,
@@ -26,6 +29,7 @@ pub enum InstanceKey {
     FinalOutcome(u64),
 }
 
+#[contracttype]
 #[derive(Clone)]
 pub enum TempKey {
     Submission(BytesN<32>, u64),      // (oracle_pubkey, call_id)
