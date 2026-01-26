@@ -31,6 +31,5 @@ pub fn verify_signature(
     signature: &BytesN<64>,
     message: &Bytes,
 ) -> bool {
-    env.crypto()
-        .ed25519_verify(public_key, message, signature)
+    env.crypto().ed25519_verify(public_key, message, signature)
 }
