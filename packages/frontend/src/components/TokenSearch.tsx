@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import debounce from "lodash.debounce";
-import { searchTokens } from "../libs/api";
+import { searchTokens } from "@/lib/api";
 
 type Token = {
   symbol: string;

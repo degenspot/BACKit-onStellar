@@ -1,6 +1,6 @@
 "use client";
 
-import CreateCallForm from "../../components/CreateCallForm";
+import CreateCallForm from "@/components/CreateCallForm";
 
 export default function CreatePage() {
   return (

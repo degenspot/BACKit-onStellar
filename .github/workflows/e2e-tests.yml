@@ -17,36 +17,50 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: packages/frontend/package-lock.json
+        node-version: '20'
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: 8
+
+    - name: Get pnpm store directory
+      shell: bash
+      run: |
+        echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+    - name: Setup pnpm cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.STORE_PATH }}
+        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-store-
 
     - name: Install dependencies
-      run: |
-        cd packages/frontend
-        npm ci
+      run: pnpm install --no-frozen-lockfile
 
     - name: Install Playwright browsers
       run: |
         cd packages/frontend
-        npx playwright install chromium firefox webkit
+        pnpm exec playwright install chromium firefox webkit
 
     - name: Build frontend
       run: |
         cd packages/frontend
-        npm run build
+        pnpm run build
 
     - name: Start development server
       run: |
         cd packages/frontend
-        npm run dev &
+        pnpm run dev &
         # Wait for server to start
         sleep 10
 
     - name: Run E2E tests
       run: |
         cd packages/frontend
-        npm run test:e2e
+        pnpm run test:e2e
 
     - name: Upload test results
       if: always()

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import TokenSearch from "./TokenSearch";
-import ConditionBuilder from "./ConditionBuilder";
-import { signWithFreighter } from "../libs/freighter";
+import ReactMarkdown from "react-markdown";
+import TokenSearch from "@/components/TokenSearch";
+import ConditionBuilder from "@/components/ConditionBuilder";
+import { signWithFreighter } from "@/lib/freighter";
 
 export default function CreateCallForm() {
   const [token, setToken] = useState<any>(null);
@@ -59,7 +60,9 @@ export default function CreateCallForm() {
         onChange={(e) => setThesis(e.target.value)}
       />
 
-      <ReactMarkdown className="prose">{thesis}</ReactMarkdown>
+      <div className="prose">
+        <ReactMarkdown>{thesis}</ReactMarkdown>
+      </div>
 
       <button
         disabled={loading}

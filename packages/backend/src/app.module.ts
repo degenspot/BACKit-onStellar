@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { typeOrmConfig } from './config/database.config';
 import { HealthModule } from './health/health.module';
+import { OracleModule } from './oracle/oracle.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { HealthModule } from './health/health.module';
     }),
     TypeOrmModule.forRoot(typeOrmConfig),
     HealthModule,
+    OracleModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }

@@ -81,12 +81,12 @@ const mockUsers: Record<string, UserProfile> = {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { address: string } }
+  { params }: { params: Promise<{ address: string }> }
 ) {
-  const address = params.address
+  const { address } = await params
 
   const userProfile = mockUsers[address]
-  
+
   if (!userProfile) {
     return NextResponse.json(
       { error: 'User not found' },
@@ -99,9 +99,9 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { address: string } }
+  { params }: { params: Promise<{ address: string }> }
 ) {
-  const address = params.address
+  const { address } = await params
   const url = new URL(request.url)
   const action = url.pathname.split('/').pop()
 

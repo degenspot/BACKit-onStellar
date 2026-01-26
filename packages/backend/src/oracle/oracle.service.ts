@@ -14,11 +14,13 @@ export class OracleService implements OnModuleInit {
   private readonly POLL_INTERVAL_MS = 30000; // 30 seconds
 
   constructor(
+    @InjectRepository(OracleCall)
     private oracleCallRepository: Repository<OracleCall>,
+    @InjectRepository(OracleOutcome)
     private oracleOutcomeRepository: Repository<OracleOutcome>,
     private priceFetcherService: PriceFetcherService,
     private signingService: SigningService,
-  ) {}
+  ) { }
 
   onModuleInit() {
     this.startPolling();
@@ -29,7 +31,7 @@ export class OracleService implements OnModuleInit {
    */
   private startPolling() {
     this.logger.log('Starting Oracle Worker polling...');
-    
+
     this.pollingInterval = setInterval(async () => {
       try {
         await this.processDueCalls();
@@ -55,7 +57,7 @@ export class OracleService implements OnModuleInit {
   private async processDueCalls() {
     try {
       const now = new Date();
-      
+
       // Find all due calls that haven't been processed yet
       const dueCalls = await this.oracleCallRepository.find({
         where: {
@@ -176,7 +178,7 @@ export class OracleService implements OnModuleInit {
       // - outcome (YES/NO)
       // - price
       // - signature (ed25519)
-      
+
       this.logger.log(
         `Submitting outcome transaction for call ${call.id}: outcome=${outcome}, price=${price}`,
       );

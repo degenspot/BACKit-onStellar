@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import FeedTabs from "../../components/FeedTabs";
-import { CallCardSkeleton } from "../../components/CardCallSkeleton";
-import { EmptyState } from "../../components/EmptyState";
-import CallCard from "../../components/CallCard";
-import { useFeed } from "../../hooks/useFeed";
+import FeedTabs from "@/components/FeedTabs";
+import { CallCardSkeleton } from "@/components/CardCallSkeleton";
+import { EmptyState } from "@/components/EmptyState";
+import CallCard from "@/components/CallCard";
+import { useFeed } from "@/hooks/useFeed";
 
 export default function FeedPage() {
   const [tab, setTab] = useState<"for-you" | "following">("for-you");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signWithFreighter } from "../libs/freighter";
+import { signWithFreighter } from "@/lib/freighter";
 
 export default function StakeInput({ callId }: { callId: string }) {
   const [side, setSide] = useState<"YES" | "NO">("YES");
@@ -36,9 +36,8 @@ export default function StakeInput({ callId }: { callId: string }) {
         {["YES", "NO"].map((s) => (
           <button
             key={s}
-            className={`flex-1 p-2 border ${
-              side === s ? "bg-black text-white" : ""
-            }`}
+            className={`flex-1 p-2 border ${side === s ? "bg-black text-white" : ""
+              }`}
             onClick={() => setSide(s as any)}
           >
             {s}

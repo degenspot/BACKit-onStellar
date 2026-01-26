@@ -2,7 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import CallDetail from "../../../components/CallDetail";
+import CallDetail from "@/components/CallDetail";
 
 export default function CallDetailPage() {
   const { id } = useParams();

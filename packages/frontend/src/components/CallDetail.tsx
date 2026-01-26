@@ -1,9 +1,9 @@
 "use client";
 
 import ReactMarkdown from "react-markdown";
-import StakeBar from "./StakeBar";
-import StakeInput from "./StakeInput";
-import ParticipantList from "./ParticipantList";
+import StakeBar from "@/components/StakeBar";
+import StakeInput from "@/components/StakeInput";
+import ParticipantList from "@/components/ParticipantList";
 import { useEffect, useState } from "react";
 
 export default function CallDetail({ call }: { call: any }) {

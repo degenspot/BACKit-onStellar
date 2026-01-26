@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchFeed } from "../libs/api";
+import { fetchFeed } from "@/lib/api";
 
 export function useFeed(type: "for-you" | "following") {
   const [items, setItems] = useState<any[]>([]);
