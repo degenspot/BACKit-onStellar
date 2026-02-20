@@ -6,6 +6,7 @@ import { HealthModule } from './health/health.module';
 import { OracleModule } from './oracle/oracle.module';
 import { IndexerModule } from './indexer/indexer.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     OracleModule,
     IndexerModule,
     AnalyticsModule,
+    NotificationsModule,
   ],
   controllers: [],
   providers: [],

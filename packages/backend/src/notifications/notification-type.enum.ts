@@ -1,0 +1,6 @@
+export enum NotificationType {
+  BACKED_CALL = 'BACKED_CALL',
+  CALL_ENDED = 'CALL_ENDED',
+  PAYOUT_READY = 'PAYOUT_READY',
+  NEW_FOLLOWER = 'NEW_FOLLOWER',
+}

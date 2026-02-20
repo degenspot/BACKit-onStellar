@@ -5,6 +5,7 @@ import { CallEntity, CallStatus } from './calls.entity';
 export { CallStatus };
 import { CreateCallDto } from './dto/create-call.dto';
 import { IpfsService } from '../storage/ipfs.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface CallFilter {
   status?: CallStatus;
@@ -27,6 +28,7 @@ export class CallsService {
     @InjectRepository(CallEntity)
     private readonly callsRepository: Repository<CallEntity>,
     private readonly ipfsService: IpfsService,
+    private readonly notificationsService: NotificationsService,
   ) { }
 
   async findAll(filters: CallFilter = {}): Promise<PaginatedCalls> {
@@ -158,5 +160,19 @@ export class CallsService {
       totalCount,
       hasNext,
     };
+  }
+
+  // ── Notification trigger stubs (called by indexer after on-chain confirmation) ─
+
+  async notifyBackedCall(callCreatorId: string, backerAddress: string, callId: number): Promise<void> {
+    await this.notificationsService.notifyBackedCall(callCreatorId, backerAddress, callId);
+  }
+
+  async notifyCallEnded(userId: string, callId: number): Promise<void> {
+    await this.notificationsService.notifyCallEnded(userId, callId);
+  }
+
+  async notifyPayoutReady(userId: string, callId: number): Promise<void> {
+    await this.notificationsService.notifyPayoutReady(userId, callId);
   }
 }

@@ -5,6 +5,7 @@ import { Cron } from '@nestjs/schedule';
 import { SorobanRpc } from '@stellar/stellar-sdk';
 import { EventLog, EventType } from './event-log.entity';
 import { EventParser, ParsedEvent } from './event-parser';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class IndexerService implements OnModuleInit, OnModuleDestroy {
@@ -18,18 +19,19 @@ export class IndexerService implements OnModuleInit, OnModuleDestroy {
     @InjectRepository(EventLog)
     private readonly eventLogRepository: Repository<EventLog>,
     private readonly eventParser: EventParser,
-  ) {}
+    private readonly notificationsService: NotificationsService,
+  ) { }
 
   async onModuleInit() {
     this.logger.log('Initializing Indexer Service...');
-    
+
     // Initialize Soroban RPC client
     const rpcUrl = process.env.SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org';
     this.server = new SorobanRpc.Server(rpcUrl);
-    
+
     // Load last processed ledger from database
     await this.loadLastProcessedLedger();
-    
+
     this.logger.log(`Indexer initialized. Last processed ledger: ${this.lastProcessedLedger || 'None'}`);
   }
 
@@ -51,7 +53,7 @@ export class IndexerService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.isProcessing = true;
-    
+
     try {
       await this.processEvents();
     } catch (error) {
@@ -67,8 +69,8 @@ export class IndexerService implements OnModuleInit, OnModuleDestroy {
   private async processEvents() {
     try {
       // Get the starting ledger
-      const startLedger = this.lastProcessedLedger 
-        ? this.lastProcessedLedger + 1 
+      const startLedger = this.lastProcessedLedger
+        ? this.lastProcessedLedger + 1
         : await this.getLatestLedger();
 
       this.logger.debug(`Polling events from ledger ${startLedger}`);
@@ -135,11 +137,50 @@ export class IndexerService implements OnModuleInit, OnModuleDestroy {
       });
 
       await this.eventLogRepository.save(eventLog);
-      
+
+      // Trigger in-app notifications based on event type
+      await this.dispatchNotification(parsedEvent);
+
       this.logger.verbose(`Persisted event: ${parsedEvent.eventType} at ledger ${parsedEvent.ledger}`);
     } catch (error) {
       this.logger.error(`Failed to persist event: ${parsedEvent.eventType}`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Dispatch notifications based on indexed on-chain event type.
+   */
+  private async dispatchNotification(parsedEvent: ParsedEvent) {
+    try {
+      const data = parsedEvent.eventData || {};
+      if (parsedEvent.eventType === EventType.STAKE_ADDED) {
+        // data.call_creator, data.backer, data.call_id expected from contract events
+        if (data.call_creator && data.backer && data.call_id) {
+          await this.notificationsService.notifyBackedCall(
+            String(data.call_creator),
+            String(data.backer),
+            Number(data.call_id),
+          );
+        }
+      } else if (parsedEvent.eventType === EventType.CALL_RESOLVED) {
+        if (data.creator && data.call_id) {
+          await this.notificationsService.notifyCallEnded(
+            String(data.creator),
+            Number(data.call_id),
+          );
+        }
+      } else if (parsedEvent.eventType === EventType.CALL_SETTLED) {
+        if (data.winner && data.call_id) {
+          await this.notificationsService.notifyPayoutReady(
+            String(data.winner),
+            Number(data.call_id),
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`Failed to dispatch notification for event ${parsedEvent.eventType}`, err);
+      // Non-fatal — don't rethrow
     }
   }
 
