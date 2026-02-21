@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { fetchFeed } from "@/lib/api";
 
-export function useFeed(type: "for-you" | "following") {
+export function useFeed(type: "for-you" | "following", filters?: { status: string | null }) {
   const [items, setItems] = useState<any[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -12,7 +12,7 @@ export function useFeed(type: "for-you" | "following") {
 
   useEffect(() => {
     resetAndFetch();
-  }, [type]);
+  }, [type, filters?.status]);
 
   async function resetAndFetch() {
     setLoading(true);
@@ -20,7 +20,7 @@ export function useFeed(type: "for-you" | "following") {
     setCursor(null);
     setHasMore(true);
 
-    const data = await fetchFeed(type);
+    const data = await fetchFeed(type, undefined, filters);
     setItems(data.items);
     setCursor(data.nextCursor ?? null);
     setHasMore(!!data.nextCursor);
@@ -31,9 +31,9 @@ export function useFeed(type: "for-you" | "following") {
     if (!hasMore || loadingMore) return;
 
     setLoadingMore(true);
-    const data = await fetchFeed(type, cursor ?? undefined);
+    const data = await fetchFeed(type, cursor ?? undefined, filters);
 
-    setItems((prev) => [...prev, ...data.items]);
+    setItems((prev: any[]) => [...prev, ...data.items]);
     setCursor(data.nextCursor ?? null);
     setHasMore(!!data.nextCursor);
     setLoadingMore(false);

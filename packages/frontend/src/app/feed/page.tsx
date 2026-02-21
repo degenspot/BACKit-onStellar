@@ -6,10 +6,13 @@ import { CallCardSkeleton } from "@/components/CardCallSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import CallCard from "@/components/CallCard";
 import { useFeed } from "@/hooks/useFeed";
+import FilterBar from "@/components/FilterBar";
 
 export default function FeedPage() {
   const [tab, setTab] = useState<"for-you" | "following">("for-you");
-  const { items, loading, loadingMore, hasMore, loadMore } = useFeed(tab);
+  const [filters, setFilters] = useState<{ status: string | null }>({ status: null });
+  
+  const { items, loading, loadingMore, hasMore, loadMore } = useFeed(tab, filters);
 
   const loaderRef = useRef<HTMLDivElement | null>(null);
 
@@ -27,12 +30,22 @@ export default function FeedPage() {
     return () => observer.disconnect();
   }, [loadMore]);
 
+  const handleFilterChange = (newFilters: { status: string | null }) => {
+    setFilters(newFilters);
+  };
+
   return (
-    <main className="max-w-xl mx-auto p-4">
+    <main className="max-w-2xl mx-auto p-4">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Prediction Feed</h1>
+        <p className="text-gray-600">Explore trending predictions and stake on outcomes</p>
+      </div>
+      
       <FeedTabs active={tab} onChange={setTab} />
+      <FilterBar onFilterChange={handleFilterChange} />
 
       {loading && (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {[...Array(5)].map((_, i) => (
             <CallCardSkeleton key={i} />
           ))}
@@ -43,13 +56,17 @@ export default function FeedPage() {
         <EmptyState
           text={
             tab === "for-you"
-              ? "No trending calls yet."
-              : "Follow users to see their calls."
+              ? filters.status
+                ? `No ${filters.status.toLowerCase()} calls found in "For You" feed.`
+                : "No trending calls yet. Check back later for new predictions!"
+              : filters.status
+                ? `No ${filters.status.toLowerCase()} calls from users you follow.`
+                : "Follow users to see their calls."
           }
         />
       )}
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         {items.map((call) => (
           <CallCard key={call.id} call={call} />
         ))}
@@ -58,7 +75,7 @@ export default function FeedPage() {
       {hasMore && <div ref={loaderRef} className="h-10" />}
 
       {loadingMore && (
-        <div className="mt-3 space-y-3">
+        <div className="mt-4 space-y-4">
           <CallCardSkeleton />
           <CallCardSkeleton />
         </div>

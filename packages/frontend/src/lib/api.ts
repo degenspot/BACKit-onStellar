@@ -9,11 +9,13 @@ export async function searchTokens(query: string) {
 
 export async function fetchFeed(
   type: "for-you" | "following",
-  cursor?: string
+  cursor?: string,
+  filters?: { status: string | null }
 ) {
   const params = new URLSearchParams();
   params.set("type", type);
   if (cursor) params.set("cursor", cursor);
+  if (filters?.status) params.set("status", filters.status);
 
   const res = await fetch(`/api/feed?${params.toString()}`);
 
