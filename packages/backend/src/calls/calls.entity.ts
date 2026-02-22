@@ -1,4 +1,10 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 export enum CallStatus {
   DRAFT = 'DRAFT',
@@ -58,6 +64,9 @@ export class CallEntity {
 
   @Column({ type: 'decimal', precision: 20, scale: 8, nullable: true })
   finalPrice?: string;
+
+  @Column({ type: 'tsvector', nullable: true })
+  searchVector: string;
 
   @CreateDateColumn()
   createdAt: Date;

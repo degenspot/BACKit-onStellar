@@ -7,6 +7,7 @@ import { OracleModule } from './oracle/oracle.module';
 import { IndexerModule } from './indexer/indexer.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     IndexerModule,
     AnalyticsModule,
     NotificationsModule,
+    SearchModule
   ],
   controllers: [],
   providers: [],
