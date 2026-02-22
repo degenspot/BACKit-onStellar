@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { DateRangeFilter } from './dto/analytics-query.dto';
 import {
   UserAnalyticsResponse,
@@ -18,7 +18,9 @@ export class AnalyticsService {
     private readonly callRepository: Repository<Call>,
     @InjectRepository(Stake)
     private readonly stakeRepository: Repository<Stake>,
-  ) { }
+
+    private readonly dataSource: DataSource,
+  ) {}
 
   /**
    * Get comprehensive analytics for a user
@@ -157,7 +159,8 @@ export class AnalyticsService {
       totalCorrect += parseInt(row.correct || 0);
       totalResolved += parseInt(row.total || 0);
 
-      const accuracy = totalResolved > 0 ? (totalCorrect / totalResolved) * 100 : 0;
+      const accuracy =
+        totalResolved > 0 ? (totalCorrect / totalResolved) * 100 : 0;
 
       return {
         date: new Date(row.date).toISOString().split('T')[0],
@@ -251,7 +254,10 @@ export class AnalyticsService {
   /**
    * Helper: Get date range based on filter
    */
-  private getDateRange(range: DateRangeFilter): { startDate: Date; endDate: Date } {
+  private getDateRange(range: DateRangeFilter): {
+    startDate: Date;
+    endDate: Date;
+  } {
     const endDate = new Date();
     let startDate = new Date();
 
@@ -312,5 +318,32 @@ export class AnalyticsService {
     }
 
     return filledData;
+  }
+
+  async calculatePredictorReliability(userId: string): Promise<number> {
+    const result = await this.dataSource.query(
+      `
+      SELECT 
+        COALESCE(
+          SUM(CASE WHEN c.outcome = 'WIN' THEN 1 ELSE 0 END)::float 
+          / NULLIF(COUNT(c.id), 0),
+          0
+        ) AS win_rate,
+        COALESCE(SUM(c.volume), 0) AS total_volume
+      FROM call c
+      WHERE c."userId" = $1
+      `,
+      [userId],
+    );
+
+    const winRate = Number(result[0]?.win_rate || 0);
+    const totalVolume = Number(result[0]?.total_volume || 0);
+
+    // Normalize volume (optional basic scaling to avoid extreme values)
+    const normalizedVolume = totalVolume > 0 ? Math.log10(totalVolume + 1) : 0;
+
+    const reputation = winRate * 0.7 + normalizedVolume * 0.3;
+
+    return Number(reputation.toFixed(4));
   }
 }
