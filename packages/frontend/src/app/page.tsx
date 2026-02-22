@@ -728,6 +728,9 @@ export default function HomePage() {
           </div>
           <span>© 2025 BACKit. Powered by Stellar Soroban.</span>
           <div className="flex gap-6">
+            <Link href="/profile/sample" className="hover:text-gray-400 transition-colors">
+              View Sample Profile
+            </Link>
             <a href="#" className="hover:text-gray-400 transition-colors">
               Docs
             </a>
