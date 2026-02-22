@@ -1,8 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useEffect } from "react";
-import { useWallet, WalletState } from "./useWallet";
-import { useProfile, UserProfile, ProfileSaveStatus } from "./useProfile";
+import { useWallet, WalletState } from "../hooks/useWallet";
+import { useProfile, UserProfile, ProfileSaveStatus } from "../hooks/useProfile";
 
 // ─── Context shape ────────────────────────────────────────────────────────────
 
