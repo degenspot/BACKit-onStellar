@@ -1,10 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Attach the Socket.io WebSocket adapter — required for the EventsGateway
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   // Enable CORS
   app.enableCors({
@@ -92,11 +96,12 @@ async function bootstrap() {
 
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
   await app.listen(port);
-  
+
   Logger.log(`🚀 Backend running on http://localhost:${port}`, 'Bootstrap');
   Logger.log(`📚 Swagger documentation available at http://localhost:${port}/api/docs`, 'Bootstrap');
   Logger.log(`📊 API JSON spec available at http://localhost:${port}/api/docs-json`, 'Bootstrap');
   Logger.log(`💚 Health check available at http://localhost:${port}/health`, 'Bootstrap');
+  Logger.log(`🔌 WebSocket gateway available at ws://localhost:${port}/ws`, 'Bootstrap');
   Logger.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`, 'Bootstrap');
 }
 
