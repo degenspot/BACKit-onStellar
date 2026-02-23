@@ -8,8 +8,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
-import { FirewallService } from './firewall.service';
-import { extractClientIp } from './utils/ip-matcher.util';
+import { FirewallService } from '../firewall.service';
+import { extractClientIp } from '../utils/ip-matcher.util';
 
 export const SKIP_TURNSTILE_KEY = 'skipTurnstile';
 
@@ -53,7 +53,7 @@ export class TurnstileGuard implements CanActivate {
     private readonly configService: ConfigService,
     private readonly firewallService: FirewallService,
     private readonly reflector: Reflector,
-  ) {}
+  ) { }
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     // Allow opt-out via @SkipTurnstile()
