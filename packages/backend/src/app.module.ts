@@ -14,9 +14,21 @@ import { GatewaysModule } from './gateways/gateways.module';
 import { AuditModule } from './audit/audit.module';
 import { FirewallModule } from './firewall/firewall.module';
 import { FirewallMiddleware } from './firewall/firewall.middleware';
+import { CacheModule } from '@nestjs/cache-manager';
 
 @Module({
   imports: [
+    CacheModule.registerAsync({
+      isGlobal: true,
+      useFactory: async () => {
+        // Here we could add logic to return Redis store if process.env.REDIS_URL is set.
+        // For now, using in-memory as the primary store for local dev.
+        return {
+          ttl: 30000,
+          max: 100, // Maximum number of items in cache
+        };
+      },
+    }),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',

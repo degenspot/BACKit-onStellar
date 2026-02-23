@@ -11,6 +11,9 @@ import { SorobanRpc } from '@stellar/stellar-sdk';
 import { EventLog, EventType } from './event-log.entity';
 import { EventParser, ParsedEvent } from './event-parser';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
+import { Inject } from '@nestjs/common';
 
 @Injectable()
 export class IndexerService implements OnModuleInit, OnModuleDestroy {
@@ -26,7 +29,8 @@ export class IndexerService implements OnModuleInit, OnModuleDestroy {
     private readonly eventLogRepository: Repository<EventLog>,
     private readonly eventParser: EventParser,
     private readonly notificationsService: NotificationsService,
-  ) {}
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+  ) { }
 
   async onModuleInit() {
     this.logger.log('Initializing Indexer Service...');
@@ -153,6 +157,12 @@ export class IndexerService implements OnModuleInit, OnModuleDestroy {
       });
 
       await this.eventLogRepository.save(eventLog);
+
+      // Invalidate trending feed cache when a new call is created
+      if (parsedEvent.eventType === EventType.CALL_CREATED) {
+        await this.cacheManager.del('trending_feed');
+        this.logger.debug('Invalidated trending_feed cache due to new call');
+      }
 
       // Trigger in-app notifications based on event type
       await this.dispatchNotification(parsedEvent);

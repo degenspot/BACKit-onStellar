@@ -20,9 +20,11 @@
     "test:e2e": "jest --config ./test/jest-e2e.json --forceExit --detectOpenHandles"
   },
   "dependencies": {
+    "@nestjs/cache-manager": "^3.0.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
+    "@nestjs/event-emitter": "^3.0.0",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/schedule": "^6.1.0",
     "@nestjs/swagger": "^7.0.0",
@@ -30,6 +32,7 @@
     "@nestjs/typeorm": "^11.0.0",
     "@stellar/stellar-sdk": "^12.2.0",
     "@types/dotenv": "^8.2.3",
+    "cache-manager": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
     "dotenv": "^17.2.3",

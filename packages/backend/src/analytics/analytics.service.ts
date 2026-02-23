@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
+import { Inject, Logger } from '@nestjs/common';
 import { DateRangeFilter } from './dto/analytics-query.dto';
 import {
   UserAnalyticsResponse,
@@ -13,6 +16,8 @@ import { Stake } from './entities/stake.entity';
 
 @Injectable()
 export class AnalyticsService {
+  private readonly logger = new Logger(AnalyticsService.name);
+
   constructor(
     @InjectRepository(Call)
     private readonly callRepository: Repository<Call>,
@@ -20,7 +25,8 @@ export class AnalyticsService {
     private readonly stakeRepository: Repository<Stake>,
 
     private readonly dataSource: DataSource,
-  ) {}
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+  ) { }
 
   /**
    * Get comprehensive analytics for a user
@@ -30,6 +36,15 @@ export class AnalyticsService {
     userAddress: string,
     range: DateRangeFilter,
   ): Promise<UserAnalyticsResponse> {
+    const cacheKey = `profile:${userAddress}:${range}`;
+    const cachedData =
+      await this.cacheManager.get<UserAnalyticsResponse>(cacheKey);
+
+    if (cachedData) {
+      this.logger.debug(`Returning cached analytics for ${userAddress}`);
+      return cachedData;
+    }
+
     const { startDate, endDate } = this.getDateRange(range);
 
     // Execute all queries in parallel for better performance
@@ -47,7 +62,7 @@ export class AnalyticsService {
       this.getOverallStats(userAddress, startDate, endDate),
     ]);
 
-    return {
+    const response: UserAnalyticsResponse = {
       cumulativeProfitPerDay: dailyProfitData,
       cumulativeProfitPerWeek: weeklyProfitData,
       accuracyTrend: accuracyData,
@@ -56,6 +71,9 @@ export class AnalyticsService {
       overallAccuracy: overallStats.overallAccuracy,
       dateRange: range,
     };
+
+    await this.cacheManager.set(cacheKey, response, 300000); // 300s = 5m
+    return response;
   }
 
   /**
