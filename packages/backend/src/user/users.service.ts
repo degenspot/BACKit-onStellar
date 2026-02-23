@@ -4,6 +4,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AnalyticsService } from 'src/analytics/analytics.service';
 import { RegisterDto } from './dto/register.dto';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
+import { Inject } from '@nestjs/common';
 
 @Injectable()
 export class UsersService {
@@ -12,6 +15,7 @@ export class UsersService {
     private readonly usersRepo: Repository<Users>,
 
     private readonly analyticsService: AnalyticsService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) { }
 
   private generateReferralCode(): string {
@@ -53,7 +57,10 @@ export class UsersService {
     }
 
     loadedFollower.following.push(following);
-    return this.usersRepo.save(loadedFollower);
+    const result = await this.usersRepo.save(loadedFollower);
+    await this.invalidateUserProfile(followerAddress);
+    await this.invalidateUserProfile(followingAddress);
+    return result;
   }
 
   async unfollow(followerAddress: string, followingAddress: string) {
@@ -75,7 +82,17 @@ export class UsersService {
     }
 
     follower.following = follower.following.filter((u) => u.id !== following.id);
-    return this.usersRepo.save(follower);
+    const result = await this.usersRepo.save(follower);
+    await this.invalidateUserProfile(followerAddress);
+    await this.invalidateUserProfile(followingAddress);
+    return result;
+  }
+
+  private async invalidateUserProfile(address: string) {
+    const ranges = ['7d', '30d', 'all'];
+    for (const range of ranges) {
+      await this.cacheManager.del(`profile:${address}:${range}`);
+    }
   }
 
   async getFollowers(address: string) {

@@ -6,7 +6,9 @@ import {
   HttpStatus,
   ValidationPipe,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import {
   ApiTags,
   ApiOperation,
@@ -21,9 +23,11 @@ import { UserAnalyticsResponse } from './dto/analytics-response.dto';
 @ApiTags('Analytics')
 @Controller('users')
 export class AnalyticsController {
-  constructor(private readonly analyticsService: AnalyticsService) {}
+  constructor(private readonly analyticsService: AnalyticsService) { }
 
   @Get(':address/analytics')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(300) // 5 minutes
   @ApiOperation({
     summary: 'Get user analytics',
     description:
