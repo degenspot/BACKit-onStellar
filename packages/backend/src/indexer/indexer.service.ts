@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SorobanRpc, xdr } from '@stellar/stellar-sdk';
 import { EventLog, EventType } from './event-log.entity';
+import { PlatformSettings } from './entities/platform-settings.entity';
 import { retryWithBackoff } from '../utils/retry';
 
 @Injectable()
@@ -13,6 +14,8 @@ export class IndexerService {
     private readonly rpcServer: SorobanRpc.Server,
     @InjectRepository(EventLog)
     private readonly eventLogRepository: Repository<EventLog>,
+    @InjectRepository(PlatformSettings)
+    private readonly platformSettingsRepository: Repository<PlatformSettings>,
   ) { }
 
   async getStatus() {
@@ -38,6 +41,41 @@ export class IndexerService {
       order: { ledger: 'DESC' },
       take: limit,
     });
+  }
+
+  async getPlatformSettings(): Promise<PlatformSettings> {
+    let settings = await this.platformSettingsRepository.findOne({
+      where: { id: 1 },
+    });
+
+    if (!settings) {
+      settings = this.platformSettingsRepository.create({
+        id: 1,
+        feePercent: 0,
+      });
+      await this.platformSettingsRepository.save(settings);
+    }
+
+    return settings;
+  }
+
+  async updatePlatformSettings(
+    paramName: string,
+    newValue: number,
+    txHash: string,
+    ledger: number,
+  ): Promise<PlatformSettings> {
+    let settings = await this.getPlatformSettings();
+
+    // Update based on parameter name
+    if (paramName === 'fee_percent' || paramName === 'feePercent') {
+      settings.feePercent = newValue;
+    }
+
+    settings.lastUpdatedByTxHash = txHash;
+    settings.lastUpdatedAtLedger = ledger;
+
+    return await this.platformSettingsRepository.save(settings);
   }
 
   // ─── Fetch Contract Events ───────────────────────────────────────────────────

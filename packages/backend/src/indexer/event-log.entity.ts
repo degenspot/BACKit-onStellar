@@ -15,6 +15,7 @@ export enum EventType {
   OUTCOME_MANAGER_CHANGED = 'outcome_manager_changed',
   OUTCOME_FINALIZED = 'outcome_finalized',
   INITIALIZED = 'initialized',
+  ADMIN_PARAMS_CHANGED = 'admin_params_changed',
 }
 
 @Entity('event_logs')
