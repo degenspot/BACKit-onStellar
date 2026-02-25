@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { IndexerService } from './indexer.service';
 import { IndexerController } from './indexer.controller';
 import { EventLog } from './event-log.entity';
+import { EventParser } from './event-parser';
 import { PlatformSettings } from './entities/platform-settings.entity';
 import { PlatformSettingsService } from './platform-settings.service';
 import { PlatformConfigModule } from '../config/config.module';
@@ -33,4 +34,4 @@ import { NotificationsModule } from '../notifications/notifications.module';
   ],
   exports: [IndexerService],
 })
-export class IndexerModule {}
+export class IndexerModule { }
