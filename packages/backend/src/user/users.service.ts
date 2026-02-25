@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Users } from './entities/users.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -13,10 +13,9 @@ export class UsersService {
   constructor(
     @InjectRepository(Users)
     private readonly usersRepo: Repository<Users>,
-
     private readonly analyticsService: AnalyticsService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
-  ) { }
+  ) {}
 
   private generateReferralCode(): string {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -42,7 +41,6 @@ export class UsersService {
     const follower = await this.findOrCreateByAddress(followerAddress);
     const following = await this.findOrCreateByAddress(followingAddress);
 
-    // Initialize following array if not loaded
     const loadedFollower = await this.usersRepo.findOne({
       where: { id: follower.id },
       relations: ['following'],
@@ -69,17 +67,13 @@ export class UsersService {
       relations: ['following'],
     });
 
-    if (!follower) {
-      throw new BadRequestException('Follower user not found');
-    }
+    if (!follower) throw new BadRequestException('Follower user not found');
 
     const following = await this.usersRepo.findOne({
       where: { walletAddress: followingAddress },
     });
 
-    if (!following) {
-      throw new BadRequestException('User to unfollow not found');
-    }
+    if (!following) throw new BadRequestException('User to unfollow not found');
 
     follower.following = follower.following.filter((u) => u.id !== following.id);
     const result = await this.usersRepo.save(follower);
@@ -100,12 +94,7 @@ export class UsersService {
       where: { walletAddress: address },
       relations: ['followers'],
     });
-
-    if (!user) {
-      return [];
-    }
-
-    return user.followers;
+    return user?.followers ?? [];
   }
 
   async getFollowing(address: string) {
@@ -113,12 +102,7 @@ export class UsersService {
       where: { walletAddress: address },
       relations: ['following'],
     });
-
-    if (!user) {
-      return [];
-    }
-
-    return user.following;
+    return user?.following ?? [];
   }
 
   async register(registerDto: RegisterDto) {
@@ -130,14 +114,10 @@ export class UsersService {
     let referrer: Users | null = null;
 
     if (referralCode) {
-      referrer = await this.usersRepo.findOne({
-        where: { referralCode },
-      });
-
-      if (!referrer) {
-        throw new BadRequestException('Invalid referral code');
-      }
+      referrer = await this.usersRepo.findOne({ where: { referralCode } });
+      if (!referrer) throw new BadRequestException('Invalid referral code');
     }
+
     if (referrer && referrer.email === userData.email) {
       throw new BadRequestException('Cannot refer yourself');
     }
@@ -148,20 +128,30 @@ export class UsersService {
       referralCode: this.generateReferralCode(),
     });
 
-    if (referrer) {
-      newUser.referredBy = referrer;
-    }
+    if (referrer) newUser.referredBy = referrer;
 
     return this.usersRepo.save(newUser);
   }
 
   async getUserProfile(userId: string) {
-    const user = await this.usersRepo.findOne({
-      where: { id: userId },
-    });
-
+    const user = await this.usersRepo.findOne({ where: { id: userId } });
     const reliability =
       await this.analyticsService.calculatePredictorReliability(userId);
+    return { ...user, predictorReliability: reliability };
+  }
+
+  // ─── NEW: fetch by wallet address with badges ─────────────────────────────
+
+  async getUserByAddress(walletAddress: string) {
+    const user = await this.usersRepo.findOne({
+      where: { walletAddress },
+      relations: ['badges'],
+    });
+
+    if (!user) throw new NotFoundException(`User ${walletAddress} not found`);
+
+    const reliability =
+      await this.analyticsService.calculatePredictorReliability(user.id);
 
     return {
       ...user,
