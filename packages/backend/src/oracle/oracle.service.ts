@@ -12,6 +12,21 @@ import { OracleOutcome } from './entities/oracle-outcome.entity';
 import { retryWithBackoff, Retryable } from '../utils/retry';
 import { REPORT_THRESHOLD } from '../calls/constants/moderation.constants';
 
+/**
+ * High-level lifecycle status for a market/call, used by analytics and UI.
+ *
+ * - PENDING: Created but not yet active on the oracle.
+ * - ACTIVE:  Live and eligible for resolution (OPEN or SETTLING).
+ * - PAUSED:  Temporarily disabled due to moderation/circuit breaker.
+ * - RESOLVED: Terminal state (RESOLVED_YES or RESOLVED_NO).
+ */
+export enum MarketStatus {
+  PENDING = 'PENDING',
+  ACTIVE = 'ACTIVE',
+  PAUSED = 'PAUSED',
+  RESOLVED = 'RESOLVED',
+}
+
 @Injectable()
 export class OracleService {
   private readonly logger = new Logger(OracleService.name);
@@ -54,6 +69,31 @@ export class OracleService {
       where: { call: { id: callId } },
       relations: ['call'],
     });
+  }
+
+  /**
+   * Derive a coarse-grained lifecycle status for a given oracle call.
+   * This centralizes how low-level OracleCallStatus values are exposed
+   * to other modules (analytics, API, UI).
+   */
+  async getMarketStatus(callId: number): Promise<MarketStatus> {
+    const call = await this.findCallOrThrow(callId);
+
+    switch (call.status) {
+      case OracleCallStatus.DRAFT:
+        return MarketStatus.PENDING;
+      case OracleCallStatus.OPEN:
+      case OracleCallStatus.SETTLING:
+        return MarketStatus.ACTIVE;
+      case OracleCallStatus.PAUSED:
+        return MarketStatus.PAUSED;
+      case OracleCallStatus.RESOLVED_YES:
+      case OracleCallStatus.RESOLVED_NO:
+        return MarketStatus.RESOLVED;
+      default:
+        // Fallback for any future/unknown status values
+        return MarketStatus.PENDING;
+    }
   }
 
   // ─── Price Fetching ───────────────────────────────────────────────────────
