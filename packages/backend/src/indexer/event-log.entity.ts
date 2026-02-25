@@ -11,12 +11,11 @@ export enum EventType {
   STAKE_ADDED = 'stake_added',
   CALL_RESOLVED = 'call_resolved',
   CALL_SETTLED = 'call_settled',
-  ADMIN_CHANGED = 'admin_changed',  
-  ADMIN_PARAMS_CHANGED    = 'admin_params_changed',  
+  ADMIN_CHANGED = 'admin_changed',
+  ADMIN_PARAMS_CHANGED = 'admin_params_changed',
   OUTCOME_MANAGER_CHANGED = 'outcome_manager_changed',
   OUTCOME_FINALIZED = 'outcome_finalized',
   INITIALIZED = 'initialized',
-  ADMIN_PARAMS_CHANGED = 'admin_params_changed',
 }
 
 @Entity('event_logs')
