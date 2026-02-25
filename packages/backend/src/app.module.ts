@@ -15,6 +15,7 @@ import { AuditModule } from './audit/audit.module';
 import { FirewallModule } from './firewall/firewall.module';
 import { FirewallMiddleware } from './firewall/firewall.middleware';
 import { CacheModule } from '@nestjs/cache-manager';
+import { TokensModule } from './token/tokens.module';
 
 @Module({
   imports: [
@@ -61,7 +62,7 @@ import { CacheModule } from '@nestjs/cache-manager';
     AnalyticsModule,
     NotificationsModule,
     SearchModule,
-    UsersModule,
+    UsersModule,TokensModule,
     GatewaysModule,
     AuditModule,
     FirewallModule,
