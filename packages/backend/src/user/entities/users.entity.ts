@@ -1,46 +1,56 @@
 import {
-  Column,
   Entity,
-  JoinColumn,
-  JoinTable,
-  ManyToMany,
-  ManyToOne,
-  OneToMany,
   PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToMany,
+  JoinTable,
+  ManyToOne,
 } from 'typeorm';
+import { Badge } from './badge.entity';
 
 @Entity('users')
 export class Users {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true })
+  @Column({ type: 'varchar', length: 64, unique: true })
   walletAddress: string;
 
-  @Column({ unique: true, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   email: string;
 
-  @Column({ unique: true })
+  @Column({ type: 'varchar', length: 10, unique: true, nullable: true })
   referralCode: string;
 
-  @ManyToOne(() => Users, (user) => user.referrals, { nullable: true })
-  @JoinColumn({ name: 'referred_by_id' })
-  referredBy?: Users;
+  @ManyToOne(() => Users, { nullable: true, onDelete: 'SET NULL' })
+  referredBy: Users | null;
 
-  @OneToMany(() => Users, (user) => user.referredBy)
-  referrals: Users[];
-
+  // ─── social graph ──────────────────────────────────────────────────────
   @ManyToMany(() => Users, (user) => user.followers)
   @JoinTable({
-    name: 'follows',
-    joinColumn: { name: 'followerId', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'followingId', referencedColumnName: 'id' },
+    name: 'user_follows',
+    joinColumn: { name: 'followerId' },
+    inverseJoinColumn: { name: 'followingId' },
   })
   following: Users[];
 
   @ManyToMany(() => Users, (user) => user.following)
   followers: Users[];
 
-  @Column({ type: 'tsvector', nullable: true })
-  searchVector: string;
+  // ─── badges ────────────────────────────────────────────────────────────
+  @ManyToMany(() => Badge, (badge) => badge.users, { eager: false })
+  @JoinTable({
+    name: 'user_badges',
+    joinColumn:        { name: 'userId',  referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'badgeId', referencedColumnName: 'id' },
+  })
+  badges: Badge[];
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }
