@@ -1,85 +1,32 @@
 import {
   Controller,
-  Get,
   Post,
-  Body,
   Param,
-  HttpStatus,
+  Body,
+  ParseIntPipe,
   HttpCode,
-  Logger,
-  NotFoundException,
+  HttpStatus,
 } from '@nestjs/common';
 import { OracleService } from './oracle.service';
+import { AdminResolveDto } from './dto/admin-resolve.dto';
 import { OracleCall } from './entities/oracle-call.entity';
-import { OracleOutcome } from './entities/oracle-outcome.entity';
 
-export class CreateOracleCallDto {
-  pairAddress: string;
-  baseToken: string;
-  quoteToken: string;
-  strikePrice: number;
-  callTime: Date;
-}
-
-@Controller('api/oracle')
+@Controller('admin/markets')
 export class OracleController {
-  private readonly logger = new Logger(OracleController.name);
-
   constructor(private readonly oracleService: OracleService) {}
 
-  /**
-   * Create a new oracle call
-   */
-  @Post('calls')
-  @HttpCode(HttpStatus.CREATED)
-  async createCall(dto: CreateOracleCallDto): Promise<OracleCall> {
-    this.logger.log(
-      `Creating oracle call for pair ${dto.pairAddress} with strike ${dto.strikePrice}`,
-    );
-
-    return await this.oracleService.createOracleCall(
-      dto.pairAddress,
-      dto.baseToken,
-      dto.quoteToken,
-      dto.strikePrice,
-      new Date(dto.callTime),
-    );
-  }
-
-  /**
-   * Get all pending oracle calls
-   */
-  @Get('calls/pending')
-  async getPendingCalls(): Promise<OracleCall[]> {
-    return await this.oracleService.getPendingCalls();
-  }
-
-  /**
-   * Get outcomes for a specific call
-   */
-  @Get('calls/:callId/outcomes')
-  async getOutcomesForCall(callId: number): Promise<OracleOutcome[]> {
-    const outcomes = await this.oracleService.getOutcomesForCall(callId);
-
-    if (!outcomes || outcomes.length === 0) {
-      throw new NotFoundException(
-        `No outcomes found for call ${callId}`,
-      );
-    }
-
-    return outcomes;
-  }
-
-  /**
-   * Health check endpoint
-   */
-  @Get('health')
+  @Post(':id/unpause')
   @HttpCode(HttpStatus.OK)
-  getHealth() {
-    return {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      module: 'oracle-worker',
-    };
+  unpause(@Param('id', ParseIntPipe) id: number): Promise<OracleCall> {
+    return this.oracleService.unpauseCall(id);
+  }
+
+  @Post(':id/resolve')
+  @HttpCode(HttpStatus.OK)
+  resolve(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AdminResolveDto,
+  ): Promise<OracleCall> {
+    return this.oracleService.adminResolveCall(id, dto.resolution, dto.finalPrice); // ✅ types now match
   }
 }
