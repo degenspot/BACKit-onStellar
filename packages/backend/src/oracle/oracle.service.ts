@@ -1,12 +1,52 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { SorobanRpc, Contract, xdr } from '@stellar/stellar-sdk';
+import { OracleCall } from './entities/oracle-call.entity';
+import { OracleOutcome } from './entities/oracle-outcome.entity';
 import { retryWithBackoff, Retryable } from '../utils/retry';
 
 @Injectable()
 export class OracleService {
   private readonly logger = new Logger(OracleService.name);
 
-  constructor(private readonly rpcServer: SorobanRpc.Server) {}
+  constructor(
+    private readonly rpcServer: SorobanRpc.Server,
+    @InjectRepository(OracleCall)
+    private readonly oracleCallRepository: Repository<OracleCall>,
+    @InjectRepository(OracleOutcome)
+    private readonly oracleOutcomeRepository: Repository<OracleOutcome>,
+  ) { }
+
+  async createOracleCall(
+    pairAddress: string,
+    baseToken: string,
+    quoteToken: string,
+    strikePrice: number,
+    callTime: Date,
+  ): Promise<OracleCall> {
+    const call = this.oracleCallRepository.create({
+      pairAddress,
+      baseToken,
+      quoteToken,
+      strikePrice,
+      callTime,
+    });
+    return await this.oracleCallRepository.save(call);
+  }
+
+  async getPendingCalls(): Promise<OracleCall[]> {
+    return await this.oracleCallRepository.find({
+      where: { processedAt: IsNull(), failedAt: IsNull() },
+    });
+  }
+
+  async getOutcomesForCall(callId: number): Promise<OracleOutcome[]> {
+    return await this.oracleOutcomeRepository.find({
+      where: { call: { id: callId } },
+      relations: ['call'],
+    });
+  }
 
   // ─── Read Oracle Price via @Retryable Decorator ──────────────────────────────
 

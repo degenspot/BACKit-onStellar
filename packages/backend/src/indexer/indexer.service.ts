@@ -1,12 +1,44 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { SorobanRpc } from '@stellar/stellar-sdk';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { SorobanRpc, xdr } from '@stellar/stellar-sdk';
+import { EventLog, EventType } from './event-log.entity';
 import { retryWithBackoff } from '../utils/retry';
 
 @Injectable()
 export class IndexerService {
   private readonly logger = new Logger(IndexerService.name);
 
-  constructor(private readonly rpcServer: SorobanRpc.Server) {}
+  constructor(
+    private readonly rpcServer: SorobanRpc.Server,
+    @InjectRepository(EventLog)
+    private readonly eventLogRepository: Repository<EventLog>,
+  ) { }
+
+  async getStatus() {
+    const isRunning = true; // Placeholder for actual logic
+    const totalEventsIndexed = await this.eventLogRepository.count();
+    const latestEvent = await this.eventLogRepository.findOne({
+      where: {},
+      order: { ledger: 'DESC' },
+    });
+
+    return {
+      isRunning,
+      lastProcessedLedger: latestEvent?.ledger || null,
+      totalEventsIndexed,
+      latestEventLedger: latestEvent?.ledger || null,
+      latestEventTimestamp: latestEvent?.timestamp || null,
+    };
+  }
+
+  async getEventsByType(eventType: EventType, arg2?: any, arg3?: any, limit: number = 50) {
+    return await this.eventLogRepository.find({
+      where: { eventType: eventType },
+      order: { ledger: 'DESC' },
+      take: limit,
+    });
+  }
 
   // ─── Fetch Contract Events ───────────────────────────────────────────────────
 
@@ -35,7 +67,7 @@ export class IndexerService {
 
   async readContractData(
     contractId: string,
-    key: SorobanRpc.Api.RawLedgerEntry['key'],
+    key: xdr.LedgerKey,
   ): Promise<SorobanRpc.Api.GetLedgerEntriesResponse> {
     return retryWithBackoff(
       () => this.rpcServer.getLedgerEntries(key),
