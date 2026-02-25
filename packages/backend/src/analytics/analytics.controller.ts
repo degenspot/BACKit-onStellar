@@ -19,6 +19,10 @@ import {
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsQueryDto, DateRangeFilter } from './dto/analytics-query.dto';
 import { UserAnalyticsResponse } from './dto/analytics-response.dto';
+import {
+  UserStakesQueryDto,
+  UserStakesResponseDto,
+} from './dto/user-stakes.dto';
 
 @ApiTags('Analytics')
 @Controller('users')
@@ -65,5 +69,43 @@ export class AnalyticsController {
   ): Promise<UserAnalyticsResponse> {
     const range = query.range || DateRangeFilter.SEVEN_DAYS;
     return this.analyticsService.getUserAnalytics(address, range);
+  }
+
+  @Get(':address/stakes')
+  @ApiOperation({
+    summary: 'Get user stakes ledger',
+    description:
+      'Retrieve a paginated ledger of a user’s stakes joined with call information and resolution status',
+  })
+  @ApiParam({
+    name: 'address',
+    description: 'Stellar wallet address of the user',
+    example: 'GCXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number (1-based)',
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Number of items per page',
+    example: 20,
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'User stakes retrieved successfully',
+    type: UserStakesResponseDto,
+  })
+  async getUserStakes(
+    @Param('address') address: string,
+    @Query(new ValidationPipe({ transform: true }))
+    query: UserStakesQueryDto,
+  ): Promise<UserStakesResponseDto> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    return this.analyticsService.getUserStakes(address, page, limit);
   }
 }

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SorobanRpc, xdr } from '@stellar/stellar-sdk';
 import { EventLog, EventType } from './event-log.entity';
+import { PlatformSettings } from './entities/platform-settings.entity';
 import { retryWithBackoff } from '../utils/retry';
 import { ConfigService } from '../config/config.service';
 import { parseAdminParamsChanged } from './parsers/admin-params.parser';
@@ -16,6 +17,8 @@ export class IndexerService {
     private readonly rpcServer: SorobanRpc.Server,
     @InjectRepository(EventLog)
     private readonly eventLogRepository: Repository<EventLog>,
+    @InjectRepository(PlatformSettings)
+    private readonly platformSettingsRepository: Repository<PlatformSettings>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -134,6 +137,42 @@ export class IndexerService {
     );
   }
 
+  // ─── Platform Settings ────────────────────────────────────────────────────
+
+  async getPlatformSettings(): Promise<PlatformSettings> {
+    let settings = await this.platformSettingsRepository.findOne({
+      where: { id: 1 },
+    });
+
+    if (!settings) {
+      settings = this.platformSettingsRepository.create({
+        id: 1,
+        feePercent: 0,
+      });
+      await this.platformSettingsRepository.save(settings);
+    }
+
+    return settings;
+  }
+
+  async updatePlatformSettings(
+    paramName: string,
+    newValue: number,
+    txHash: string,
+    ledger: number,
+  ): Promise<PlatformSettings> {
+    const settings = await this.getPlatformSettings();
+
+    if (paramName === 'fee_percent' || paramName === 'feePercent') {
+      settings.feePercent = newValue;
+    }
+
+    settings.lastUpdatedByTxHash = txHash;
+    settings.lastUpdatedAtLedger = ledger;
+
+    return await this.platformSettingsRepository.save(settings);
+  }
+
   // ─── Fetch Contract Events ────────────────────────────────────────────────
 
   async fetchContractEvents(
@@ -192,11 +231,6 @@ export class IndexerService {
 
   // ─── Private Helpers ──────────────────────────────────────────────────────
 
-  /**
-   * Resumes from the last persisted ledger + 1 so no events are missed
-   * or double-processed across cron ticks. Falls back to 5 ledgers behind
-   * the current tip on first run.
-   */
   private async resolveStartLedger(): Promise<number> {
     const latestEvent = await this.eventLogRepository.findOne({
       where: {},
