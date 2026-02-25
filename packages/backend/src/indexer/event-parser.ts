@@ -41,6 +41,8 @@ export class EventParser {
         return this.parseOutcomeFinalized(event, topics);
       } else if (eventName === 'initialized') {
         return this.parseInitialized(event, topics);
+      } else if (eventName === 'admin_params_changed') {
+        return this.parseAdminParamsChanged(event, topics);
       }
 
       // Log unknown events for debugging
@@ -192,6 +194,22 @@ export class EventParser {
       eventData: {
         admin: this.parseAddress(topics[1]),
         outcomeManager: this.parseAddress(topics[2]),
+      },
+    };
+  }
+
+  private parseAdminParamsChanged(event: any, topics: any[]): ParsedEvent {
+    // admin_params_changed(param_name, new_value)
+    return {
+      contractId: event.contractId,
+      eventType: EventType.ADMIN_PARAMS_CHANGED,
+      ledger: event.ledger,
+      txHash: event.txHash,
+      txOrder: event.pagingToken,
+      timestamp: new Date(event.createdAt),
+      eventData: {
+        paramName: this.parseBytes(topics[1]),
+        newValue: this.parseU32(topics[2]),
       },
     };
   }
