@@ -11,6 +11,10 @@ import {
   AccuracyDataPoint,
   WinLossCount,
 } from './dto/analytics-response.dto';
+import {
+  StakeLedgerItemDto,
+  UserStakesResponseDto,
+} from './dto/user-stakes.dto';
 import { Call } from './entities/call.entity';
 import { Stake } from './entities/stake.entity';
 
@@ -27,6 +31,68 @@ export class AnalyticsService {
     private readonly dataSource: DataSource,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) { }
+
+  /**
+   * Get a paginated ledger of a user's stakes joined with call info.
+   */
+  async getUserStakes(
+    userAddress: string,
+    page: number = 1,
+    limit: number = 20,
+  ): Promise<UserStakesResponseDto> {
+    const qb = this.stakeRepository
+      .createQueryBuilder('stake')
+      .leftJoinAndSelect('stake.call', 'call')
+      .where('stake.userAddress = :userAddress', { userAddress })
+      .orderBy('stake.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [stakes, total] = await qb.getManyAndCount();
+
+    const data: StakeLedgerItemDto[] = stakes.map((stake) => {
+      const call = stake.call;
+
+      const resolutionStatus: 'PENDING' | 'RESOLVED' =
+        call && call.outcome && call.outcome !== 'PENDING'
+          ? 'RESOLVED'
+          : 'PENDING';
+
+      return {
+        id: stake.id,
+        callId: stake.callId,
+        userAddress: stake.userAddress,
+        amount: Number(stake.amount),
+        position: stake.position,
+        profitLoss:
+          stake.profitLoss === null || stake.profitLoss === undefined
+            ? null
+            : Number(stake.profitLoss),
+        transactionHash: stake.transactionHash ?? null,
+        createdAt: stake.createdAt,
+        updatedAt: stake.updatedAt,
+        resolutionStatus,
+        call: call && {
+          id: call.id,
+          description: call.description,
+          outcome: call.outcome,
+          resolvedAt: call.resolvedAt ?? null,
+          expiresAt: call.expiresAt ?? null,
+          createdAt: call.createdAt,
+          contractAddress: call.contractAddress ?? null,
+          totalYesStake: Number(call.totalYesStake ?? 0),
+          totalNoStake: Number(call.totalNoStake ?? 0),
+        },
+      };
+    });
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+    };
+  }
 
   /**
    * Get comprehensive analytics for a user
