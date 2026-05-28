@@ -1,5 +1,20 @@
 "use client";
 
+/**
+ * Keyboard shortcut handling for BACKit frontend accessibility improvements.
+ *
+ * Issue: #237 Implement Keyboard Shortcuts and Accessibility Improvements
+ *
+ * Acceptance criteria covered:
+ * - Cmd+K / Ctrl+K → open search
+ * - N → navigate to create call when not in an input
+ * - F → navigate to feed
+ * - L → navigate to leaderboard
+ * - Escape → close modals and drawers
+ * - ? → show keyboard shortcuts modal
+ *
+ * This hook is intentionally scoped to page-level navigation and modal control.
+ */
 import { useEffect } from "react";
 
 export interface KeyboardShortcutActions {

@@ -19,6 +19,8 @@ export function NavBar() {
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
 
+    // Keyboard shortcut support for accessibility and power-user navigation.
+    // See issue #237 for the request and acceptance criteria.
     const handleOpenSearch = useCallback(() => setIsSearchOpen(true), []);
     const handleOpenShortcuts = useCallback(() => setIsShortcutsOpen(true), []);
     const handleCloseUI = useCallback(() => {
