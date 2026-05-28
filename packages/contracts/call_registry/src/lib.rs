@@ -6,6 +6,8 @@ mod admin;
 mod events;
 mod storage;
 mod types;
+#[cfg(test)]
+mod test;
 
 use events::*;
 use storage::*;
@@ -80,6 +82,7 @@ impl CallRegistry {
             start_price: 0,
             end_price: 0,
             settled: false,
+            voided: false,
             created_at: current_timestamp,
         };
 
@@ -129,6 +132,10 @@ impl CallRegistry {
             panic!("Call has been settled");
         }
 
+        if call.voided {
+            panic!("Call has been voided");
+        }
+
         let stake_position = match StakePosition::from_u32(position) {
             Some(p) => p,
             None => panic!("Invalid position: must be 1 (UP) or 2 (DOWN)"),
@@ -137,18 +144,15 @@ impl CallRegistry {
         let token_client = token::Client::new(&env, &call.stake_token);
         token_client.transfer(&staker, &env.current_contract_address(), &amount);
 
-        // We rely on events for attribution. The indexer already handles this.
-        // Hence call.up_stakes.set(...) / call.down_stakes.set(...) are commented out;
-        // uncomment in the future if the rule changes.
         match stake_position {
             StakePosition::Up => {
-                let _current_stake = call.up_stakes.get(staker.clone()).unwrap_or(0);
-                // call.up_stakes.set(staker.clone(), _current_stake + amount);
+                let current_stake = call.up_stakes.get(staker.clone()).unwrap_or(0);
+                call.up_stakes.set(staker.clone(), current_stake + amount);
                 call.total_up_stake += amount;
             }
             StakePosition::Down => {
-                let _current_stake = call.down_stakes.get(staker.clone()).unwrap_or(0);
-                // call.down_stakes.set(staker.clone(), _current_stake + amount);
+                let current_stake = call.down_stakes.get(staker.clone()).unwrap_or(0);
+                call.down_stakes.set(staker.clone(), current_stake + amount);
                 call.total_down_stake += amount;
             }
         }
@@ -232,6 +236,10 @@ impl CallRegistry {
 
         if outcome != 1 && outcome != 2 {
             panic!("Invalid outcome: must be 1 (UP) or 2 (DOWN)");
+        }
+
+        if call.voided {
+            panic!("Call has been voided");
         }
 
         let current_timestamp = env.ledger().timestamp();
@@ -320,5 +328,62 @@ impl CallRegistry {
 
         call.settled = true;
         set_call(&env, &call);
+    }
+
+    /// Void a call (admin only). Can be called at any time.
+    /// Once voided, no new stakes or resolutions are accepted.
+    /// Emits CallVoided.
+    pub fn void_call(env: Env, call_id: u64) {
+        let config = get_config(&env).expect("Not initialized");
+        config.admin.require_auth();
+
+        let mut call = get_call(&env, call_id).expect("Call not found");
+
+        if call.voided {
+            panic!("Call already voided");
+        }
+
+        if call.settled {
+            panic!("Call already settled");
+        }
+
+        call.voided = true;
+        set_call(&env, &call);
+        extend_storage_ttl(&env);
+
+        emit_call_voided(&env, call_id, &config.admin);
+    }
+
+    /// Claim a full refund for a voided call.
+    /// Refunds the exact stake the caller placed (up + down combined).
+    /// Emits VoidRefundClaimed.
+    pub fn claim_void_refund(env: Env, staker: Address, call_id: u64) {
+        staker.require_auth();
+
+        let call = get_call(&env, call_id).expect("Call not found");
+
+        if !call.voided {
+            panic!("Call is not voided");
+        }
+
+        if is_void_refund_claimed(&env, call_id, &staker) {
+            panic!("Refund already claimed");
+        }
+
+        let up_stake = call.up_stakes.get(staker.clone()).unwrap_or(0);
+        let down_stake = call.down_stakes.get(staker.clone()).unwrap_or(0);
+        let total_refund = up_stake + down_stake;
+
+        if total_refund <= 0 {
+            panic!("No stake to refund");
+        }
+
+        set_void_refund_claimed(&env, call_id, &staker);
+        extend_storage_ttl(&env);
+
+        let token_client = token::Client::new(&env, &call.stake_token);
+        token_client.transfer(&env.current_contract_address(), &staker, &total_refund);
+
+        emit_void_refund_claimed(&env, call_id, &staker, total_refund);
     }
 }

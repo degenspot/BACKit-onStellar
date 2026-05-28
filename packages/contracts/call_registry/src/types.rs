@@ -36,6 +36,8 @@ pub struct Call {
     pub end_price: i128,
     /// Whether the call has been settled
     pub settled: bool,
+    /// Whether the call has been voided by admin (triggers full refunds)
+    pub voided: bool,
     /// Creation timestamp
     pub created_at: u64,
 }

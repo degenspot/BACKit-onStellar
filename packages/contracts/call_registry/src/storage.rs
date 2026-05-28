@@ -7,6 +7,7 @@ pub enum DataKey {
     CallCounter,
     Call(u64),
     StakerCalls(Address),
+    VoidRefundClaimed(u64, Address),
 }
 
 /// Store contract configuration
@@ -87,4 +88,18 @@ pub fn get_call_counter(env: &Env) -> u64 {
 pub fn extend_storage_ttl(env: &Env) {
     // Extend storage for 1 year (approximately 31,536,000 ledgers at ~5 second blocks)
     env.storage().instance().extend_ttl(31_536_000, 31_536_000);
+}
+
+/// Mark that a staker has claimed their void refund for a call
+pub fn set_void_refund_claimed(env: &Env, call_id: u64, staker: &Address) {
+    env.storage()
+        .instance()
+        .set(&DataKey::VoidRefundClaimed(call_id, staker.clone()), &true);
+}
+
+/// Check whether a staker has already claimed their void refund
+pub fn is_void_refund_claimed(env: &Env, call_id: u64, staker: &Address) -> bool {
+    env.storage()
+        .instance()
+        .has(&DataKey::VoidRefundClaimed(call_id, staker.clone()))
 }
