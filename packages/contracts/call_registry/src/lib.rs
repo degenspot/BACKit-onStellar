@@ -30,6 +30,7 @@ impl CallRegistry {
             admin: admin.clone(),
             outcome_manager: outcome_manager.clone(),
             fee_bps: 0,
+            resolution_grace_period: 604800,
         };
 
         set_config(&env, &config);
@@ -142,13 +143,13 @@ impl CallRegistry {
         // uncomment in the future if the rule changes.
         match stake_position {
             StakePosition::Up => {
-                let _current_stake = call.up_stakes.get(staker.clone()).unwrap_or(0);
-                // call.up_stakes.set(staker.clone(), _current_stake + amount);
+                let current_stake = call.up_stakes.get(staker.clone()).unwrap_or(0);
+                call.up_stakes.set(staker.clone(), current_stake + amount);
                 call.total_up_stake += amount;
             }
             StakePosition::Down => {
-                let _current_stake = call.down_stakes.get(staker.clone()).unwrap_or(0);
-                // call.down_stakes.set(staker.clone(), _current_stake + amount);
+                let current_stake = call.down_stakes.get(staker.clone()).unwrap_or(0);
+                call.down_stakes.set(staker.clone(), current_stake + amount);
                 call.total_down_stake += amount;
             }
         }
@@ -269,6 +270,72 @@ impl CallRegistry {
     /// * `new_fee_bps` > 10_000
     pub fn set_fee(env: Env, new_fee_bps: u32) {
         admin::set_fee(env, new_fee_bps);
+    }
+
+    /// Allows a staker to reclaim their stake if the call has expired and past the grace period without resolution.
+    pub fn claim_expired_refund(env: Env, staker: Address, call_id: u64, position: u32) {
+        staker.require_auth();
+
+        let config = match get_config(&env) {
+            Some(c) => c,
+            None => panic!("Contract not initialized"),
+        };
+
+        // 1. Fetch the call
+        let mut call = match get_call(&env, call_id) {
+            Some(c) => c,
+            None => panic!("Call does not exist"),
+        };
+
+        // 2. Check if already settled
+        if call.settled {
+            panic!("Call is already settled");
+        }
+
+        // 3. Time check: current time > end_ts + resolution_grace_period
+        let current_timestamp = env.ledger().timestamp();
+        let grace_deadline = call.end_ts + config.resolution_grace_period;
+        
+        if current_timestamp <= grace_deadline {
+            panic!("Grace period has not yet expired");
+        }
+
+        // 4. Validate Position & Load Stake
+        let stake_position = match StakePosition::from_u32(position) {
+            Some(p) => p,
+            None => panic!("Invalid position"),
+        };
+
+        let current_stake = match stake_position {
+            StakePosition::Up => call.up_stakes.get(staker.clone()).unwrap_or(0),
+            StakePosition::Down => call.down_stakes.get(staker.clone()).unwrap_or(0),
+        };
+
+        if current_stake <= 0 {
+            panic!("No active stake found for this position");
+        }
+
+        // 5. Update State (Zero out the stake to prevent double claims)
+        match stake_position {
+            StakePosition::Up => {
+                call.up_stakes.set(staker.clone(), 0);
+                call.total_up_stake -= current_stake;
+            }
+            StakePosition::Down => {
+                call.down_stakes.set(staker.clone(), 0);
+                call.total_down_stake -= current_stake;
+            }
+        }
+        
+        // Save the updated call state
+        set_call(&env, &call);
+
+        // 6. Execute Transfer
+        let token_client = token::Client::new(&env, &call.stake_token);
+        token_client.transfer(&env.current_contract_address(), &staker, &current_stake);
+
+        // 7. Emit Event
+        emit_expired_refund_claimed(&env, call_id, &staker, current_stake);
     }
 
     /// Get current contract configuration

@@ -101,3 +101,16 @@ pub fn emit_admin_params_changed_u32(
         ),
     );
 }
+
+/// Emitted when a staker reclaims their stake after a call expires without resolution
+pub fn emit_expired_refund_claimed(
+    env: &Env,
+    call_id: u64,
+    staker: &Address,
+    amount: i128,
+) {
+    env.events().publish(
+        ("call_registry", "expired_refund_claimed"),
+        (call_id, staker.clone(), amount),
+    );
+}

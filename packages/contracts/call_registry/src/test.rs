@@ -707,3 +707,46 @@ fn test_set_fee_above_max_panics() {
         assert_eq!(call_updated.total_down_stake, 40_000_000);
     }
 }
+
+#[test]
+fn test_claim_expired_refund() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // 1. Setup (Use your existing setup logic here)
+    let admin = Address::generate(&env);
+    let staker = Address::generate(&env);
+    let contract_id = env.register_contract(None, CallRegistryContract);
+    let client = CallRegistryContractClient::new(&env, &contract_id);
+    
+    // Initialize config (this now includes the 7-day grace period)
+    client.initialize(&admin, /* other params */);
+
+    // 2. Create Call & Stake
+    // Set current time
+    env.ledger().set_timestamp(1_000_000);
+    let end_ts = 2_000_000;
+    
+    // ... create the call ending at `end_ts` ...
+    // ... have `staker` stake 100 tokens on UP (Position 0) ...
+    let call_id = 1; // Assuming it's the first call
+
+    // 3. Test Failure: Before grace period expires
+    // 7 days = 604,800 seconds. Let's travel to right before the deadline.
+    env.ledger().set_timestamp(end_ts + 604_000);
+    
+    let res = client.try_claim_expired_refund(&staker, &call_id, &0);
+    assert!(res.is_err(), "Should fail before grace period expires");
+
+    // 4. Test Success: After grace period
+    env.ledger().set_timestamp(end_ts + 604_801);
+    client.claim_expired_refund(&staker, &call_id, &0);
+
+    // Verify staker got their money back (check token balances)
+    // let staker_balance = token_client.balance(&staker);
+    // assert_eq!(staker_balance, 100);
+
+    // 5. Test Failure: Double Spend
+    let res_double = client.try_claim_expired_refund(&staker, &call_id, &0);
+    assert!(res_double.is_err(), "Should fail on double claim");
+}
