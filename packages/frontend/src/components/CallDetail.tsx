@@ -3,7 +3,7 @@
 import ReactMarkdown from "react-markdown";
 import { useEffect, useState } from "react";
 import CallDetailHeader from "./CallDetailHeader";
-import StakeBar from "./StakeBar";
+import StakeDistributionBar from "./StakeDistributionBar";
 import ActivityLog from "./ActivityLog";
 import StakingInterface from "./StakingInterface";
 import StakingDrawer from "./StakingDrawer";
@@ -81,7 +81,7 @@ export default function CallDetail({ call }: { call: CallDetailData }) {
               <h4 className="font-bold text-gray-900 uppercase tracking-widest text-xs">Market Liquidity</h4>
               <span className="bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-1 rounded-md">LIVE POOL</span>
             </div>
-            <StakeBar yes={call.stakes.yes} no={call.stakes.no} />
+            <StakeDistributionBar yes={call.stakes.yes} no={call.stakes.no} showPool={false} />
             <div className="mt-6 flex justify-between items-end">
               <div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Total Vaulted</p>
