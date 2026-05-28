@@ -1,6 +1,7 @@
 "use client";
 
 import StakeBar from "./StakeBar";
+import ShareButton from "./ShareButton";
 import { useState, useEffect } from "react";
 
 interface CallCardProps {
@@ -112,9 +113,17 @@ export default function CallCard({ call }: CallCardProps) {
             </div>
           </div>
         </div>
-        <div className="text-right">
-          <div className="text-[10px] font-bold text-gray-400 uppercase">Participants</div>
-          <div className="text-sm font-bold text-gray-700">{call.participants || 0}</div>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <div className="text-[10px] font-bold text-gray-400 uppercase">Participants</div>
+            <div className="text-sm font-bold text-gray-700">{call.participants || 0}</div>
+          </div>
+          <ShareButton
+            callId={call.id}
+            marketTitle={call.condition}
+            currentOdds={odds || undefined}
+            compact
+          />
         </div>
       </div>
     </div>

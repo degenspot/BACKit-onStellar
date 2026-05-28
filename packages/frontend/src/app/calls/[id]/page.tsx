@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import CallDetail from "@/components/CallDetail";
 import { CallDetailData } from "@/types";
+import { useMetaTags } from "@/hooks/useMetaTags";
 
 // Health check function (checks if our mock API is responsive)
 async function checkApiHealth(): Promise<boolean> {
@@ -30,6 +31,16 @@ export default function CallDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+
+  // Set meta tags when call data is available
+  useMetaTags({
+    title: call?.title || `Market #${id}`,
+    description:
+      call?.condition ||
+      "Trade your conviction on Stellar prediction markets. Put your staking power where your mouth is.",
+    url: `${typeof window !== "undefined" ? window.location.origin : ""}/calls/${id}`,
+    image: "/og-default.png",
+  });
 
   useEffect(() => {
     async function fetchCall() {

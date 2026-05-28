@@ -1,6 +1,7 @@
 "use client";
 
 import { CallDetailData } from "@/types";
+import ShareButton from "./ShareButton";
 
 interface Props {
   call: CallDetailData;
@@ -66,25 +67,34 @@ export default function CallDetailHeader({ call, timeLeft, odds }: Props) {
       </div>
       
       {/* Creator info */}
-      <div className="mt-10 pt-6 border-t border-slate-700/50 flex flex-wrap items-center gap-6 text-sm">
-        <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-black text-xs text-slate-300">
-               {call.creatorAddress.slice(0, 1)}
-            </div>
-            <div>
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">Creator</p>
-                <p className="font-mono text-slate-300 font-bold">{call.creatorAddress.slice(0, 6)}...{call.creatorAddress.slice(-4)}</p>
-            </div>
-        </div>
-        
-        <div className="h-4 w-px bg-slate-700 mx-2" />
+      <div className="mt-10 pt-6 border-t border-slate-700/50 flex flex-wrap items-center justify-between gap-6 text-sm">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center font-black text-xs text-slate-300">
+                 {call.creatorAddress.slice(0, 1)}
+              </div>
+              <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">Creator</p>
+                  <p className="font-mono text-slate-300 font-bold">{call.creatorAddress.slice(0, 6)}...{call.creatorAddress.slice(-4)}</p>
+              </div>
+          </div>
+          
+          <div className="h-4 w-px bg-slate-700" />
 
-        <div>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">Contract Address</p>
-            <p className="font-mono text-indigo-400 font-bold">C...{call.tokenAddress.slice(-6)}</p>
+          <div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">Contract Address</p>
+              <p className="font-mono text-indigo-400 font-bold">C...{call.tokenAddress.slice(-6)}</p>
+          </div>
         </div>
 
-        <span className="ml-auto bg-indigo-500/10 text-indigo-400 text-[10px] font-black px-3 py-1 rounded-full border border-indigo-500/20 uppercase tracking-widest">Protocol Participantv1.0</span>
+        <div className="flex items-center gap-4">
+          <span className="bg-indigo-500/10 text-indigo-400 text-[10px] font-black px-3 py-1 rounded-full border border-indigo-500/20 uppercase tracking-widest">Protocol Participantv1.0</span>
+          <ShareButton
+            callId={call.id}
+            marketTitle={call.title}
+            currentOdds={odds || undefined}
+          />
+        </div>
       </div>
     </div>
   );

@@ -9,6 +9,27 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata = {
   title: "BACKit - Stellar Prediction Markets",
   description: "Decentralized prediction markets on Stellar",
+  openGraph: {
+    title: "BACKit - Stellar Prediction Markets",
+    description: "Decentralized prediction markets on Stellar",
+    type: "website",
+    url: "https://backit.io",
+    siteName: "BACKit",
+    images: [
+      {
+        url: "https://backit.io/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "BACKit - Prediction Markets",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "BACKit - Stellar Prediction Markets",
+    description: "Decentralized prediction markets on Stellar",
+    images: ["https://backit.io/og-image.png"],
+  },
 };
 
 export default function RootLayout({
