@@ -14,11 +14,30 @@ use crate::{OutcomeManager, OutcomeManagerClient};
 #[contract]
 pub struct MockRegistry;
 
+#[contracttype]
+#[derive(Clone)]
+struct MockCall {
+    id: u64,
+    creator: Address,
+    stake_token: Address,
+    stake_amount: i128,
+    end_ts: u64,
+}
+
 #[contractimpl]
 impl MockRegistry {
     pub fn resolve_call(_env: Env, _call_id: u64, _outcome: u32, _end_price: i128) {}
     pub fn release_escrow(_env: Env, _call_id: u64, _to: Address, _amount: i128) {}
     pub fn mark_settled(_env: Env, _call_id: u64) {}
+    pub fn get_call(env: Env, call_id: u64) -> MockCall {
+        MockCall {
+            id: call_id,
+            creator: Address::generate(&env),
+            stake_token: Address::generate(&env),
+            stake_amount: 100i128,
+            end_ts: 10000u64, // Call ends at 10000, so max delay 86400 allows up to 96400
+        }
+    }
 }
 
 /// Generate a deterministic Ed25519 keypair for testing.
@@ -562,4 +581,92 @@ fn test_batch_claim_duplicate_within_same_batch_panics() {
     stakes.push_back(50_i128);
 
     client.batch_claim_payouts(&registry_id, &1u64, &stakers, &stakes, &100_i128, &50_i128);
+}
+
+// ─── Submission Window Tests ──────────────────────────────────────────────────
+
+#[test]
+fn test_submit_within_window_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, registry_id, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
+
+    let call_id = 42u64;
+    let outcome_val = 1u32;
+    let price = 150_000_000i128;
+    let ts = 20000u64; // end_ts is 10000, 20000 ≤ 10000+86400 = 96400 ✅
+
+    let sig = sign_outcome(&env, &oracle_secret, call_id, outcome_val, price, ts);
+    client.submit_outcome(
+        &registry_id,
+        &SignedOutcome {
+            call_id,
+            outcome: outcome_val,
+            price,
+            timestamp: ts,
+            oracle_pubkey,
+            signature: sig,
+        },
+    );
+
+    let final_outcome = client.get_outcome(&call_id);
+    assert_eq!(final_outcome.outcome, outcome_val);
+}
+
+#[test]
+#[should_panic(expected = "submission outside valid window")]
+fn test_submit_outside_window_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, registry_id, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
+
+    let call_id = 42u64;
+    let outcome_val = 1u32;
+    let price = 150_000_000i128;
+    let ts = 100000u64; // end_ts is 10000, 100000 > 10000+86400 = 96400 ❌
+
+    let sig = sign_outcome(&env, &oracle_secret, call_id, outcome_val, price, ts);
+    client.submit_outcome(
+        &registry_id,
+        &SignedOutcome {
+            call_id,
+            outcome: outcome_val,
+            price,
+            timestamp: ts,
+            oracle_pubkey,
+            signature: sig,
+        },
+    );
+}
+
+#[test]
+fn test_set_max_submission_delay_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, registry_id, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
+
+    // Update delay to 200000
+    client.set_max_submission_delay(&200000u64);
+
+    // Now submit a timestamp that would have failed before but now passes (10000 + 200000 = 210000)
+    let call_id = 42u64;
+    let outcome_val = 1u32;
+    let price = 150_000_000i128;
+    let ts = 100000u64; // Now ≤ 210000 ✅
+
+    let sig = sign_outcome(&env, &oracle_secret, call_id, outcome_val, price, ts);
+    client.submit_outcome(
+        &registry_id,
+        &SignedOutcome {
+            call_id,
+            outcome: outcome_val,
+            price,
+            timestamp: ts,
+            oracle_pubkey,
+            signature: sig,
+        },
+    );
+
+    let final_outcome = client.get_outcome(&call_id);
+    assert_eq!(final_outcome.outcome, outcome_val);
 }

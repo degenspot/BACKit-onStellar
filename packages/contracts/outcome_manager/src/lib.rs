@@ -6,12 +6,23 @@ mod storage;
 mod test;
 mod verification;
 
-use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, IntoVal, Map, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, IntoVal, Map, Symbol, Vec};
+
+#[derive(Clone)]
+#[contracttype]
+struct Call {
+    id: u64,
+    creator: Address,
+    stake_token: Address,
+    stake_amount: i128,
+    end_ts: u64,
+    // We don't need the rest of the fields
+}
 
 use auth::require_admin;
 use events::{
     emit_batch_payout_started, emit_fee_collected, emit_outcome_finalized, emit_outcome_submitted,
-    emit_payout_claimed,
+    emit_payout_claimed, emit_admin_params_changed,
 };
 use storage::{InstanceKey, Outcome, SignedOutcome, TempKey};
 use verification::{build_message, verify_signature};
@@ -102,6 +113,7 @@ impl OutcomeManager {
             .instance()
             .set(&InstanceKey::FeeCollector, &fee_collector);
         env.storage().instance().set(&InstanceKey::FeeBps, &fee_bps);
+        env.storage().instance().set(&InstanceKey::MaxSubmissionDelay, &86400u64);
     }
 
     // ── Admin Controls ─────────────────────────────────────────────────────────
@@ -141,6 +153,14 @@ impl OutcomeManager {
         env.storage()
             .instance()
             .set(&InstanceKey::Admin, &new_admin);
+    }
+
+    pub fn set_max_submission_delay(env: Env, new_delay: u64) {
+        require_admin(&env);
+        env.storage()
+            .instance()
+            .set(&InstanceKey::MaxSubmissionDelay, &new_delay);
+        emit_admin_params_changed(&env, new_delay);
     }
 
     // ── Oracle Submission ──────────────────────────────────────────────────────
@@ -185,7 +205,16 @@ impl OutcomeManager {
             panic!("invalid outcome: must be 1 (UP) or 2 (DOWN)");
         }
 
-        // 5. Build canonical message and verify ed25519 signature
+        // 5. Fetch call from registry to get end_ts
+        let call: Call = env.invoke_contract(&registry, &Symbol::new(&env, "get_call"), (signed.call_id,).into_val(&env));
+
+        // 6. Check submission timestamp is within window
+        let max_delay: u64 = env.storage().instance().get(&InstanceKey::MaxSubmissionDelay).unwrap_or(86400);
+        if signed.timestamp > call.end_ts + max_delay {
+            panic!("submission outside valid window");
+        }
+
+        // 7. Build canonical message and verify ed25519 signature
         let message = build_message(
             &env,
             signed.call_id,
@@ -195,15 +224,15 @@ impl OutcomeManager {
         );
         verify_signature(&env, &signed.oracle_pubkey, &signed.signature, &message);
 
-        // 6. Hash outcome candidate for vote counting
+        // 8. Hash outcome candidate for vote counting
         let outcome_hash: BytesN<32> = env.crypto().sha256(&message).into();
 
-        // 7. Record oracle's vote (prevents duplicates)
+        // 9. Record oracle's vote (prevents duplicates)
         env.storage()
             .temporary()
             .set(&submission_key, &outcome_hash);
 
-        // 8. Tally votes for this outcome candidate
+        // 10. Tally votes for this outcome candidate
         let vote_key = TempKey::VoteCount(outcome_hash.clone(), signed.call_id);
         let votes: u32 = env.storage().temporary().get(&vote_key).unwrap_or(0);
         let votes = votes + 1;
@@ -211,7 +240,7 @@ impl OutcomeManager {
 
         emit_outcome_submitted(&env, signed.call_id, &signed.oracle_pubkey, signed.outcome);
 
-        // 9. Finalize if quorum reached
+        // 11. Finalize if quorum reached
         let quorum: u32 = env.storage().instance().get(&InstanceKey::Quorum).unwrap();
         if votes >= quorum {
             Self::finalize(

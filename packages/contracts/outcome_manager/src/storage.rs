@@ -40,6 +40,7 @@ pub enum InstanceKey {
     FeeBps,
     /// Stored CallRegistry address; set via set_registry() to avoid caller-supplied forgery
     Registry,
+    MaxSubmissionDelay,
 }
 
 #[contracttype]

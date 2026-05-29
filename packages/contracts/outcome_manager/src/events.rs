@@ -49,3 +49,11 @@ pub fn emit_batch_payout_started(env: &Env, call_id: u64, staker_count: u32) {
         (call_id, staker_count),
     );
 }
+
+/// Emitted when admin changes
+pub fn emit_admin_params_changed(env: &Env, new_delay: u64) {
+    env.events().publish(
+        (symbol_short!("admin"), symbol_short!("params")),
+        (new_delay,),
+    );
+}
