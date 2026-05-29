@@ -6,23 +6,20 @@ import { useRouter } from "next/navigation";
 import { useWalletContext } from "./WalletContext";
 import { ConnectButton } from "./ConnectButton";
 import { NotificationBell } from "./NotificationBell";
-import { Search, Keyboard, HelpCircle, TrendingUp } from "lucide-react";
+import { Keyboard, TrendingUp } from "lucide-react";
 import { usePlatformConfig } from "@/contexts/PlatformConfigContext";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
-import { SearchModal } from "@/components/SearchModal";
+import { SearchBar } from "./SearchBar";
 
 export function NavBar() {
     const { publicKey } = useWalletContext();
     const { config } = usePlatformConfig();
     const router = useRouter();
-    const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
 
-    const handleOpenSearch = useCallback(() => setIsSearchOpen(true), []);
     const handleOpenShortcuts = useCallback(() => setIsShortcutsOpen(true), []);
     const handleCloseUI = useCallback(() => {
-        setIsSearchOpen(false);
         setIsShortcutsOpen(false);
     }, []);
     const handleNavigateCreate = useCallback(() => router.push("/create"), [router]);
@@ -30,20 +27,13 @@ export function NavBar() {
     const handleNavigateLeaderboard = useCallback(() => router.push("/leaderboard"), [router]);
 
     useKeyboardShortcuts({
-        onOpenSearch: handleOpenSearch,
+        onOpenSearch: () => {}, // Managed internally by SearchBar
         onOpenShortcuts: handleOpenShortcuts,
         onNavigateCreate: handleNavigateCreate,
         onNavigateFeed: handleNavigateFeed,
         onNavigateLeaderboard: handleNavigateLeaderboard,
         onCloseUI: handleCloseUI,
     });
-
-    const handleSearch = (query: string) => {
-        if (!query.trim()) {
-            return;
-        }
-        router.push("/feed");
-    };
 
     return (
         <>
@@ -68,15 +58,11 @@ export function NavBar() {
                     </Link>
                 </div>
 
+                <div className="hidden md:block flex-1 max-w-md mx-8">
+                    <SearchBar />
+                </div>
+
                 <div className="flex items-center gap-3">
-                    <button
-                        type="button"
-                        onClick={handleOpenSearch}
-                        aria-label="Open search (Cmd+K / Ctrl+K)"
-                        className="rounded-2xl border border-white/10 bg-white/5 p-2 text-slate-200 transition hover:border-white/20 hover:bg-white/10"
-                    >
-                        <Search className="h-5 w-5" aria-hidden="true" />
-                    </button>
                     <button
                         type="button"
                         onClick={handleOpenShortcuts}
@@ -92,7 +78,6 @@ export function NavBar() {
                     <ConnectButton />
                 </div>
             </nav>
-            <SearchModal open={isSearchOpen} onClose={handleCloseUI} onSearch={handleSearch} />
             <KeyboardShortcutsModal open={isShortcutsOpen} onClose={handleCloseUI} />
         </>
     );
