@@ -43,7 +43,7 @@ jobs:
       - name: Run Cargo Test
         run: |
           cd packages/contracts
-          cargo test
+          CARGO_HTTP_MULTIPLEXING=false cargo test
 
       - name: Install Stellar CLI
         run: |
@@ -59,7 +59,7 @@ jobs:
       - name: Build Contracts with Stellar CLI
         run: |
           cd packages/contracts
-          stellar contract build
+          CARGO_HTTP_MULTIPLEXING=false stellar contract build
 
       - name: Report Contract Sizes
         run: |
