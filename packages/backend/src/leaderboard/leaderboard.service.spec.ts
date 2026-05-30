@@ -44,7 +44,9 @@ function buildQbMock(rawRows: any[], count = rawRows.length) {
     offset: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
     getRawMany: jest.fn().mockResolvedValue(rawRows),
-    getRawOne: jest.fn().mockResolvedValue({ count: String(count), rank: '2', ...rawRows[0] }),
+    getRawOne: jest
+      .fn()
+      .mockResolvedValue({ count: String(count), rank: '2', ...rawRows[0] }),
   };
   return qb as jest.Mocked<SelectQueryBuilder<any>>;
 }
@@ -111,7 +113,9 @@ describe('LeaderboardService', () => {
     it('sets correct pagination meta', async () => {
       // Simulate 45 total users across pages
       qbMock.getRawMany.mockResolvedValue(
-        Array.from({ length: 20 }, (_, i) => makeRawRow({ userId: `user-${i}` })),
+        Array.from({ length: 20 }, (_, i) =>
+          makeRawRow({ userId: `user-${i}` }),
+        ),
       );
       qbMock.getRawOne.mockResolvedValue({ count: '45' });
 
@@ -134,23 +138,35 @@ describe('LeaderboardService', () => {
     });
 
     it('applies WINRATE sort with having clause (min 5 calls)', async () => {
-      await service.getLeaderboard({ ...baseQuery, sort: LeaderboardSort.WINRATE });
-
-      expect(qbMock.having).toHaveBeenCalledWith(expect.stringContaining('COUNT(*)'), {
-        minCalls: 5,
+      await service.getLeaderboard({
+        ...baseQuery,
+        sort: LeaderboardSort.WINRATE,
       });
+
+      expect(qbMock.having).toHaveBeenCalledWith(
+        expect.stringContaining('COUNT(*)'),
+        {
+          minCalls: 5,
+        },
+      );
       expect(qbMock.orderBy).toHaveBeenCalledWith('winRate', 'DESC');
     });
 
     it('applies PROFIT sort without having clause', async () => {
-      await service.getLeaderboard({ ...baseQuery, sort: LeaderboardSort.PROFIT });
+      await service.getLeaderboard({
+        ...baseQuery,
+        sort: LeaderboardSort.PROFIT,
+      });
 
       expect(qbMock.having).not.toHaveBeenCalled();
       expect(qbMock.orderBy).toHaveBeenCalledWith('totalProfit', 'DESC');
     });
 
     it('applies month date filter when timeframe=month', async () => {
-      await service.getLeaderboard({ ...baseQuery, timeframe: LeaderboardTimeframe.MONTH });
+      await service.getLeaderboard({
+        ...baseQuery,
+        timeframe: LeaderboardTimeframe.MONTH,
+      });
 
       expect(qbMock.andWhere).toHaveBeenCalledWith('pc.settledAt >= :since', {
         since: expect.any(Date),
@@ -158,10 +174,15 @@ describe('LeaderboardService', () => {
     });
 
     it('does not apply date filter when timeframe=all', async () => {
-      await service.getLeaderboard({ ...baseQuery, timeframe: LeaderboardTimeframe.ALL });
+      await service.getLeaderboard({
+        ...baseQuery,
+        timeframe: LeaderboardTimeframe.ALL,
+      });
 
       const andWhereCalls = (qbMock.andWhere as jest.Mock).mock.calls;
-      const hasDateFilter = andWhereCalls.some(([q]) => q.includes('settledAt'));
+      const hasDateFilter = andWhereCalls.some(([q]) =>
+        q.includes('settledAt'),
+      );
       expect(hasDateFilter).toBe(false);
     });
 
@@ -180,7 +201,11 @@ describe('LeaderboardService', () => {
       ]);
       qbMock.getRawOne.mockResolvedValue({ count: '50' });
 
-      const result = await service.getLeaderboard({ ...baseQuery, page: 2, limit: 20 });
+      const result = await service.getLeaderboard({
+        ...baseQuery,
+        page: 2,
+        limit: 20,
+      });
 
       expect(result.data[0].rank).toBe(21);
       expect(result.data[1].rank).toBe(22);
@@ -191,12 +216,16 @@ describe('LeaderboardService', () => {
       const result = await service.getLeaderboard(baseQuery);
       const after = new Date();
 
-      expect(result.generatedAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(result.generatedAt.getTime()).toBeGreaterThanOrEqual(
+        before.getTime(),
+      );
       expect(result.generatedAt.getTime()).toBeLessThanOrEqual(after.getTime());
     });
 
     it('handles null username gracefully', async () => {
-      qbMock.getRawMany.mockResolvedValue([makeRawRow({ username: null, userId: 'abc-12345678' })]);
+      qbMock.getRawMany.mockResolvedValue([
+        makeRawRow({ username: null, userId: 'abc-12345678' }),
+      ]);
 
       const result = await service.getLeaderboard(baseQuery);
 

@@ -20,7 +20,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('calls')
 export class CallsController {
-  constructor(private readonly callsService: CallsService) { }
+  constructor(private readonly callsService: CallsService) {}
 
   @Get('feed')
   @UseInterceptors(CacheInterceptor)

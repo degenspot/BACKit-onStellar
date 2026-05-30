@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
+import { Dialog, Transition } from "@headlessui/react";
 import { useWalletContext } from "./WalletContext";
 import { Check, Loader2, X, User, FileText } from "lucide-react";
 
@@ -12,6 +13,7 @@ interface ProfileEditorProps {
 
 export function ProfileEditor({ inline = false, onClose }: ProfileEditorProps) {
   const { profile, saveStatus, saveProfile, publicKey } = useWalletContext();
+  const displayNameRef = useRef<HTMLInputElement | null>(null);
 
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
@@ -92,6 +94,7 @@ export function ProfileEditor({ inline = false, onClose }: ProfileEditorProps) {
             <button
               onClick={onClose}
               className="ml-2 p-1.5 rounded-lg hover:bg-white/5 transition-colors text-gray-500 hover:text-white"
+              aria-label="Close profile editor"
             >
               <X className="w-4 h-4" />
             </button>
@@ -101,12 +104,14 @@ export function ProfileEditor({ inline = false, onClose }: ProfileEditorProps) {
 
       {/* Display Name */}
       <div className="mb-4">
-        <label className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">
-          <User className="w-3.5 h-3.5" />
+        <label className="flex items-center gap-1.5 text-xs text-gray-400 mb-2" htmlFor="profile-display-name">
+          <User className="w-3.5 h-3.5" aria-hidden="true" />
           Display Name
           <span className="ml-auto text-gray-600">{displayName.length}/40</span>
         </label>
         <input
+          id="profile-display-name"
+          ref={displayNameRef}
           type="text"
           value={displayName}
           maxLength={40}
@@ -131,12 +136,13 @@ export function ProfileEditor({ inline = false, onClose }: ProfileEditorProps) {
 
       {/* Bio */}
       <div className="mb-6">
-        <label className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">
-          <FileText className="w-3.5 h-3.5" />
+        <label className="flex items-center gap-1.5 text-xs text-gray-400 mb-2" htmlFor="profile-bio">
+          <FileText className="w-3.5 h-3.5" aria-hidden="true" />
           Bio
           <span className="ml-auto text-gray-600">{bio.length}/160</span>
         </label>
         <textarea
+          id="profile-bio"
           value={bio}
           maxLength={160}
           rows={3}
@@ -175,6 +181,7 @@ export function ProfileEditor({ inline = false, onClose }: ProfileEditorProps) {
           cursor:
             isDirty && saveStatus !== "saving" ? "pointer" : "not-allowed",
         }}
+        aria-label="Save profile"
       >
         {saveStatus === "saving" ? "Saving…" : "Save Profile"}
       </button>
@@ -183,18 +190,48 @@ export function ProfileEditor({ inline = false, onClose }: ProfileEditorProps) {
 
   if (inline) return panel;
 
-  // Modal wrapper
+  const handleDialogClose = (value: boolean) => {
+    if (onClose) onClose();
+  };
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)" }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose?.();
-      }}
-    >
-      <div className="w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        {panel}
-      </div>
-    </div>
+    <Transition.Root appear show={true} as={Fragment}>
+      <Dialog
+        as="div"
+        className="relative z-50"
+        onClose={handleDialogClose}
+        initialFocus={displayNameRef}
+      >
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-200"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-150"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" aria-hidden="true" />
+        </Transition.Child>
+
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4 text-center">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-200"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-150"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-3xl text-left align-middle transition-all">
+                {panel}
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </div>
+      </Dialog>
+    </Transition.Root>
   );
 }

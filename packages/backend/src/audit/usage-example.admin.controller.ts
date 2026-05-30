@@ -19,13 +19,10 @@ export class OracleAdminController {
    * Updating oracle parameters → writes an ORACLE_PARAMS_UPDATED log entry.
    * targetResource is derived from the route params via the second argument.
    */
-  @Audited(
-    AuditActionType.ORACLE_PARAMS_UPDATED,
-    (ctx) => {
-      const req = ctx.switchToHttp().getRequest();
-      return `oracle:feed:${req.params.feedId}`;
-    },
-  )
+  @Audited(AuditActionType.ORACLE_PARAMS_UPDATED, (ctx) => {
+    const req = ctx.switchToHttp().getRequest();
+    return `oracle:feed:${req.params.feedId}`;
+  })
   @Patch('feeds/:feedId/params')
   updateOracleParams(
     @Param('feedId') feedId: string,
@@ -37,13 +34,10 @@ export class OracleAdminController {
   /**
    * Setting a quorum → writes an ORACLE_QUORUM_SET log entry.
    */
-  @Audited(
-    AuditActionType.ORACLE_QUORUM_SET,
-    (ctx) => {
-      const req = ctx.switchToHttp().getRequest();
-      return `oracle:quorum:${req.params.roundId}`;
-    },
-  )
+  @Audited(AuditActionType.ORACLE_QUORUM_SET, (ctx) => {
+    const req = ctx.switchToHttp().getRequest();
+    return `oracle:quorum:${req.params.roundId}`;
+  })
   @Patch('rounds/:roundId/quorum')
   setQuorum(
     @Param('roundId') roundId: string,
@@ -60,13 +54,10 @@ export class MarketAdminController {
   /**
    * Manually resolving a market → writes a MARKET_MANUALLY_RESOLVED log entry.
    */
-  @Audited(
-    AuditActionType.MARKET_MANUALLY_RESOLVED,
-    (ctx) => {
-      const req = ctx.switchToHttp().getRequest();
-      return `market:${req.params.marketId}`;
-    },
-  )
+  @Audited(AuditActionType.MARKET_MANUALLY_RESOLVED, (ctx) => {
+    const req = ctx.switchToHttp().getRequest();
+    return `market:${req.params.marketId}`;
+  })
   @Post(':marketId/resolve')
   resolveMarket(
     @Param('marketId') marketId: string,
@@ -78,13 +69,10 @@ export class MarketAdminController {
   /**
    * Pausing a market → writes a MARKET_PAUSED log entry.
    */
-  @Audited(
-    AuditActionType.MARKET_PAUSED,
-    (ctx) => {
-      const req = ctx.switchToHttp().getRequest();
-      return `market:${req.params.marketId}`;
-    },
-  )
+  @Audited(AuditActionType.MARKET_PAUSED, (ctx) => {
+    const req = ctx.switchToHttp().getRequest();
+    return `market:${req.params.marketId}`;
+  })
   @Post(':marketId/pause')
   pauseMarket(@Param('marketId') marketId: string) {
     // ... your service call

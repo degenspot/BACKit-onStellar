@@ -44,7 +44,8 @@ export class PlatformConfigController {
     },
   })
   async getConfig(): Promise<Omit<PlatformSettings, 'id' | 'createdAt'>> {
-    const { id, createdAt, ...settings } = await this.configService.getSettings();
+    const { id, createdAt, ...settings } =
+      await this.configService.getSettings();
     return settings;
   }
 }

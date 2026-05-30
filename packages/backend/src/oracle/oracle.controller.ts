@@ -42,7 +42,11 @@ export class OracleController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: AdminResolveDto,
   ): Promise<OracleCall> {
-    return this.oracleService.adminResolveCall(id, dto.resolution, dto.finalPrice); // ✅ types now match
+    return this.oracleService.adminResolveCall(
+      id,
+      dto.resolution,
+      dto.finalPrice,
+    ); // ✅ types now match
   }
 
   // ─── Oracle Parameters & Quorums ──────────────────────────────────────────

@@ -18,7 +18,6 @@ export const SKIP_TURNSTILE_KEY = 'skipTurnstile';
  * Apply to routes that should bypass the Turnstile check (e.g. mobile-only flows).
  */
 export const SkipTurnstile = () =>
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   require('@nestjs/common').SetMetadata(SKIP_TURNSTILE_KEY, true);
 
 /**
@@ -53,7 +52,7 @@ export class TurnstileGuard implements CanActivate {
     private readonly configService: ConfigService,
     private readonly firewallService: FirewallService,
     private readonly reflector: Reflector,
-  ) { }
+  ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     // Allow opt-out via @SkipTurnstile()
@@ -64,12 +63,15 @@ export class TurnstileGuard implements CanActivate {
     if (skip) return true;
 
     // Allow disabling in development
-    const enabled = this.configService.get<string>('TURNSTILE_ENABLED') !== 'false';
+    const enabled =
+      this.configService.get<string>('TURNSTILE_ENABLED') !== 'false';
     if (!enabled) return true;
 
     const secretKey = this.configService.get<string>('TURNSTILE_SECRET_KEY');
     if (!secretKey) {
-      this.logger.warn('TURNSTILE_SECRET_KEY not set — skipping Turnstile verification');
+      this.logger.warn(
+        'TURNSTILE_SECRET_KEY not set — skipping Turnstile verification',
+      );
       return true;
     }
 
@@ -136,15 +138,23 @@ export class TurnstileGuard implements CanActivate {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
 
-      const data = (await res.json()) as { success: boolean; 'error-codes'?: string[] };
+      const data = (await res.json()) as {
+        success: boolean;
+        'error-codes'?: string[];
+      };
 
       if (!data.success) {
-        this.logger.debug(`Turnstile rejected: ${data['error-codes']?.join(', ')}`);
+        this.logger.debug(
+          `Turnstile rejected: ${data['error-codes']?.join(', ')}`,
+        );
       }
 
       return data.success;
     } catch (err) {
-      this.logger.error('Turnstile siteverify request failed', (err as Error).message);
+      this.logger.error(
+        'Turnstile siteverify request failed',
+        (err as Error).message,
+      );
       // Fail open on network error to avoid locking out legitimate users
       return true;
     }

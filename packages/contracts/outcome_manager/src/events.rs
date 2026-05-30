@@ -28,3 +28,16 @@ pub fn emit_payout_claimed(env: &Env, call_id: u64, staker: &soroban_sdk::Addres
         (call_id, staker.clone(), amount),
     );
 }
+
+/// Emitted when the protocol fee is collected during payout settlement
+pub fn emit_fee_collected(
+    env: &Env,
+    call_id: u64,
+    fee_amount: i128,
+    fee_collector: &soroban_sdk::Address,
+) {
+    env.events().publish(
+        (symbol_short!("fee"), symbol_short!("collected")),
+        (call_id, fee_amount, fee_collector.clone()),
+    );
+}

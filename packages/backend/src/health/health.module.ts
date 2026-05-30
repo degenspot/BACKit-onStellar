@@ -5,7 +5,7 @@ import { HealthController } from './health.controller';
 
 @Module({
   imports: [
-    HttpModule,           // provides HttpService for Stellar RPC ping
+    HttpModule, // provides HttpService for Stellar RPC ping
   ],
   controllers: [HealthController],
   // DataSource is provided globally by TypeOrmModule.forRoot() in AppModule

@@ -9,4 +9,4 @@ import { OracleController } from './oracle.controller';
   providers: [OracleSigningService],
   exports: [OracleSigningService],
 })
-export class OracleModule { }
+export class OracleModule {}

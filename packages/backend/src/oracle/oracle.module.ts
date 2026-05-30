@@ -37,4 +37,4 @@ import { PriceDeviationLog } from './entities/log.entity';
   ],
   exports: [OracleService, PriceDeviationService],
 })
-export class OracleModule { }
+export class OracleModule {}

@@ -7,12 +7,9 @@ import { UsersController } from './users.controller';
 import { AnalyticsModule } from '../analytics/analytics.module';
 
 @Module({
-    imports: [
-        TypeOrmModule.forFeature([Users, Badge]),
-        AnalyticsModule,
-    ],
-    controllers: [UsersController],
-    providers: [UsersService],
-    exports: [UsersService],
+  imports: [TypeOrmModule.forFeature([Users, Badge]), AnalyticsModule],
+  controllers: [UsersController],
+  providers: [UsersService],
+  exports: [UsersService],
 })
-export class UsersModule { }
+export class UsersModule {}

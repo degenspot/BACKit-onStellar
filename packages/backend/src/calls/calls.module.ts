@@ -6,12 +6,12 @@ import { CallsService } from './calls.service';
 import { CallsRepository } from './calls.repository';
 import { Call } from './entities/call.entity';
 import { CallReport } from './entities/call-report.entity';
-import { OracleModule } from '../oracle/oracle.module';   
+import { OracleModule } from '../oracle/oracle.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Call, CallReport]),
-    forwardRef(() => OracleModule),                       
+    forwardRef(() => OracleModule),
   ],
   controllers: [CallsController],
   providers: [CallsService, CallsRepository],

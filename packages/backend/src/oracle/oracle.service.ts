@@ -99,20 +99,31 @@ export class OracleService {
   // ─── Price Fetching ───────────────────────────────────────────────────────
 
   @Retryable(4, 1000)
-  async fetchOraclePrice(contractId: string, assetSymbol: string): Promise<bigint> {
+  async fetchOraclePrice(
+    contractId: string,
+    assetSymbol: string,
+  ): Promise<bigint> {
     const contract = new Contract(contractId);
 
     // Extract operation first so the cast stays on one clean expression
-    const operation = contract.call('lastprice', xdr.ScVal.scvSymbol(assetSymbol));
+    const operation = contract.call(
+      'lastprice',
+      xdr.ScVal.scvSymbol(assetSymbol),
+    );
     const tx = await this.rpcServer.simulateTransaction(
-      operation as unknown as Parameters<SorobanRpc.Server['simulateTransaction']>[0],
+      operation as unknown as Parameters<
+        SorobanRpc.Server['simulateTransaction']
+      >[0],
     );
 
     if (SorobanRpc.Api.isSimulationError(tx)) {
-      throw new Error(`Oracle simulation error for ${assetSymbol}: ${tx.error}`);
+      throw new Error(
+        `Oracle simulation error for ${assetSymbol}: ${tx.error}`,
+      );
     }
 
-    const result = (tx as SorobanRpc.Api.SimulateTransactionSuccessResponse).result;
+    const result = (tx as SorobanRpc.Api.SimulateTransactionSuccessResponse)
+      .result;
     if (!result) {
       throw new Error(`No result returned for oracle price of ${assetSymbol}`);
     }
@@ -176,14 +187,21 @@ export class OracleService {
     }
 
     // Guard: already resolved — idempotent, no error
-    const terminal = [OracleCallStatus.RESOLVED_YES, OracleCallStatus.RESOLVED_NO];
+    const terminal = [
+      OracleCallStatus.RESOLVED_YES,
+      OracleCallStatus.RESOLVED_NO,
+    ];
     if (terminal.includes(call.status)) {
       this.logger.log(`Call ${callId} already resolved — skipping.`);
       return;
     }
 
-    if (![OracleCallStatus.OPEN, OracleCallStatus.SETTLING].includes(call.status)) {
-      throw new BadRequestException(`Cannot resolve call in status ${call.status}`);
+    if (
+      ![OracleCallStatus.OPEN, OracleCallStatus.SETTLING].includes(call.status)
+    ) {
+      throw new BadRequestException(
+        `Cannot resolve call in status ${call.status}`,
+      );
     }
 
     const outcome = this.evaluateOutcome(call, observedPrice);
@@ -193,9 +211,9 @@ export class OracleService {
     // const signed  = await this.signingService.sign(builtTx);
     // await this.rpcServer.sendTransaction(signed);
 
-    call.status      = outcome;
-    call.finalPrice  = observedPrice;
-    call.resolvedAt  = new Date();
+    call.status = outcome;
+    call.finalPrice = observedPrice;
+    call.resolvedAt = new Date();
     call.processedAt = new Date();
     await this.oracleCallRepository.save(call);
 
@@ -234,7 +252,7 @@ export class OracleService {
       );
     }
 
-    call.status   = OracleCallStatus.OPEN;
+    call.status = OracleCallStatus.OPEN;
     call.failedAt = null;
 
     this.logger.log(`Call ${callId} manually UNPAUSED by admin.`);
@@ -262,14 +280,13 @@ export class OracleService {
       );
     }
 
-    call.status      = resolution;
-    call.resolvedAt  = new Date();
+    call.status = resolution;
+    call.resolvedAt = new Date();
     call.processedAt = new Date();
-    call.failedAt    = null;
+    call.failedAt = null;
     if (finalPrice !== undefined) call.finalPrice = finalPrice;
 
-  
-  this.logger.log(`Call ${callId} FORCE-RESOLVED by admin → ${resolution}`);
+    this.logger.log(`Call ${callId} FORCE-RESOLVED by admin → ${resolution}`);
     return this.oracleCallRepository.save(call);
   }
 
@@ -279,7 +296,9 @@ export class OracleService {
     feedId: string,
     params: { minResponses: number; heartbeatSeconds: number },
   ): Promise<{ success: boolean; feedId: string }> {
-    this.logger.log(`Oracle params updated for feed ${feedId}: ${JSON.stringify(params)}`);
+    this.logger.log(
+      `Oracle params updated for feed ${feedId}: ${JSON.stringify(params)}`,
+    );
     // In a real app, this would send a Soroban transaction
     return { success: true, feedId };
   }
@@ -296,7 +315,9 @@ export class OracleService {
   // ─── Private Helpers ──────────────────────────────────────────────────────
 
   private async findCallOrThrow(callId: number): Promise<OracleCall> {
-    const call = await this.oracleCallRepository.findOne({ where: { id: callId } });
+    const call = await this.oracleCallRepository.findOne({
+      where: { id: callId },
+    });
     if (!call) throw new NotFoundException(`OracleCall ${callId} not found`);
     return call;
   }

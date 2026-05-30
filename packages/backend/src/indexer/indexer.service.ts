@@ -34,9 +34,9 @@ export class IndexerService {
 
     return {
       isRunning,
-      lastProcessedLedger:  latestEvent?.ledger    ?? null,
+      lastProcessedLedger: latestEvent?.ledger ?? null,
       totalEventsIndexed,
-      latestEventLedger:    latestEvent?.ledger    ?? null,
+      latestEventLedger: latestEvent?.ledger ?? null,
       latestEventTimestamp: latestEvent?.timestamp ?? null,
     };
   }
@@ -64,7 +64,10 @@ export class IndexerService {
 
     try {
       const startLedger = await this.resolveStartLedger();
-      const response    = await this.fetchContractEvents(this.contractId, startLedger);
+      const response = await this.fetchContractEvents(
+        this.contractId,
+        startLedger,
+      );
 
       for (const event of response.events) {
         await this.dispatchEvent(event);
@@ -76,9 +79,11 @@ export class IndexerService {
 
   // ─── Event Dispatcher ─────────────────────────────────────────────────────
 
-  private async dispatchEvent(event: SorobanRpc.Api.EventResponse): Promise<void> {
+  private async dispatchEvent(
+    event: SorobanRpc.Api.EventResponse,
+  ): Promise<void> {
     const topics = event.topic;
-    const data   = event.value;
+    const data = event.value;
     const txHash = event.txHash;
     const ledger = event.ledger;
 
@@ -119,20 +124,20 @@ export class IndexerService {
 
     this.logger.log(
       `AdminParamsChanged applied — feePercent: ${parsed.feePercent}% ` +
-      `ledger: ${ledger} tx: ${txHash}`,
+        `ledger: ${ledger} tx: ${txHash}`,
     );
 
     await this.eventLogRepository.save(
       this.eventLogRepository.create({
-        eventId:     `${txHash}-admin-params`,
+        eventId: `${txHash}-admin-params`,
         pagingToken: `${ledger}-${txHash}`,
-        contractId:  this.contractId,
-        eventType:   EventType.ADMIN_PARAMS_CHANGED,
+        contractId: this.contractId,
+        eventType: EventType.ADMIN_PARAMS_CHANGED,
         ledger,
         txHash,
-        txOrder:     0,
-        eventData:   parsed,
-        timestamp:   new Date(),
+        txOrder: 0,
+        eventData: parsed,
+        timestamp: new Date(),
       }),
     );
   }

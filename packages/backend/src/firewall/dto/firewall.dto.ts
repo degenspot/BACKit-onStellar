@@ -43,7 +43,10 @@ export class QueryBlockedRequestsDto {
   @IsString()
   ip?: string;
 
-  @ApiPropertyOptional({ enum: BlockReason, description: 'Filter by block reason' })
+  @ApiPropertyOptional({
+    enum: BlockReason,
+    description: 'Filter by block reason',
+  })
   @IsOptional()
   @IsEnum(BlockReason)
   reason?: BlockReason;

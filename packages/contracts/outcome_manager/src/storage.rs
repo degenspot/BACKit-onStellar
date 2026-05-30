@@ -43,6 +43,10 @@ pub enum InstanceKey {
     FinalOutcome(u64),
     /// Claimed(call_id, staker) ─ prevents double-claims
     Claimed(u64, Address),
+    /// Address that receives protocol fees
+    FeeCollector,
+    /// Fee in basis points (0–10000)
+    FeeBps,
 }
 
 /// Short-lived keys cleared after settlement (temporary storage tier)

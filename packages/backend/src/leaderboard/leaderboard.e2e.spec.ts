@@ -57,7 +57,9 @@ describe('Leaderboard (e2e)', () => {
     }).compile();
 
     app = module.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ transform: true, whitelist: true }),
+    );
     await app.init();
 
     dataSource = module.get<DataSource>(DataSource);
@@ -98,7 +100,9 @@ describe('Leaderboard (e2e)', () => {
         .get('/leaderboard?sort=profit')
         .expect(200);
 
-      expect(body.data[0].totalProfit).toBeGreaterThan(body.data[1].totalProfit);
+      expect(body.data[0].totalProfit).toBeGreaterThan(
+        body.data[1].totalProfit,
+      );
       expect(body.data[0].rank).toBe(1);
     });
 

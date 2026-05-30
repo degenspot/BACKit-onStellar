@@ -1,6 +1,4 @@
-import {
-  Entity
-} from 'typeorm';
+import { Entity } from 'typeorm';
 
 @Entity('price_deviation_log')
 export class StoredOraclePrice {

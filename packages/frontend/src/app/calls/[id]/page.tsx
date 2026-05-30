@@ -131,7 +131,7 @@ export default function CallDetailPage() {
             <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4">
               <li>Make sure your backend server is running on port 3001</li>
               <li>Check if the API endpoint is accessible</li>
-              <li>Verify the call ID "{id}" exists in mock data</li>
+              <li>Verify the call ID &quot;{id}&quot; exists in mock data</li>
               <li>Check browser console for detailed errors</li>
             </ul>
           </div>
@@ -153,7 +153,7 @@ export default function CallDetailPage() {
           
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Call Not Found</h2>
           <p className="text-gray-600 mb-6">
-            The prediction call with ID "{id}" doesn't exist.
+            The prediction call with ID &quot;{id}&quot; doesn&apos;t exist.
           </p>
           
           <a 

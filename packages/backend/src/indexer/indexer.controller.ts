@@ -20,7 +20,11 @@ export class IndexerController {
         lastProcessedLedger: { type: 'number', nullable: true },
         totalEventsIndexed: { type: 'number' },
         latestEventLedger: { type: 'number', nullable: true },
-        latestEventTimestamp: { type: 'string', format: 'date-time', nullable: true },
+        latestEventTimestamp: {
+          type: 'string',
+          format: 'date-time',
+          nullable: true,
+        },
       },
     },
   })
@@ -35,7 +39,12 @@ export class IndexerController {
     type: [EventLog],
   })
   async getLatestEvents() {
-    return await this.indexerService.getEventsByType(EventType.CALL_CREATED, undefined, undefined, 50);
+    return await this.indexerService.getEventsByType(
+      EventType.CALL_CREATED,
+      undefined,
+      undefined,
+      50,
+    );
   }
 
   @Get('events/:eventType')

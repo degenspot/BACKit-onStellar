@@ -55,7 +55,9 @@ export class PriceDeviationService {
    * Fetches reference prices, computes deviations, persists audit rows, and
    * halts signing if any symbol exceeds the threshold.
    */
-  async runDeviationCheck(oraclePrices: OraclePrice[]): Promise<DeviationCheckResult[]> {
+  async runDeviationCheck(
+    oraclePrices: OraclePrice[],
+  ): Promise<DeviationCheckResult[]> {
     const symbols = oraclePrices.map((p) => p.symbol);
     const referencePrices = await this.coinGecko.getPrices(symbols);
 
@@ -65,11 +67,16 @@ export class PriceDeviationService {
       const referencePrice = referencePrices.get(symbol.toUpperCase());
 
       if (referencePrice === undefined) {
-        this.logger.warn(`Skipping deviation check for ${symbol}: no reference price available.`);
+        this.logger.warn(
+          `Skipping deviation check for ${symbol}: no reference price available.`,
+        );
         continue;
       }
 
-      const deviationPercent = this.calcDeviationPercent(oraclePrice, referencePrice);
+      const deviationPercent = this.calcDeviationPercent(
+        oraclePrice,
+        referencePrice,
+      );
       const breached = deviationPercent > this.threshold;
 
       const result: DeviationCheckResult = {

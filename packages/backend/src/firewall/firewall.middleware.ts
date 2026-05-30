@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  NestMiddleware,
-  HttpStatus,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NestMiddleware, HttpStatus, Logger } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { FirewallService } from './firewall.service';
 import { extractClientIp } from './utils/ip-matcher.util';

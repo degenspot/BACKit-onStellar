@@ -43,7 +43,7 @@ export class Users {
   @ManyToMany(() => Badge, (badge) => badge.users, { eager: false })
   @JoinTable({
     name: 'user_badges',
-    joinColumn:        { name: 'userId',  referencedColumnName: 'id' },
+    joinColumn: { name: 'userId', referencedColumnName: 'id' },
     inverseJoinColumn: { name: 'badgeId', referencedColumnName: 'id' },
   })
   badges: Badge[];

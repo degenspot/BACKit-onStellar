@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Users } from './entities/users.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -75,7 +79,9 @@ export class UsersService {
 
     if (!following) throw new BadRequestException('User to unfollow not found');
 
-    follower.following = follower.following.filter((u) => u.id !== following.id);
+    follower.following = follower.following.filter(
+      (u) => u.id !== following.id,
+    );
     const result = await this.usersRepo.save(follower);
     await this.invalidateUserProfile(followerAddress);
     await this.invalidateUserProfile(followingAddress);
@@ -106,10 +112,11 @@ export class UsersService {
   }
 
   async register(registerDto: RegisterDto) {
-    const { referralCode, walletAddress, ...userData } = registerDto as RegisterDto & {
-      email: string;
-      walletAddress: string;
-    };
+    const { referralCode, walletAddress, ...userData } =
+      registerDto as RegisterDto & {
+        email: string;
+        walletAddress: string;
+      };
 
     let referrer: Users | null = null;
 

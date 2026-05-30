@@ -37,7 +37,7 @@ export class PriceDeviationWorker {
     if (this.deviationService.isSigningHalted()) {
       this.logger.warn(
         'Signing is currently halted due to a previous breach. ' +
-        'Skipping check until halt is cleared by an operator.',
+          'Skipping check until halt is cleared by an operator.',
       );
       return;
     }
@@ -61,17 +61,20 @@ export class PriceDeviationWorker {
     }
 
     if (!oraclePrices.length) {
-      this.logger.warn('No oracle prices found in DB — skipping deviation check.');
+      this.logger.warn(
+        'No oracle prices found in DB — skipping deviation check.',
+      );
       return;
     }
 
     try {
-      const results = await this.deviationService.runDeviationCheck(oraclePrices);
+      const results =
+        await this.deviationService.runDeviationCheck(oraclePrices);
       const breaches = results.filter((r) => r.breached);
 
       this.logger.log(
         `Deviation check complete. ${results.length} symbol(s) checked, ` +
-        `${breaches.length} breach(es) detected.`,
+          `${breaches.length} breach(es) detected.`,
       );
     } catch (err) {
       this.logger.error('Price deviation check failed', err);

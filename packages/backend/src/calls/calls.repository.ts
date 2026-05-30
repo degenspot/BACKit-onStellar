@@ -10,9 +10,12 @@ export class CallsRepository extends Repository<Call> {
   }
 
   visibleQuery(alias = 'call'): SelectQueryBuilder<Call> {
-    return this.createQueryBuilder(alias).where(`${alias}.isHidden = :isHidden`, {
-      isHidden: false,
-    });
+    return this.createQueryBuilder(alias).where(
+      `${alias}.isHidden = :isHidden`,
+      {
+        isHidden: false,
+      },
+    );
   }
 
   async findVisibleById(id: string): Promise<Call | null> {
@@ -27,7 +30,11 @@ export class CallsRepository extends Repository<Call> {
       .getManyAndCount();
   }
 
-  async searchVisible(search: string, page: number, limit: number): Promise<[Call[], number]> {
+  async searchVisible(
+    search: string,
+    page: number,
+    limit: number,
+  ): Promise<[Call[], number]> {
     return this.visibleQuery()
       .andWhere(
         '(LOWER(call.title) LIKE :term OR LOWER(call.description) LIKE :term)',

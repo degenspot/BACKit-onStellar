@@ -3,7 +3,11 @@ import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class UserStakesQueryDto {
-  @ApiPropertyOptional({ description: 'Page number (1-based)', default: 1, minimum: 1 })
+  @ApiPropertyOptional({
+    description: 'Page number (1-based)',
+    default: 1,
+    minimum: 1,
+  })
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -34,16 +38,25 @@ export class CallSummaryDto {
   @ApiProperty({ enum: ['YES', 'NO', 'PENDING'] })
   outcome: 'YES' | 'NO' | 'PENDING';
 
-  @ApiPropertyOptional({ description: 'When the call was resolved, if applicable', type: String })
+  @ApiPropertyOptional({
+    description: 'When the call was resolved, if applicable',
+    type: String,
+  })
   resolvedAt?: Date | null;
 
-  @ApiPropertyOptional({ description: 'When the call expires, if applicable', type: String })
+  @ApiPropertyOptional({
+    description: 'When the call expires, if applicable',
+    type: String,
+  })
   expiresAt?: Date | null;
 
   @ApiProperty()
   createdAt: Date;
 
-  @ApiPropertyOptional({ description: 'Address of the on-chain contract', nullable: true })
+  @ApiPropertyOptional({
+    description: 'Address of the on-chain contract',
+    nullable: true,
+  })
   contractAddress?: string | null;
 
   @ApiProperty({ description: 'Total YES stake on this call' })
@@ -69,10 +82,16 @@ export class StakeLedgerItemDto {
   @ApiProperty({ enum: ['YES', 'NO'] })
   position: 'YES' | 'NO';
 
-  @ApiPropertyOptional({ description: 'Realized profit or loss in XLM', nullable: true })
+  @ApiPropertyOptional({
+    description: 'Realized profit or loss in XLM',
+    nullable: true,
+  })
   profitLoss?: number | null;
 
-  @ApiPropertyOptional({ description: 'Underlying transaction hash', nullable: true })
+  @ApiPropertyOptional({
+    description: 'Underlying transaction hash',
+    nullable: true,
+  })
   transactionHash?: string | null;
 
   @ApiProperty()
@@ -82,7 +101,8 @@ export class StakeLedgerItemDto {
   updatedAt: Date;
 
   @ApiProperty({
-    description: 'Derived resolution status for this stake based on the underlying call',
+    description:
+      'Derived resolution status for this stake based on the underlying call',
     enum: ['PENDING', 'RESOLVED'],
   })
   resolutionStatus: 'PENDING' | 'RESOLVED';
@@ -104,4 +124,3 @@ export class UserStakesResponseDto {
   @ApiProperty()
   limit: number;
 }
-

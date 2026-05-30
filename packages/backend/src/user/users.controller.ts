@@ -25,7 +25,10 @@ export class UsersController {
   @ApiOperation({ summary: 'Follow a user' })
   @ApiParam({ name: 'address', description: 'Address of the user to follow' })
   @ApiResponse({ status: 200, description: 'User followed successfully.' })
-  @ApiResponse({ status: 400, description: 'Invalid request or already following.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid request or already following.',
+  })
   @UsePipes(new ValidationPipe({ whitelist: true }))
   async follow(
     @Param('address') address: string,
@@ -39,7 +42,10 @@ export class UsersController {
   @ApiOperation({ summary: 'Unfollow a user' })
   @ApiParam({ name: 'address', description: 'Address of the user to unfollow' })
   @ApiResponse({ status: 200, description: 'User unfollowed successfully.' })
-  @ApiResponse({ status: 400, description: 'Invalid request or not following.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid request or not following.',
+  })
   @UsePipes(new ValidationPipe({ whitelist: true }))
   async unfollow(
     @Param('address') address: string,
@@ -51,7 +57,10 @@ export class UsersController {
   @Get(':address/followers')
   @ApiOperation({ summary: 'Get followers list' })
   @ApiParam({ name: 'address', description: 'User address' })
-  @ApiResponse({ status: 200, description: 'Successfully retrieved followers.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Successfully retrieved followers.',
+  })
   async getFollowers(@Param('address') address: string) {
     return this.usersService.getFollowers(address);
   }
@@ -59,7 +68,10 @@ export class UsersController {
   @Get(':address/following')
   @ApiOperation({ summary: 'Get following list' })
   @ApiParam({ name: 'address', description: 'User address' })
-  @ApiResponse({ status: 200, description: 'Successfully retrieved following list.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Successfully retrieved following list.',
+  })
   async getFollowing(@Param('address') address: string) {
     return this.usersService.getFollowing(address);
   }
@@ -71,7 +83,8 @@ export class UsersController {
   @ApiParam({ name: 'address', description: 'Stellar wallet address' })
   @ApiResponse({
     status: 200,
-    description: 'User profile including assigned badges and predictor reliability.',
+    description:
+      'User profile including assigned badges and predictor reliability.',
     schema: {
       example: {
         id: 'uuid',

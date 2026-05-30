@@ -16,9 +16,17 @@ export class RelayController {
   constructor(private readonly relayService: RelayService) {}
 
   @Post('tx')
-  @ApiOperation({ summary: 'Sponsor a transaction by co-signing and submitting' })
-  @ApiResponse({ status: 201, description: 'Transaction submitted successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid XDR or unauthorized transaction' })
+  @ApiOperation({
+    summary: 'Sponsor a transaction by co-signing and submitting',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Transaction submitted successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid XDR or unauthorized transaction',
+  })
   async relay(@Body() dto: RelayTxDto) {
     if (!dto.xdr) {
       throw new BadRequestException('XDR string is required');
@@ -29,7 +37,7 @@ export class RelayController {
       return result;
     } catch (error) {
       if (error instanceof BadRequestException) {
-          throw error;
+        throw error;
       }
       throw new BadRequestException(`Relay failed: ${error.message}`);
     }

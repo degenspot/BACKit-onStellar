@@ -15,7 +15,9 @@ export function Retryable(
     propertyKey: string | symbol,
     descriptor: PropertyDescriptor,
   ): PropertyDescriptor {
-    const originalMethod = descriptor.value as (...args: unknown[]) => Promise<unknown>;
+    const originalMethod = descriptor.value as (
+      ...args: unknown[]
+    ) => Promise<unknown>;
 
     descriptor.value = async function (...args: unknown[]): Promise<unknown> {
       return retryWithBackoff(

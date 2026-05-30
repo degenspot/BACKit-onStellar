@@ -12,6 +12,7 @@ export function useFeed(type: "for-you" | "following", filters?: { status: strin
 
   useEffect(() => {
     resetAndFetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, filters?.status]);
 
   async function resetAndFetch() {

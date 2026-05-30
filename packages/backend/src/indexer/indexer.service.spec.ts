@@ -36,7 +36,9 @@ describe('IndexerService', () => {
     }).compile();
 
     service = module.get<IndexerService>(IndexerService);
-    eventLogRepository = module.get<Repository<EventLog>>(getRepositoryToken(EventLog));
+    eventLogRepository = module.get<Repository<EventLog>>(
+      getRepositoryToken(EventLog),
+    );
   });
 
   it('should be defined', () => {
@@ -45,13 +47,18 @@ describe('IndexerService', () => {
 
   it('should return status', async () => {
     jest.spyOn(eventLogRepository, 'count').mockResolvedValue(42);
-    jest.spyOn(eventLogRepository.createQueryBuilder().getOne as any, 'mockResolvedValue').mockResolvedValue({
-      ledger: 12345,
-      timestamp: new Date(),
-    });
+    jest
+      .spyOn(
+        eventLogRepository.createQueryBuilder().getOne as any,
+        'mockResolvedValue',
+      )
+      .mockResolvedValue({
+        ledger: 12345,
+        timestamp: new Date(),
+      });
 
     const status = await service.getStatus();
-    
+
     expect(status).toEqual({
       isRunning: true,
       lastProcessedLedger: null,
@@ -63,10 +70,15 @@ describe('IndexerService', () => {
 
   it('should get events by type', async () => {
     const mockEvents = [{ id: 1, eventType: 'call_created' }];
-    jest.spyOn(eventLogRepository.createQueryBuilder().getMany as any, 'mockResolvedValue').mockResolvedValue(mockEvents);
+    jest
+      .spyOn(
+        eventLogRepository.createQueryBuilder().getMany as any,
+        'mockResolvedValue',
+      )
+      .mockResolvedValue(mockEvents);
 
     const events = await service.getEventsByType('call_created' as any);
-    
+
     expect(events).toEqual(mockEvents);
     expect(eventLogRepository.createQueryBuilder).toHaveBeenCalled();
   });

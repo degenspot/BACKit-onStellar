@@ -7,9 +7,14 @@ mod events;
 mod storage;
 mod types;
 
+#[cfg(test)]
+mod test;
+
 use events::*;
 use storage::*;
 use types::*;
+
+const MAX_CALL_PAGE_SIZE: u32 = 20;
 
 /// CallRegistry contract implementation
 /// Manages prediction calls and staking on market outcomes
@@ -182,6 +187,63 @@ impl CallRegistry {
                     calls.push_back(call);
                 }
             }
+        }
+
+        calls
+    }
+
+    /// Get a paginated slice of calls starting at `start_id`.
+    /// Returns up to `limit` calls and enforces a maximum page size.
+    pub fn get_calls_paginated(env: Env, start_id: u64, limit: u32) -> Vec<Call> {
+        let mut calls = Vec::new(&env);
+        let total_calls = get_call_counter(&env);
+        let page_size = limit.min(MAX_CALL_PAGE_SIZE);
+
+        if page_size == 0 {
+            return calls;
+        }
+
+        let mut count = 0;
+        let mut current = if start_id < 1 { 1 } else { start_id };
+
+        while count < page_size && current <= total_calls {
+            if let Some(call) = get_call(&env, current) {
+                calls.push_back(call);
+                count += 1;
+            }
+            current += 1;
+        }
+
+        calls
+    }
+
+    /// Get a paginated slice of calls created by a specific address.
+    /// Returns up to `limit` calls starting from `start_id`.
+    pub fn get_calls_by_creator_paginated(
+        env: Env,
+        creator: Address,
+        start_id: u64,
+        limit: u32,
+    ) -> Vec<Call> {
+        let mut calls = Vec::new(&env);
+        let total_calls = get_call_counter(&env);
+        let page_size = limit.min(MAX_CALL_PAGE_SIZE);
+
+        if page_size == 0 {
+            return calls;
+        }
+
+        let mut count = 0;
+        let mut current = if start_id < 1 { 1 } else { start_id };
+
+        while count < page_size && current <= total_calls {
+            if let Some(call) = get_call(&env, current) {
+                if call.creator == creator {
+                    calls.push_back(call);
+                    count += 1;
+                }
+            }
+            current += 1;
         }
 
         calls

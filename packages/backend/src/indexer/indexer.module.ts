@@ -34,4 +34,4 @@ import { NotificationsModule } from '../notifications/notifications.module';
   ],
   exports: [IndexerService],
 })
-export class IndexerModule { }
+export class IndexerModule {}

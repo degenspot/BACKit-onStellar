@@ -13,12 +13,18 @@ export enum LeaderboardTimeframe {
 }
 
 export class LeaderboardQueryDto {
-  @ApiPropertyOptional({ enum: LeaderboardSort, default: LeaderboardSort.PROFIT })
+  @ApiPropertyOptional({
+    enum: LeaderboardSort,
+    default: LeaderboardSort.PROFIT,
+  })
   @IsEnum(LeaderboardSort)
   @IsOptional()
   sort: LeaderboardSort = LeaderboardSort.PROFIT;
 
-  @ApiPropertyOptional({ enum: LeaderboardTimeframe, default: LeaderboardTimeframe.ALL })
+  @ApiPropertyOptional({
+    enum: LeaderboardTimeframe,
+    default: LeaderboardTimeframe.ALL,
+  })
   @IsEnum(LeaderboardTimeframe)
   @IsOptional()
   timeframe: LeaderboardTimeframe = LeaderboardTimeframe.ALL;
@@ -116,6 +122,9 @@ export class UserLeaderboardStatsDto {
   @ApiProperty()
   totalProfit: number;
 
-  @ApiProperty({ description: 'Whether user qualifies for win rate leaderboard (min 5 settled calls)' })
+  @ApiProperty({
+    description:
+      'Whether user qualifies for win rate leaderboard (min 5 settled calls)',
+  })
   qualifiesForWinRate: boolean;
 }

@@ -30,6 +30,7 @@ export default function TokenSearch({
 
   useEffect(() => {
     if (query.length > 1) fetchTokens(query);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
   return (

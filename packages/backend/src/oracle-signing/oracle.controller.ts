@@ -1,4 +1,11 @@
-import { Body, Controller, Get, Post, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { OracleSigningService } from './oracle-signing.service';
 import { SignPriceDto } from './sign-price.dto';
@@ -7,12 +14,13 @@ import { SignedPriceData, OraclePublicKeyResponse } from './oracle.interfaces';
 @ApiTags('Oracle')
 @Controller('oracle')
 export class OracleController {
-  constructor(private readonly signingService: OracleSigningService) { }
+  constructor(private readonly signingService: OracleSigningService) {}
 
   @Get('public-key')
   @ApiOperation({
     summary: 'Get oracle public key',
-    description: 'Returns the 32-byte Ed25519 public key (hex) used by the Soroban contract for ed25519_verify.',
+    description:
+      'Returns the 32-byte Ed25519 public key (hex) used by the Soroban contract for ed25519_verify.',
   })
   @ApiResponse({ status: 200, description: 'Public key in hex format' })
   getPublicKey(): OraclePublicKeyResponse {

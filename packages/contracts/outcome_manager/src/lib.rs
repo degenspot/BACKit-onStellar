@@ -11,7 +11,7 @@ use soroban_sdk::{
 };
 
 use auth::require_admin;
-use events::{emit_outcome_finalized, emit_outcome_submitted, emit_payout_claimed};
+use events::{emit_fee_collected, emit_outcome_finalized, emit_outcome_submitted, emit_payout_claimed};
 use storage::{InstanceKey, Outcome, SignedOutcome, TempKey};
 use verification::{build_message, verify_signature};
 
@@ -58,13 +58,22 @@ impl OutcomeManager {
 
     /// Initialize the contract.
     ///
-    /// * `admin`   – address with privileged control
-    /// * `oracles` – list of trusted oracle ed25519 public keys (32-byte)
-    /// * `quorum`  – minimum matching votes required to finalize an outcome
+    /// * `admin`         – address with privileged control
+    /// * `oracles`       – list of trusted oracle ed25519 public keys (32-byte)
+    /// * `quorum`        – minimum matching votes required to finalize an outcome
+    /// * `fee_collector` – address that receives protocol fees
+    /// * `fee_bps`       – protocol fee in basis points (0–10000)
     ///
     /// # Panics
     /// If called more than once (`already initialized`).
-    pub fn initialize(env: Env, admin: Address, oracles: Vec<BytesN<32>>, quorum: u32) {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        oracles: Vec<BytesN<32>>,
+        quorum: u32,
+        fee_collector: Address,
+        fee_bps: u32,
+    ) {
         if env.storage().instance().has(&InstanceKey::Admin) {
             panic!("already initialized");
         }
@@ -73,6 +82,9 @@ impl OutcomeManager {
 
         if quorum == 0 || quorum > oracles.len() as u32 {
             panic!("invalid quorum");
+        }
+        if fee_bps > 10000 {
+            panic!("invalid fee_bps");
         }
 
         let mut oracle_map = Map::<BytesN<32>, bool>::new(&env);
@@ -85,6 +97,12 @@ impl OutcomeManager {
             .instance()
             .set(&InstanceKey::Oracles, &oracle_map);
         env.storage().instance().set(&InstanceKey::Quorum, &quorum);
+        env.storage()
+            .instance()
+            .set(&InstanceKey::FeeCollector, &fee_collector);
+        env.storage()
+            .instance()
+            .set(&InstanceKey::FeeBps, &fee_bps);
     }
 
     // ── Admin Controls ─────────────────────────────────────────────────────────
@@ -234,14 +252,13 @@ impl OutcomeManager {
 
     /// Claim a pro-rata payout for a winning staker.
     ///
-    /// **Payout formula** (no protocol fee):
+    /// **Payout formula** (with protocol fee):
     /// ```text
-    /// payout = staker_winning_stake
-    ///        + floor(staker_winning_stake * total_losing_stake / total_winning_stake)
+    /// fee        = total_losing_stake * fee_bps / 10000
+    /// net_losing = total_losing_stake - fee
+    /// payout     = staker_winning_stake
+    ///            + floor(staker_winning_stake * net_losing / total_winning_stake)
     /// ```
-    /// The staker recovers their own stake plus a proportional share of the
-    /// losing pool.  All arithmetic uses `checked_mul` / `checked_div` so
-    /// overflow or division-by-zero is caught at runtime.
     ///
     /// # Security
     /// The `Claimed` flag is written **before** the external `release_escrow`
@@ -287,9 +304,40 @@ impl OutcomeManager {
             panic!("invalid total winning stake");
         }
 
-        // 5. Pro-rata payout: staker_stake + floor(staker_stake * losing_pool / winning_pool)
+        // 5. Compute protocol fee from losing pool (only on first claim; fee is
+        //    proportional so each claimant effectively pays their share)
+        let fee_bps: u32 = env
+            .storage()
+            .instance()
+            .get(&InstanceKey::FeeBps)
+            .unwrap_or(0);
+        let fee_collector: Address = env
+            .storage()
+            .instance()
+            .get(&InstanceKey::FeeCollector)
+            .expect("fee collector not set");
+
+        // Staker's proportional share of the total fee
+        let total_fee = (total_losing_stake as i128)
+            .checked_mul(fee_bps as i128)
+            .expect("overflow in fee calculation")
+            .checked_div(10000)
+            .expect("division by zero");
+
+        let staker_fee_share = staker_winning_stake
+            .checked_mul(total_fee)
+            .expect("overflow in staker fee share")
+            .checked_div(total_winning_stake)
+            .expect("division by zero");
+
+        // 6. Net losing pool available to winners
+        let net_losing = total_losing_stake
+            .checked_sub(total_fee)
+            .expect("underflow in net losing");
+
+        // 7. Pro-rata payout from net losing pool
         let prize_share = staker_winning_stake
-            .checked_mul(total_losing_stake)
+            .checked_mul(net_losing)
             .expect("overflow in prize calculation")
             .checked_div(total_winning_stake)
             .expect("division by zero");
@@ -298,10 +346,16 @@ impl OutcomeManager {
             .checked_add(prize_share)
             .expect("overflow in payout sum");
 
-        // 6. Mark as claimed BEFORE external call (reentrancy guard)
+        // 8. Mark as claimed BEFORE external calls (reentrancy guard)
         env.storage().instance().set(&claimed_key, &true);
 
-        // 7. Release tokens from CallRegistry escrow → staker
+        // 9. Transfer fee to fee_collector (if non-zero)
+        if staker_fee_share > 0 {
+            registry_release_escrow(&env, &registry, call_id, &fee_collector, staker_fee_share);
+            emit_fee_collected(&env, call_id, staker_fee_share, &fee_collector);
+        }
+
+        // 10. Release net payout to staker
         registry_release_escrow(&env, &registry, call_id, &staker, payout);
 
         emit_payout_claimed(&env, call_id, &staker, payout);

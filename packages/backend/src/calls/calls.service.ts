@@ -53,11 +53,7 @@ export class CallsService {
 
   // ─── Reporting & Auto-Pause (circuit breaker) ─────────────────────────────
 
-  async reportCall(
-    id: string,
-    reporterAddress: string,
-    dto: ReportCallDto,
-  ) {
+  async reportCall(id: string, reporterAddress: string, dto: ReportCallDto) {
     const call = await this.getCallOrThrow(id);
 
     const nonReportable: CallStatus[] = [
@@ -129,7 +125,7 @@ export class CallsService {
       );
     }
 
-    call.status     = resolution;
+    call.status = resolution;
     call.resolvedAt = new Date();
     if (finalPrice !== undefined) call.finalPrice = finalPrice;
 
@@ -154,8 +150,8 @@ export class CallsService {
       };
     }
 
-    const yesOdds = yesStake > 0 ? (totalPool / yesStake) : 2.0;
-    const noOdds = noStake > 0 ? (totalPool / noStake) : 2.0;
+    const yesOdds = yesStake > 0 ? totalPool / yesStake : 2.0;
+    const noOdds = noStake > 0 ? totalPool / noStake : 2.0;
 
     return {
       yes: Number(yesOdds.toFixed(2)),

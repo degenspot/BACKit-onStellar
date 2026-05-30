@@ -56,10 +56,9 @@ describe('AnalyticsService – getTotalValueLocked', () => {
       'stake.userAddress = :userAddress',
       { userAddress: 'GBXXX' },
     );
-    expect(mockQb.andWhere).toHaveBeenCalledWith(
-      'call.outcome = :outcome',
-      { outcome: 'PENDING' },
-    );
+    expect(mockQb.andWhere).toHaveBeenCalledWith('call.outcome = :outcome', {
+      outcome: 'PENDING',
+    });
   });
 
   it('returns zeros when the user has no pending stakes', async () => {

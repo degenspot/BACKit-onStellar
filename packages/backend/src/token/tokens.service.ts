@@ -14,13 +14,15 @@ export const WHITELISTED_TOKENS: Partial<Token>[] = [
     assetCode: 'USDC',
     assetIssuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
     decimals: 7,
-    logoUrl: 'https://stellar.expert/img/assets/USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN.svg',
+    logoUrl:
+      'https://stellar.expert/img/assets/USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN.svg',
   },
   {
     assetCode: 'yXLM',
     assetIssuer: 'GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55',
     decimals: 7,
-    logoUrl: 'https://stellar.expert/img/assets/yXLM-GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55.svg',
+    logoUrl:
+      'https://stellar.expert/img/assets/yXLM-GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55.svg',
   },
 ];
 

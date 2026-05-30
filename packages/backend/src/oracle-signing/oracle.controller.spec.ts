@@ -2,19 +2,26 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { OracleController } from '../oracle.controller';
 import { OracleSigningService } from '../services/oracle-signing.service';
 import { SignPriceDto } from '../dto/sign-price.dto';
-import { SignedPriceData, OraclePublicKeyResponse } from '../interfaces/oracle.interfaces';
+import {
+  SignedPriceData,
+  OraclePublicKeyResponse,
+} from '../interfaces/oracle.interfaces';
 
 const MOCK_PUBLIC_KEY = 'a'.repeat(64);
 
 const mockSigningService: jest.Mocked<Partial<OracleSigningService>> = {
-  getPublicKey: jest.fn((): OraclePublicKeyResponse => ({ publicKey: MOCK_PUBLIC_KEY })),
-  sign: jest.fn((payload): SignedPriceData => ({
-    asset: payload.asset,
-    price: payload.price,
-    timestamp: payload.timestamp,
-    signature: 'b'.repeat(128),
-    publicKey: MOCK_PUBLIC_KEY,
-  })),
+  getPublicKey: jest.fn(
+    (): OraclePublicKeyResponse => ({ publicKey: MOCK_PUBLIC_KEY }),
+  ),
+  sign: jest.fn(
+    (payload): SignedPriceData => ({
+      asset: payload.asset,
+      price: payload.price,
+      timestamp: payload.timestamp,
+      signature: 'b'.repeat(128),
+      publicKey: MOCK_PUBLIC_KEY,
+    }),
+  ),
 };
 
 describe('OracleController', () => {
@@ -23,7 +30,9 @@ describe('OracleController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [OracleController],
-      providers: [{ provide: OracleSigningService, useValue: mockSigningService }],
+      providers: [
+        { provide: OracleSigningService, useValue: mockSigningService },
+      ],
     }).compile();
 
     controller = module.get<OracleController>(OracleController);
@@ -39,7 +48,11 @@ describe('OracleController', () => {
   });
 
   describe('POST /oracle/sign', () => {
-    const dto: SignPriceDto = { asset: 'BTC_USD', price: '65000.00', timestamp: 1700000000 };
+    const dto: SignPriceDto = {
+      asset: 'BTC_USD',
+      price: '65000.00',
+      timestamp: 1700000000,
+    };
 
     it('delegates to the signing service with correct payload', () => {
       controller.signPrice(dto);

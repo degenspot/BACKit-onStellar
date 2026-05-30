@@ -33,16 +33,19 @@ async function bootstrap() {
     .setTitle('BACKit on Stellar API')
     .setDescription(
       'API documentation for BACKit - Blockchain Asset Call Kit on Stellar. ' +
-      'A prediction market platform for cryptocurrency trading calls.'
+        'A prediction market platform for cryptocurrency trading calls.',
     )
     .setVersion('1.0.0')
     .setContact(
       'BACKit Team',
       'https://github.com/degenspot/BACKit-onStellar',
-      'support@backit.io'
+      'support@backit.io',
     )
     .setLicense('MIT', 'https://opensource.org/licenses/MIT')
-    .addServer(`http://localhost:${process.env.PORT || 3001}`, 'Local Development')
+    .addServer(
+      `http://localhost:${process.env.PORT || 3001}`,
+      'Local Development',
+    )
     .addServer('https://api.backit.io', 'Production')
     .addTag('default', 'General API information')
     .addTag('health', 'Health check and monitoring endpoints')
@@ -98,14 +101,33 @@ async function bootstrap() {
   await app.listen(port);
 
   Logger.log(`🚀 Backend running on http://localhost:${port}`, 'Bootstrap');
-  Logger.log(`📚 Swagger documentation available at http://localhost:${port}/api/docs`, 'Bootstrap');
-  Logger.log(`📊 API JSON spec available at http://localhost:${port}/api/docs-json`, 'Bootstrap');
-  Logger.log(`💚 Health check available at http://localhost:${port}/health`, 'Bootstrap');
-  Logger.log(`🔌 WebSocket gateway available at ws://localhost:${port}/ws`, 'Bootstrap');
-  Logger.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`, 'Bootstrap');
+  Logger.log(
+    `📚 Swagger documentation available at http://localhost:${port}/api/docs`,
+    'Bootstrap',
+  );
+  Logger.log(
+    `📊 API JSON spec available at http://localhost:${port}/api/docs-json`,
+    'Bootstrap',
+  );
+  Logger.log(
+    `💚 Health check available at http://localhost:${port}/health`,
+    'Bootstrap',
+  );
+  Logger.log(
+    `🔌 WebSocket gateway available at ws://localhost:${port}/ws`,
+    'Bootstrap',
+  );
+  Logger.log(
+    `🌍 Environment: ${process.env.NODE_ENV || 'development'}`,
+    'Bootstrap',
+  );
 }
 
 bootstrap().catch((error) => {
-  Logger.error(`Failed to start application: ${error.message}`, error.stack, 'Bootstrap');
+  Logger.error(
+    `Failed to start application: ${error.message}`,
+    error.stack,
+    'Bootstrap',
+  );
   process.exit(1);
 });

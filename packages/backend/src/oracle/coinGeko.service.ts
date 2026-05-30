@@ -22,7 +22,9 @@ export class CoinGeckoService {
       .filter(Boolean);
 
     if (!coinIds.length) {
-      this.logger.warn('No CoinGecko coin IDs mapped for symbols: ' + symbols.join(', '));
+      this.logger.warn(
+        'No CoinGecko coin IDs mapped for symbols: ' + symbols.join(', '),
+      );
       return new Map();
     }
 
@@ -47,7 +49,9 @@ export class CoinGeckoService {
       if (coinId && json[coinId]?.usd !== undefined) {
         priceMap.set(symbol.toUpperCase(), json[coinId].usd);
       } else {
-        this.logger.warn(`No CoinGecko price returned for ${symbol} (id: ${coinId})`);
+        this.logger.warn(
+          `No CoinGecko price returned for ${symbol} (id: ${coinId})`,
+        );
       }
     }
 

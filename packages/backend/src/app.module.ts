@@ -19,7 +19,6 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { TokensModule } from './token/tokens.module';
 import { RelayModule } from './relay/relay.module';
 
-
 @Module({
   imports: [
     CacheModule.registerAsync({
@@ -66,7 +65,8 @@ import { RelayModule } from './relay/relay.module';
     AnalyticsModule,
     NotificationsModule,
     SearchModule,
-    UsersModule,TokensModule,
+    UsersModule,
+    TokensModule,
     GatewaysModule,
     AuditModule,
     FirewallModule,

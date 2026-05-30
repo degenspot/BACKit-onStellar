@@ -21,4 +21,4 @@ import { EventsGateway } from './events.gateway';
   providers: [EventsGateway],
   exports: [EventsGateway], // export so other modules can call pushNotificationToUser()
 })
-export class GatewaysModule { }
+export class GatewaysModule {}

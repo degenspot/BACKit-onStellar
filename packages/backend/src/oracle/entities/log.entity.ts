@@ -26,7 +26,7 @@ export class PriceDeviationLog {
   thresholdPercent: number;
 
   @Column()
-  breached: boolean
+  breached: boolean;
   @Column({ default: false })
   signingHalted: boolean;
 

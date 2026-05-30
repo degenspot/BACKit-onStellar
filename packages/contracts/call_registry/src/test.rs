@@ -1,14 +1,23 @@
 #![cfg(test)]
 
-use soroban_sdk::{testutils::Events, Vec, Address, Env, IntoVal, Symbol, Bytes, String as SorobanString};
-use soroban_sdk::testutils::{Address as _, Ledger};
+use soroban_sdk::{
+    contract, contractimpl,
+    testutils::{Address as _, Events as _, Ledger as _},
+    Vec, Address, Env, IntoVal, Symbol, Bytes, String as SorobanString
+};
 
-extern crate std;
-use std::vec;
+#[contract]
+pub struct MockToken;
+
+#[contractimpl]
+impl MockToken {
+    pub fn transfer(_env: Env, _from: Address, _to: Address, _amount: i128) {}
+}
 
 mod call_registry {
     use super::*;
     use crate::{CallRegistry, CallRegistryClient};
+    use crate::storage::DataKey;
 
     fn setup() -> (Env, CallRegistryClient<'static>, Address, Address) {
     let env = Env::default();
@@ -44,25 +53,26 @@ fn test_set_admin_emits_admin_params_changed() {
  
     client.set_admin(&new_admin);
  
-    // EVENT CHECKING TEMPORARILY DISABLED
-    // let events = env.events().all();
-    // let last = events.last().expect("no events");
-    // 
-    // assert_eq!(
-    //     last.0,
-    //     vec![
-    //         &env,
-    //         "call_registry".into_val(&env),
-    //         "admin_params_changed".into_val(&env),
-    //     ]
-    // );
-    // 
-    // let (param, _changed_by, old_val, new_val): (Symbol, Address, Address, Address) =
-    //     last.1.into_val(&env);
-    // 
-    // assert_eq!(param, Symbol::new(&env, "admin"));
-    // assert_eq!(old_val, _old_admin);
-    // assert_eq!(new_val, new_admin);
+    let events = env.events().all();
+    let last = events.last().expect("no events");
+ 
+    // Topic: ("call_registry", "admin_params_changed")
+    assert_eq!(
+        last.1,
+        soroban_sdk::vec![
+            &env,
+            "call_registry".into_val(&env),
+            "admin_params_changed".into_val(&env),
+        ]
+    );
+ 
+    // First element of the payload tuple is the param discriminant
+    let (param, _changed_by, old_val, new_val): (Symbol, Address, Address, Address) =
+        last.2.into_val(&env);
+ 
+    assert_eq!(param, Symbol::new(&env, "admin"));
+    assert_eq!(old_val, old_admin);
+    assert_eq!(new_val, new_admin);
 }
  
 // ── set_outcome_manager ───────────────────────────────────────────────────────
@@ -89,7 +99,7 @@ fn test_set_outcome_manager_emits_admin_params_changed() {
     let last = events.last().expect("no events");
  
     let (param, _changed_by, old_val, new_val): (Symbol, Address, Address, Address) =
-        last.1.into_val(&env);
+        last.2.into_val(&env);
  
     assert_eq!(param, Symbol::new(&env, "outcome_manager"));
     assert_eq!(old_val, _old_om);
@@ -119,7 +129,7 @@ fn test_set_fee_emits_admin_params_changed() {
     let last = events.last().expect("no events");
  
     let (param, _changed_by, old_val, new_val): (Symbol, Address, u32, u32) =
-        last.1.into_val(&env);
+        last.2.into_val(&env);
  
     assert_eq!(param, Symbol::new(&env, "fee_bps"));
     assert_eq!(old_val, 0_u32);   // default set in initialize()
@@ -161,7 +171,7 @@ fn test_set_fee_above_max_panics() {
     // 2. The fixed test environment with mocked authorization
     fn create_test_env() -> (Env, Address, Address, Address) {
         let env = Env::default();
-        env.mock_all_auths(); // <--- THIS WAS MISSING!
+        env.mock_all_auths();
         let admin = Address::generate(&env);
         let outcome_manager = Address::generate(&env);
         let creator = Address::generate(&env);
@@ -645,6 +655,196 @@ fn test_set_fee_above_max_panics() {
         );
 
         assert_eq!(client.get_call_count(), 2);
+    }
+
+    #[test]
+    fn test_get_calls_paginated_respects_limit_and_start_id() {
+        let (env, admin, outcome_manager, creator) = create_test_env();
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+
+        client.initialize(&admin, &outcome_manager);
+        env.ledger().set_timestamp(1000);
+
+        let stake_token = Address::generate(&env);
+        let token_address = Address::generate(&env);
+        let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+
+        client.create_call(
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &2000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+        );
+        client.create_call(
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &3000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+        );
+        client.create_call(
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &4000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+        );
+
+        let results = client.get_calls_paginated(&2u64, &2u32);
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results.get(0).unwrap().id, 2);
+        assert_eq!(results.get(1).unwrap().id, 3);
+    }
+
+    #[test]
+    fn test_get_calls_by_creator_paginated_handles_gaps_and_max_limit() {
+        let (env, admin, outcome_manager, creator1) = create_test_env();
+        let creator2 = Address::generate(&env);
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+
+        client.initialize(&admin, &outcome_manager);
+        env.ledger().set_timestamp(1000);
+
+        let stake_token = Address::generate(&env);
+        let token_address = Address::generate(&env);
+        let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+
+        client.create_call(
+            &creator1,
+            &stake_token,
+            &100_000_000_i128,
+            &2000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+        );
+        client.create_call(
+            &creator2,
+            &stake_token,
+            &100_000_000_i128,
+            &3000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+        );
+
+        env.as_contract(&contract_id, || {
+            env.storage().instance().set(&DataKey::CallCounter, &4u64);
+        });
+
+        let last_call = client.create_call(
+            &creator1,
+            &stake_token,
+            &100_000_000_i128,
+            &4000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+        );
+
+        let results = client.get_calls_by_creator_paginated(&creator1, &1u64, &100u32);
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results.get(0).unwrap().id, 1);
+        assert_eq!(results.get(1).unwrap().id, last_call.id);
+        assert_eq!(results.get(1).unwrap().id, 5);
+        assert!(results.len() <= 20);
+    }
+
+    #[test]
+    fn test_get_calls_paginated_respects_maximum_limit() {
+        let (env, admin, outcome_manager, creator) = create_test_env();
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+
+        client.initialize(&admin, &outcome_manager);
+        env.ledger().set_timestamp(1000);
+
+        let stake_token = Address::generate(&env);
+        let token_address = Address::generate(&env);
+        let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+
+        for _ in 0..25 {
+            client.create_call(
+                &creator,
+                &stake_token,
+                &100_000_000_i128,
+                &2000u64,
+                &token_address,
+                &pair_id,
+                &ipfs_cid,
+            );
+        }
+
+        let results = client.get_calls_paginated(&1u64, &100u32);
+        assert_eq!(results.len(), 20);
+        assert_eq!(results.get(0).unwrap().id, 1);
+        assert_eq!(results.get(19).unwrap().id, 20);
+    }
+
+    #[test]
+    fn test_get_calls_by_creator_paginated_returns_creator_specific_results() {
+        let (env, admin, outcome_manager, creator1) = create_test_env();
+        let creator2 = Address::generate(&env);
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+
+        client.initialize(&admin, &outcome_manager);
+        env.ledger().set_timestamp(1000);
+
+        let stake_token = Address::generate(&env);
+        let token_address = Address::generate(&env);
+        let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+
+        client.create_call(
+            &creator1,
+            &stake_token,
+            &100_000_000_i128,
+            &2000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+        );
+        client.create_call(
+            &creator2,
+            &stake_token,
+            &100_000_000_i128,
+            &3000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+        );
+        client.create_call(
+            &creator1,
+            &stake_token,
+            &100_000_000_i128,
+            &4000u64,
+            &token_address,
+            &pair_id,
+            &ipfs_cid,
+        );
+
+        let results = client.get_calls_by_creator_paginated(&creator1, &1u64, &10u32);
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results.get(0).unwrap().creator, creator1);
+        assert_eq!(results.get(1).unwrap().creator, creator1);
+        assert_eq!(results.get(0).unwrap().id, 1);
+        assert_eq!(results.get(1).unwrap().id, 3);
     }
 
     #[test]
