@@ -9,7 +9,12 @@ import {
 
 export function ThrottleMutation() {
   return applyDecorators(
-    Throttle({ [THROTTLER_MUTATION_NAME]: { ttl: THROTTLER_MUTATION_TTL, limit: THROTTLER_MUTATION_LIMIT } }),
+    Throttle({
+      [THROTTLER_MUTATION_NAME]: {
+        ttl: THROTTLER_MUTATION_TTL,
+        limit: THROTTLER_MUTATION_LIMIT,
+      },
+    }),
     UseGuards(MutationThrottlerGuard),
   );
 }

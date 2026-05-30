@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
-import { OracleSigningService } from '../services/oracle-signing.service';
-import { PricePayload } from '../interfaces/oracle.interfaces';
+import { OracleSigningService } from './oracle-signing.service';
+import { PricePayload } from './oracle.interfaces';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,7 +24,9 @@ function buildConfigService(keyHex = TEST_PRIVATE_KEY_HEX): ConfigService {
   } as unknown as ConfigService;
 }
 
-async function buildService(configService: ConfigService): Promise<OracleSigningService> {
+async function buildService(
+  configService: ConfigService,
+): Promise<OracleSigningService> {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       OracleSigningService,
@@ -58,18 +60,24 @@ describe('OracleSigningService', () => {
       // override get to return undefined
       (bad.get as jest.Mock).mockReturnValue(undefined);
       const svc = new OracleSigningService(bad);
-      expect(() => svc.onModuleInit()).toThrow('ORACLE_PRIVATE_KEY_HEX is not set');
+      expect(() => svc.onModuleInit()).toThrow(
+        'ORACLE_PRIVATE_KEY_HEX is not set',
+      );
     });
 
     it('throws when key is wrong length', async () => {
       const svc = new OracleSigningService(buildConfigService('deadbeef'));
-      expect(() => svc.onModuleInit()).toThrow('must be exactly 64 hex characters');
+      expect(() => svc.onModuleInit()).toThrow(
+        'must be exactly 64 hex characters',
+      );
     });
 
     it('throws when key contains non-hex characters', async () => {
       const invalid = 'z'.repeat(64);
       const svc = new OracleSigningService(buildConfigService(invalid));
-      expect(() => svc.onModuleInit()).toThrow('must be exactly 64 hex characters');
+      expect(() => svc.onModuleInit()).toThrow(
+        'must be exactly 64 hex characters',
+      );
     });
 
     it('exposes a 64-char hex public key (32 bytes)', () => {
@@ -79,14 +87,20 @@ describe('OracleSigningService', () => {
     });
 
     it('returns consistent public key across multiple getPublicKey() calls', () => {
-      expect(service.getPublicKey().publicKey).toBe(service.getPublicKey().publicKey);
+      expect(service.getPublicKey().publicKey).toBe(
+        service.getPublicKey().publicKey,
+      );
     });
   });
 
   // ── Message Construction ────────────────────────────────────────────────────
 
   describe('buildMessage', () => {
-    const payload: PricePayload = { asset: 'BTC_USD', price: '65000.50', timestamp: 1700000000 };
+    const payload: PricePayload = {
+      asset: 'BTC_USD',
+      price: '65000.50',
+      timestamp: 1700000000,
+    };
 
     it('produces a Buffer', () => {
       expect(service.buildMessage(payload)).toBeInstanceOf(Buffer);
@@ -102,7 +116,9 @@ describe('OracleSigningService', () => {
       const msg = service.buildMessage(payload);
       const assetLen = Buffer.from('BTC_USD', 'utf8').length;
       const priceBytes = Buffer.from('65000.50', 'utf8');
-      expect(msg.slice(assetLen, assetLen + priceBytes.length)).toEqual(priceBytes);
+      expect(msg.slice(assetLen, assetLen + priceBytes.length)).toEqual(
+        priceBytes,
+      );
     });
 
     it('encodes timestamp as 8-byte big-endian u64 at the end', () => {
@@ -141,14 +157,20 @@ describe('OracleSigningService', () => {
     });
 
     it('is deterministic – same input produces same bytes', () => {
-      expect(service.buildMessage(payload)).toEqual(service.buildMessage(payload));
+      expect(service.buildMessage(payload)).toEqual(
+        service.buildMessage(payload),
+      );
     });
   });
 
   // ── Signing ─────────────────────────────────────────────────────────────────
 
   describe('sign', () => {
-    const payload: PricePayload = { asset: 'XLM_USD', price: '0.11', timestamp: 1700500000 };
+    const payload: PricePayload = {
+      asset: 'XLM_USD',
+      price: '0.11',
+      timestamp: 1700500000,
+    };
 
     it('returns asset, price, timestamp unchanged', () => {
       const result = service.sign(payload);
@@ -170,7 +192,9 @@ describe('OracleSigningService', () => {
 
     it('is deterministic – signing the same payload twice gives the same signature', () => {
       // Ed25519 is deterministic (RFC 8032)
-      expect(service.sign(payload).signature).toBe(service.sign(payload).signature);
+      expect(service.sign(payload).signature).toBe(
+        service.sign(payload).signature,
+      );
     });
 
     it('produces different signatures for different payloads', () => {
@@ -183,7 +207,11 @@ describe('OracleSigningService', () => {
   // ── Verification ────────────────────────────────────────────────────────────
 
   describe('verify', () => {
-    const payload: PricePayload = { asset: 'BTC_USD', price: '65000.00', timestamp: 1700000000 };
+    const payload: PricePayload = {
+      asset: 'BTC_USD',
+      price: '65000.00',
+      timestamp: 1700000000,
+    };
 
     it('returns true for a valid self-signed payload', () => {
       const { signature } = service.sign(payload);
@@ -192,17 +220,23 @@ describe('OracleSigningService', () => {
 
     it('returns false for a tampered price', () => {
       const { signature } = service.sign(payload);
-      expect(service.verify({ ...payload, price: '99999.00' }, signature)).toBe(false);
+      expect(service.verify({ ...payload, price: '99999.00' }, signature)).toBe(
+        false,
+      );
     });
 
     it('returns false for a tampered asset', () => {
       const { signature } = service.sign(payload);
-      expect(service.verify({ ...payload, asset: 'ETH_USD' }, signature)).toBe(false);
+      expect(service.verify({ ...payload, asset: 'ETH_USD' }, signature)).toBe(
+        false,
+      );
     });
 
     it('returns false for a tampered timestamp', () => {
       const { signature } = service.sign(payload);
-      expect(service.verify({ ...payload, timestamp: 1 }, signature)).toBe(false);
+      expect(service.verify({ ...payload, timestamp: 1 }, signature)).toBe(
+        false,
+      );
     });
 
     it('returns false for a random garbage signature', () => {
@@ -220,8 +254,14 @@ describe('OracleSigningService', () => {
 
   describe('cross-instance', () => {
     it('a signature from one instance verifies on another instance with the same key', async () => {
-      const service2 = await buildService(buildConfigService(TEST_PRIVATE_KEY_HEX));
-      const payload: PricePayload = { asset: 'ETH_USD', price: '3200.00', timestamp: 1700000000 };
+      const service2 = await buildService(
+        buildConfigService(TEST_PRIVATE_KEY_HEX),
+      );
+      const payload: PricePayload = {
+        asset: 'ETH_USD',
+        price: '3200.00',
+        timestamp: 1700000000,
+      };
 
       const { signature } = service.sign(payload);
       expect(service2.verify(payload, signature)).toBe(true);
@@ -230,7 +270,11 @@ describe('OracleSigningService', () => {
     it('a signature from one key does NOT verify with a different key', async () => {
       const otherKeyHex = generateTestKeyHex();
       const service2 = await buildService(buildConfigService(otherKeyHex));
-      const payload: PricePayload = { asset: 'ETH_USD', price: '3200.00', timestamp: 1700000000 };
+      const payload: PricePayload = {
+        asset: 'ETH_USD',
+        price: '3200.00',
+        timestamp: 1700000000,
+      };
 
       const { signature } = service.sign(payload);
       expect(service2.verify(payload, signature)).toBe(false);
@@ -241,7 +285,11 @@ describe('OracleSigningService', () => {
 
   describe('Soroban ed25519_verify parity', () => {
     it('Node crypto verify() agrees with the service verify()', () => {
-      const payload: PricePayload = { asset: 'XLM_USD', price: '0.11', timestamp: 1700500000 };
+      const payload: PricePayload = {
+        asset: 'XLM_USD',
+        price: '0.11',
+        timestamp: 1700500000,
+      };
       const { signature, publicKey } = service.sign(payload);
       const message = service.buildMessage(payload);
 
@@ -250,9 +298,18 @@ describe('OracleSigningService', () => {
       // SPKI DER prefix for Ed25519 (12 bytes fixed)
       const spkiHeader = Buffer.from('302a300506032b6570032100', 'hex');
       const spkiDer = Buffer.concat([spkiHeader, rawPub]);
-      const pubKeyObj = crypto.createPublicKey({ key: spkiDer, format: 'der', type: 'spki' });
+      const pubKeyObj = crypto.createPublicKey({
+        key: spkiDer,
+        format: 'der',
+        type: 'spki',
+      });
 
-      const isValid = crypto.verify(null, message, pubKeyObj, Buffer.from(signature, 'hex'));
+      const isValid = crypto.verify(
+        null,
+        message,
+        pubKeyObj,
+        Buffer.from(signature, 'hex'),
+      );
       expect(isValid).toBe(true);
     });
   });

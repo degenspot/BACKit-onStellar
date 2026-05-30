@@ -20,7 +20,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('calls')
 export class CallsController {
-  constructor(private readonly callsService: CallsService) { }
+  constructor(private readonly callsService: CallsService) {}
 
   @Get('feed')
   @UseInterceptors(CacheInterceptor)
@@ -28,6 +28,14 @@ export class CallsController {
   @CacheTTL(30) // 30 seconds
   getFeed(@Query() query: QueryCallsDto) {
     return this.callsService.getFeed(query);
+  }
+
+  @Get('feed/following')
+  getFollowingFeed(
+    @Query('address') address: string,
+    @Query() query: QueryCallsDto,
+  ) {
+    return this.callsService.getFollowingFeed(address, query);
   }
 
   @Get('search')

@@ -63,7 +63,7 @@ export class FirewallController {
     const actorId = req.user?.['id'] ?? req.user?.['sub'] ?? 'unknown';
     return this.firewallService.addRule(
       dto.cidr,
-      dto.type as IpRuleType,
+      dto.type,
       dto.reason ?? null,
       actorId,
     );

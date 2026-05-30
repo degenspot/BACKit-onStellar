@@ -4,11 +4,13 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  OneToMany,
+  ManyToOne,
   ManyToMany,
   JoinTable,
-  ManyToOne,
 } from 'typeorm';
 import { Badge } from './badge.entity';
+import { Follow } from './follow.entity';
 
 @Entity('users')
 export class Users {
@@ -27,23 +29,17 @@ export class Users {
   @ManyToOne(() => Users, { nullable: true, onDelete: 'SET NULL' })
   referredBy: Users | null;
 
-  // ─── social graph ──────────────────────────────────────────────────────
-  @ManyToMany(() => Users, (user) => user.followers)
-  @JoinTable({
-    name: 'user_follows',
-    joinColumn: { name: 'followerId' },
-    inverseJoinColumn: { name: 'followingId' },
-  })
-  following: Users[];
+  @OneToMany(() => Follow, (follow) => follow.follower)
+  following: Follow[];
 
-  @ManyToMany(() => Users, (user) => user.following)
-  followers: Users[];
+  @OneToMany(() => Follow, (follow) => follow.following)
+  followers: Follow[];
 
   // ─── badges ────────────────────────────────────────────────────────────
   @ManyToMany(() => Badge, (badge) => badge.users, { eager: false })
   @JoinTable({
     name: 'user_badges',
-    joinColumn:        { name: 'userId',  referencedColumnName: 'id' },
+    joinColumn: { name: 'userId', referencedColumnName: 'id' },
     inverseJoinColumn: { name: 'badgeId', referencedColumnName: 'id' },
   })
   badges: Badge[];

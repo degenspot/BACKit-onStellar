@@ -77,6 +77,7 @@ export class AnalyticsService {
         resolutionStatus,
         call: call && {
           id: call.id,
+          title: call.title,
           description: call.description,
           outcome: call.outcome,
           resolvedAt: call.resolvedAt ?? null,
@@ -432,6 +433,97 @@ export class AnalyticsService {
     const reputation = winRate * 0.7 + normalizedVolume * 0.3;
 
     return Number(reputation.toFixed(4));
+  }
+
+  async calculateReputationScore(userAddress: string): Promise<number> {
+    const stats = await this.dataSource.query(
+      `
+      SELECT
+        COUNT(*) FILTER (WHERE c.outcome IN ('YES', 'NO'))::int AS resolved_calls,
+        COUNT(*) FILTER (
+          WHERE c.outcome IN ('YES', 'NO') AND s.position = c.outcome
+        )::int AS wins,
+        COALESCE(SUM(s.amount), 0)::numeric AS total_volume
+      FROM stakes s
+      JOIN calls c ON c.id = s."callId"
+      WHERE s."userAddress" = $1
+      `,
+      [userAddress],
+    );
+
+    const row = stats[0] ?? {
+      resolved_calls: 0,
+      wins: 0,
+      total_volume: 0,
+    };
+
+    const resolvedCalls = Number(row.resolved_calls || 0);
+    const wins = Number(row.wins || 0);
+    const totalVolume = Number(row.total_volume || 0);
+    const winRate = resolvedCalls > 0 ? wins / resolvedCalls : 0;
+
+    const medianResult = await this.dataSource.query(
+      `
+      SELECT COALESCE(
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY user_volume),
+        0
+      ) AS median_volume
+      FROM (
+        SELECT COALESCE(SUM(amount), 0)::numeric AS user_volume
+        FROM stakes
+        GROUP BY "userAddress"
+      ) volumes
+      `,
+    );
+
+    const medianVolume = Number(medianResult[0]?.median_volume || 0);
+    const volumeScore =
+      medianVolume > 0 ? Math.min(1, totalVolume / medianVolume) : 0;
+
+    const activityRows = await this.dataSource.query(
+      `
+      SELECT DISTINCT DATE_TRUNC('week', s."createdAt")::date AS week_start
+      FROM stakes s
+      WHERE s."userAddress" = $1
+      ORDER BY week_start ASC
+      `,
+      [userAddress],
+    );
+
+    const weeks: Date[] = activityRows.map((r: { week_start: string }) => {
+      return new Date(r.week_start);
+    });
+    const activeWeeks = weeks.length;
+
+    let longestStreak = 0;
+    let currentStreak = 0;
+    let prevWeekTime = 0;
+    for (const week of weeks) {
+      const currentTime = week.getTime();
+      if (prevWeekTime && currentTime - prevWeekTime === 7 * 24 * 60 * 60 * 1000) {
+        currentStreak += 1;
+      } else {
+        currentStreak = 1;
+      }
+      longestStreak = Math.max(longestStreak, currentStreak);
+      prevWeekTime = currentTime;
+    }
+
+    const consistencyScore = Math.min(
+      1,
+      (Math.min(longestStreak, 8) / 8) * 0.7 +
+        (Math.min(activeWeeks, 12) / 12) * 0.3,
+    );
+
+    const confidenceMultiplier =
+      resolvedCalls >= 10 ? 1 : 0.3 + (resolvedCalls / 10) * 0.7;
+
+    const score =
+      (winRate * 0.4 + volumeScore * 0.3 + consistencyScore * 0.3) *
+      confidenceMultiplier *
+      100;
+
+    return Number(score.toFixed(2));
   }
 
   /**

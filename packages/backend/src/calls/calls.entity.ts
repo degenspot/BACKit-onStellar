@@ -7,12 +7,12 @@ import {
 } from 'typeorm';
 
 export enum CallStatus {
-  DRAFT      = 'DRAFT',
-  OPEN       = 'OPEN',
-  PAUSED     = 'PAUSED',       // <-- new: circuit breaker state
-  SETTLING   = 'SETTLING',
+  DRAFT = 'DRAFT',
+  OPEN = 'OPEN',
+  PAUSED = 'PAUSED', // <-- new: circuit breaker state
+  SETTLING = 'SETTLING',
   RESOLVED_YES = 'RESOLVED_YES',
-  RESOLVED_NO  = 'RESOLVED_NO',
+  RESOLVED_NO = 'RESOLVED_NO',
 }
 
 @Entity('calls')

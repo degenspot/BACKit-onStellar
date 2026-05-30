@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CallDetailData } from "@/types";
+import PayoutCalculator from "./PayoutCalculator";
 
 interface Props {
   call: CallDetailData;
@@ -30,9 +31,6 @@ export default function StakingInterface({ call, onStake, odds }: Props) {
   };
 
   const numericAmount = parseFloat(amount) || 0;
-  const currentMultiplier = selectedSide === 'YES' ? (odds?.yes || 2.0) : (odds?.no || 2.0);
-  const potentialPayout = (numericAmount * currentMultiplier).toFixed(2);
-  const profit = (parseFloat(potentialPayout) - numericAmount).toFixed(2);
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-8 shadow-sm">
@@ -109,41 +107,9 @@ export default function StakingInterface({ call, onStake, odds }: Props) {
         </div>
       </div>
 
-      {/* ROI Simulation */}
-      <div className={`mb-10 p-6 rounded-3xl border-2 transition-all duration-700 transform ${
-        selectedSide 
-          ? 'bg-indigo-50 border-indigo-100 translate-y-0 opacity-100 translate-y-0' 
-          : 'bg-gray-50/50 border-gray-100 opacity-40 translate-y-2'
-      }`}>
-        <div className="flex justify-between items-start mb-6">
-          <div>
-            <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-2">Expected Payout</p>
-            <p className="text-4xl font-black text-indigo-900 leading-none tracking-tight">
-              ${selectedSide ? potentialPayout : '0.00'}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-2">Net Profit</p>
-            <p className="text-2xl font-black text-emerald-500 leading-none">
-              +{selectedSide ? profit : '0.00'}
-            </p>
-          </div>
-        </div>
-        
-        <div className="space-y-3">
-          <div className="flex justify-between text-[10px] font-black text-indigo-400 uppercase tracking-widest">
-            <span>Market Payout Multiplier</span>
-            <span>{selectedSide ? currentMultiplier : '2.00'}x Potential</span>
-          </div>
-          <div className="w-full h-2 bg-indigo-200/50 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-indigo-600 relative overflow-hidden transition-all duration-1000 ease-out"
-              style={{ width: selectedSide ? `${Math.min(100, (currentMultiplier / 10) * 100)}%` : '0%' }}
-            >
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
-            </div>
-          </div>
-        </div>
+      {/* Payout Calculator */}
+      <div className="mb-10">
+        <PayoutCalculator callId={call.id} amount={numericAmount} side={selectedSide} />
       </div>
 
       {/* Stake button */}

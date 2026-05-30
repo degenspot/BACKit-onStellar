@@ -1,7 +1,11 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
-import { SignedPriceData, PricePayload, OraclePublicKeyResponse } from './oracle.interfaces';
+import {
+  SignedPriceData,
+  PricePayload,
+  OraclePublicKeyResponse,
+} from './oracle.interfaces';
 
 /**
  * OracleSigningService
@@ -22,7 +26,7 @@ export class OracleSigningService implements OnModuleInit {
   private publicKey: crypto.KeyObject;
   private publicKeyHex: string;
 
-  constructor(private readonly configService: ConfigService) { }
+  constructor(private readonly configService: ConfigService) {}
 
   onModuleInit(): void {
     this.loadKeyPair();
@@ -36,12 +40,14 @@ export class OracleSigningService implements OnModuleInit {
     if (!hexSeed) {
       throw new Error(
         'ORACLE_PRIVATE_KEY_HEX is not set. Generate one with: ' +
-        'node -e "const c=require(\'crypto\');console.log(c.generateKeyPairSync(\'ed25519\').privateKey.export({type:\'pkcs8\',format:\'der\'}).slice(-32).toString(\'hex\'))"',
+          "node -e \"const c=require('crypto');console.log(c.generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'der'}).slice(-32).toString('hex'))\"",
       );
     }
 
     if (!/^[0-9a-fA-F]{64}$/.test(hexSeed)) {
-      throw new Error('ORACLE_PRIVATE_KEY_HEX must be exactly 64 hex characters (32-byte seed)');
+      throw new Error(
+        'ORACLE_PRIVATE_KEY_HEX must be exactly 64 hex characters (32-byte seed)',
+      );
     }
 
     const seedBuffer = Buffer.from(hexSeed, 'hex');
@@ -56,7 +62,10 @@ export class OracleSigningService implements OnModuleInit {
     this.publicKey = crypto.createPublicKey(this.privateKey);
 
     // Extract raw 32-byte public key for Soroban (BytesN<32>)
-    const pubDer = this.publicKey.export({ type: 'spki', format: 'der' }) as Buffer;
+    const pubDer = this.publicKey.export({
+      type: 'spki',
+      format: 'der',
+    }) as Buffer;
     // SPKI DER for Ed25519: last 32 bytes are the raw key
     this.publicKeyHex = pubDer.slice(-32).toString('hex');
 
@@ -69,10 +78,7 @@ export class OracleSigningService implements OnModuleInit {
    */
   private encodePkcs8Ed25519(seed: Buffer): Buffer {
     // ASN.1 PKCS#8 prefix for Ed25519 private key
-    const pkcs8Header = Buffer.from(
-      '302e020100300506032b657004220420',
-      'hex',
-    );
+    const pkcs8Header = Buffer.from('302e020100300506032b657004220420', 'hex');
     return Buffer.concat([pkcs8Header, seed]);
   }
 

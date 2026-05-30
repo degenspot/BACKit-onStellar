@@ -1,18 +1,26 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Users } from './entities/users.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { AnalyticsService } from 'src/analytics/analytics.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { RegisterDto } from './dto/register.dto';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { Inject } from '@nestjs/common';
+import { Follow } from './entities/follow.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(Users)
     private readonly usersRepo: Repository<Users>,
+    @InjectRepository(Follow)
+    private readonly followsRepo: Repository<Follow>,
     private readonly analyticsService: AnalyticsService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
@@ -38,45 +46,33 @@ export class UsersService {
       throw new BadRequestException('You cannot follow yourself');
     }
 
-    const follower = await this.findOrCreateByAddress(followerAddress);
-    const following = await this.findOrCreateByAddress(followingAddress);
+    await this.findOrCreateByAddress(followerAddress);
+    await this.findOrCreateByAddress(followingAddress);
 
-    const loadedFollower = await this.usersRepo.findOne({
-      where: { id: follower.id },
-      relations: ['following'],
+    const existing = await this.followsRepo.findOne({
+      where: { followerAddress, followingAddress },
     });
-
-    if (!loadedFollower) {
-      throw new BadRequestException('Follower user not found');
+    if (existing) {
+      throw new ConflictException('Already following this user');
     }
 
-    if (loadedFollower.following.some((u) => u.id === following.id)) {
-      throw new BadRequestException('Already following this user');
-    }
-
-    loadedFollower.following.push(following);
-    const result = await this.usersRepo.save(loadedFollower);
+    const result = await this.followsRepo.save(
+      this.followsRepo.create({ followerAddress, followingAddress }),
+    );
     await this.invalidateUserProfile(followerAddress);
     await this.invalidateUserProfile(followingAddress);
     return result;
   }
 
   async unfollow(followerAddress: string, followingAddress: string) {
-    const follower = await this.usersRepo.findOne({
-      where: { walletAddress: followerAddress },
-      relations: ['following'],
+    const follow = await this.followsRepo.findOne({
+      where: { followerAddress, followingAddress },
     });
+    if (!follow) {
+      throw new BadRequestException('Not following this user');
+    }
 
-    if (!follower) throw new BadRequestException('Follower user not found');
-
-    const following = await this.usersRepo.findOne({
-      where: { walletAddress: followingAddress },
-    });
-
-    if (!following) throw new BadRequestException('User to unfollow not found');
-
-    follower.following = follower.following.filter((u) => u.id !== following.id);
-    const result = await this.usersRepo.save(follower);
+    const result = await this.followsRepo.remove(follow);
     await this.invalidateUserProfile(followerAddress);
     await this.invalidateUserProfile(followingAddress);
     return result;
@@ -89,27 +85,34 @@ export class UsersService {
     }
   }
 
-  async getFollowers(address: string) {
-    const user = await this.usersRepo.findOne({
-      where: { walletAddress: address },
-      relations: ['followers'],
+  async getFollowers(address: string, page = 1, limit = 20) {
+    const [data, total] = await this.followsRepo.findAndCount({
+      where: { followingAddress: address },
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
-    return user?.followers ?? [];
+
+    return { data, total, page, limit };
   }
 
-  async getFollowing(address: string) {
-    const user = await this.usersRepo.findOne({
-      where: { walletAddress: address },
-      relations: ['following'],
+  async getFollowing(address: string, page = 1, limit = 20) {
+    const [data, total] = await this.followsRepo.findAndCount({
+      where: { followerAddress: address },
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
-    return user?.following ?? [];
+
+    return { data, total, page, limit };
   }
 
   async register(registerDto: RegisterDto) {
-    const { referralCode, walletAddress, ...userData } = registerDto as RegisterDto & {
-      email: string;
-      walletAddress: string;
-    };
+    const { referralCode, walletAddress, ...userData } =
+      registerDto as RegisterDto & {
+        email: string;
+        walletAddress: string;
+      };
 
     let referrer: Users | null = null;
 
@@ -152,10 +155,19 @@ export class UsersService {
 
     const reliability =
       await this.analyticsService.calculatePredictorReliability(user.id);
+    const reputationScore =
+      await this.analyticsService.calculateReputationScore(walletAddress);
+    const [followerCount, followingCount] = await Promise.all([
+      this.followsRepo.count({ where: { followingAddress: walletAddress } }),
+      this.followsRepo.count({ where: { followerAddress: walletAddress } }),
+    ]);
 
     return {
       ...user,
       predictorReliability: reliability,
+      reputationScore,
+      followerCount,
+      followingCount,
     };
   }
 }

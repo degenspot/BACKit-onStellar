@@ -1,0 +1,131 @@
+name: Backend NestJS CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'packages/backend/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'turbo.json'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'packages/backend/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'turbo.json'
+      - '.github/workflows/backend.yml'
+
+jobs:
+  backend-ci:
+    name: Backend Lint, Build & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: backit_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Detect Backend-Relevant Changes
+        id: backend_changes
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          CHANGED_FILES="$(git diff --name-only "$BASE_SHA" "${{ github.sha }}" || true)"
+          echo "$CHANGED_FILES"
+          if echo "$CHANGED_FILES" | grep -Eq '^(packages/backend/|pnpm-lock.yaml$|package.json$|turbo.json$)'; then
+            echo "backend_relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend_relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Backend Lint (Changed Files Only)
+        if: steps.backend_changes.outputs.backend_relevant == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          CHANGED_BACKEND_TS_FILES="$(git diff --name-only "$BASE_SHA" "${{ github.sha }}" | grep -E '^packages/backend/.*\.ts$' || true)"
+          if [ -z "$CHANGED_BACKEND_TS_FILES" ]; then
+            echo "No backend TypeScript files changed. Skipping lint."
+            exit 0
+          fi
+          echo "Linting changed backend files:"
+          echo "$CHANGED_BACKEND_TS_FILES"
+          pnpm --filter backend exec eslint --fix $CHANGED_BACKEND_TS_FILES
+
+      - name: Build Backend
+        if: steps.backend_changes.outputs.backend_relevant == 'true'
+        run: pnpm --filter backend build
+
+      - name: Run Backend Tests with Coverage
+        if: steps.backend_changes.outputs.backend_relevant == 'true'
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/backit_test
+          REDIS_URL: redis://localhost:6379
+          NODE_ENV: test
+        run: pnpm --filter backend test:cov
+
+      - name: Upload Test Coverage Artifacts
+        if: steps.backend_changes.outputs.backend_relevant == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-coverage
+          path: packages/backend/coverage/
+          retention-days: 7

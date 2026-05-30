@@ -1,5 +1,5 @@
 export enum DispatchType {
-    EMAIL = 'email',
-    WEBHOOK = 'webhook',
-    NONE = 'none',
+  EMAIL = 'email',
+  WEBHOOK = 'webhook',
+  NONE = 'none',
 }

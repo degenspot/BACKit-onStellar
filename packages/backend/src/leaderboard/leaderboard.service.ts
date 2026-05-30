@@ -28,9 +28,11 @@ export class LeaderboardService {
     @InjectRepository(LeaderboardSnapshot)
     private readonly snapshotRepo: Repository<LeaderboardSnapshot>,
     private readonly dataSource: DataSource,
-  ) { }
+  ) {}
 
-  async getLeaderboard(query: LeaderboardQueryDto): Promise<LeaderboardResponseDto> {
+  async getLeaderboard(
+    query: LeaderboardQueryDto,
+  ): Promise<LeaderboardResponseDto> {
     const { sort, timeframe, page, limit } = query;
     const offset = (page - 1) * limit;
 
@@ -68,7 +70,9 @@ export class LeaderboardService {
 
     // Apply minimum calls filter for win rate leaderboard
     if (sort === LeaderboardSort.WINRATE) {
-      qb = qb.having('COUNT(*) >= :minCalls', { minCalls: MIN_CALLS_FOR_WINRATE });
+      qb = qb.having('COUNT(*) >= :minCalls', {
+        minCalls: MIN_CALLS_FOR_WINRATE,
+      });
       qb = qb.orderBy('winRate', 'DESC').addOrderBy('totalProfit', 'DESC');
     } else {
       qb = qb.orderBy('totalProfit', 'DESC').addOrderBy('winRate', 'DESC');
@@ -150,11 +154,14 @@ export class LeaderboardService {
           .from(PredictionCall, 'pc')
           .where('pc.status = :status', { status: CallStatus.SETTLED })
           .groupBy('pc.userId')
-          .having('SUM(pc.profitUsdc) > :userProfit', { userProfit: totalProfit });
+          .having('SUM(pc.profitUsdc) > :userProfit', {
+            userProfit: totalProfit,
+          });
       }, 'ranked')
       .getRawOne();
 
-    const rank = totalCalls > 0 ? Number(profitRankResult?.rank ?? 0) + 1 : null;
+    const rank =
+      totalCalls > 0 ? Number(profitRankResult?.rank ?? 0) + 1 : null;
 
     return {
       userId,
@@ -174,7 +181,7 @@ export class LeaderboardService {
   ): Promise<number> {
     const dateFilter = this.getDateFilter(timeframe);
 
-    let qb = this.dataSource
+    const qb = this.dataSource
       .createQueryBuilder()
       .select('COUNT(DISTINCT sub.userId)', 'count')
       .from((subQuery) => {
@@ -185,13 +192,17 @@ export class LeaderboardService {
           .where('pc.status = :status', { status: CallStatus.SETTLED });
 
         if (dateFilter) {
-          inner = inner.andWhere('pc.settledAt >= :since', { since: dateFilter });
+          inner = inner.andWhere('pc.settledAt >= :since', {
+            since: dateFilter,
+          });
         }
 
         inner = inner.groupBy('pc.userId');
 
         if (sort === LeaderboardSort.WINRATE) {
-          inner = inner.having('COUNT(*) >= :minCalls', { minCalls: MIN_CALLS_FOR_WINRATE });
+          inner = inner.having('COUNT(*) >= :minCalls', {
+            minCalls: MIN_CALLS_FOR_WINRATE,
+          });
         }
 
         return inner;

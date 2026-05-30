@@ -1,10 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useEffect } from "react";
-import { useWallet, WalletState } from "../hooks/useWallet";
+import { useWallet, WalletState, WalletType } from "../hooks/useWallet";
 import { useProfile, UserProfile, ProfileSaveStatus } from "../hooks/useProfile";
-
-// ─── Context shape ────────────────────────────────────────────────────────────
 
 interface WalletContextValue {
   // Wallet
@@ -12,28 +10,26 @@ interface WalletContextValue {
   publicKey: string | null;
   shortAddress: string | null;
   isConnected: boolean;
+  walletType: WalletType | null;
+  installedWallets: Record<WalletType, boolean> | null;
+  /** @deprecated use installedWallets.freighter */
   isFreighterInstalled: boolean | null;
-  connect: () => Promise<void>;
+  connect: (walletType: WalletType) => Promise<void>;
   disconnect: () => void;
 
   // Profile
   profile: UserProfile | null;
   isProfileLoading: boolean;
   saveStatus: ProfileSaveStatus;
-  saveProfile: (
-    updates: Partial<Pick<UserProfile, "displayName" | "bio" | "avatarUrl">>,
-  ) => Promise<void>;
+  saveProfile: (updates: Partial<Pick<UserProfile, "displayName" | "bio" | "avatarUrl">>) => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextValue | null>(null);
-
-// ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const walletHook = useWallet();
   const profileHook = useProfile(walletHook.publicKey);
 
-  // Clear profile data when wallet disconnects
   useEffect(() => {
     if (!walletHook.isConnected) {
       profileHook.clearProfile();
@@ -41,32 +37,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [walletHook.isConnected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const value: WalletContextValue = {
-    // Wallet
     wallet: walletHook.wallet,
     publicKey: walletHook.publicKey,
     shortAddress: walletHook.shortAddress,
     isConnected: walletHook.isConnected,
+    walletType: walletHook.walletType,
+    installedWallets: walletHook.installedWallets,
     isFreighterInstalled: walletHook.isFreighterInstalled,
     connect: walletHook.connect,
     disconnect: walletHook.disconnect,
-
-    // Profile
     profile: profileHook.profile,
     isProfileLoading: profileHook.isLoading,
     saveStatus: profileHook.saveStatus,
     saveProfile: profileHook.saveProfile,
   };
 
-  return (
-    <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
-  );
+  return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
 }
-
-// ─── Consumer hook ────────────────────────────────────────────────────────────
 
 export function useWalletContext(): WalletContextValue {
   const ctx = useContext(WalletContext);
-  if (!ctx)
-    throw new Error("useWalletContext must be used within <WalletProvider>");
+  if (!ctx) throw new Error("useWalletContext must be used within <WalletProvider>");
   return ctx;
 }

@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindManyOptions, Between, FindOptionsWhere } from 'typeorm';
+import {
+  Repository,
+  FindManyOptions,
+  Between,
+  FindOptionsWhere,
+} from 'typeorm';
 import { AuditLog, AuditActionType, AuditStatus } from './audit-log.entity';
 import { QueryAuditLogsDto } from './dto/query-audit-logs.dto';
 
@@ -44,7 +49,10 @@ export class AuditService {
       await this.auditRepo.save(entry);
     } catch (err) {
       // Log but never bubble — audit failures must not break admin operations
-      this.logger.error('Failed to persist audit log entry', (err as Error).stack);
+      this.logger.error(
+        'Failed to persist audit log entry',
+        (err as Error).stack,
+      );
     }
   }
 
@@ -52,7 +60,9 @@ export class AuditService {
    * Query audit logs with optional filters.
    * Returns paginated results ordered newest-first.
    */
-  async findAll(query: QueryAuditLogsDto): Promise<{ data: AuditLog[]; total: number }> {
+  async findAll(
+    query: QueryAuditLogsDto,
+  ): Promise<{ data: AuditLog[]; total: number }> {
     const {
       actorId,
       actionType,

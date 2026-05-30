@@ -2,6 +2,11 @@ import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PlatformSettings } from './entities/platform-settings.entity';
+import { UpdateConfigDto } from './dto/update-config.dto';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
+import { Inject } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 export interface AdminParamsChangedEvent {
   feePercent?: number;
@@ -19,6 +24,8 @@ export class ConfigService implements OnApplicationBootstrap {
   constructor(
     @InjectRepository(PlatformSettings)
     private readonly settingsRepo: Repository<PlatformSettings>,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -32,9 +39,15 @@ export class ConfigService implements OnApplicationBootstrap {
   // ─── Public API ───────────────────────────────────────────────────────────
 
   async getSettings(): Promise<PlatformSettings> {
-    return this.settingsRepo.findOneOrFail({
+    const cacheKey = 'config:public';
+    const cached = await this.cacheManager.get<PlatformSettings>(cacheKey);
+    if (cached) return cached;
+
+    const settings = await this.settingsRepo.findOneOrFail({
       where: { id: this.SINGLETON_ID },
     });
+    await this.cacheManager.set(cacheKey, settings, 300_000);
+    return settings;
   }
 
   /**
@@ -65,7 +78,34 @@ export class ConfigService implements OnApplicationBootstrap {
     settings.lastUpdatedByTxHash = event.txHash;
     settings.lastUpdatedAtLedger = event.ledger;
 
-    return this.settingsRepo.save(settings);
+    const saved = await this.settingsRepo.save(settings);
+    await this.cacheManager.del('config:public');
+    this.eventEmitter.emit('config.updated', {
+      feePercent: saved.feePercent,
+      source: 'indexer',
+    });
+    return saved;
+  }
+
+  async updateOffChainSettings(dto: UpdateConfigDto): Promise<PlatformSettings> {
+    const settings = await this.getSettings();
+    if (dto.feePercent !== undefined) settings.feePercent = dto.feePercent;
+    if (dto.minStake !== undefined) settings.minStake = dto.minStake;
+    if (dto.maxDuration !== undefined) settings.maxDuration = dto.maxDuration;
+    if (dto.supportedTokens !== undefined) {
+      settings.supportedTokens = dto.supportedTokens;
+    }
+    if (dto.contractAddresses !== undefined) {
+      settings.contractAddresses = dto.contractAddresses;
+    }
+
+    const saved = await this.settingsRepo.save(settings);
+    await this.cacheManager.del('config:public');
+    this.eventEmitter.emit('config.updated', {
+      feePercent: saved.feePercent,
+      source: 'admin',
+    });
+    return saved;
   }
 
   // ─── Private ──────────────────────────────────────────────────────────────
@@ -82,6 +122,10 @@ export class ConfigService implements OnApplicationBootstrap {
           feePercent: parseFloat(process.env.DEFAULT_FEE_PERCENT ?? '1.0'),
           contractId: process.env.SOROBAN_CONTRACT_ID ?? null,
           oracleContractId: process.env.ORACLE_CONTRACT_ID ?? null,
+          minStake: 0,
+          maxDuration: 86400,
+          supportedTokens: [],
+          contractAddresses: {},
         }),
       );
       this.logger.log('PlatformSettings singleton created with defaults');

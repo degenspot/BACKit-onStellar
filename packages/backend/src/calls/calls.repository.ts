@@ -10,9 +10,12 @@ export class CallsRepository extends Repository<Call> {
   }
 
   visibleQuery(alias = 'call'): SelectQueryBuilder<Call> {
-    return this.createQueryBuilder(alias).where(`${alias}.isHidden = :isHidden`, {
-      isHidden: false,
-    });
+    return this.createQueryBuilder(alias).where(
+      `${alias}.isHidden = :isHidden`,
+      {
+        isHidden: false,
+      },
+    );
   }
 
   async findVisibleById(id: string): Promise<Call | null> {
@@ -27,7 +30,43 @@ export class CallsRepository extends Repository<Call> {
       .getManyAndCount();
   }
 
-  async searchVisible(search: string, page: number, limit: number): Promise<[Call[], number]> {
+  async findTrendingFeed(page: number, limit: number): Promise<[Call[], number]> {
+    return this.visibleQuery()
+      .leftJoin('call_trending_scores', 'trend', 'trend."callId" = call.id')
+      .orderBy('COALESCE(trend.score, 0)', 'DESC')
+      .addOrderBy('call.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+  }
+
+  async findFeedByFollowing(
+    address: string,
+    page: number,
+    limit: number,
+  ): Promise<[Call[], number]> {
+    return this.visibleQuery()
+      .andWhere(
+        `call.creatorAddress IN (
+          SELECT u_following.walletAddress
+          FROM users u_follower
+          JOIN user_follows uf ON uf."followerId" = u_follower.id
+          JOIN users u_following ON u_following.id = uf."followingId"
+          WHERE u_follower.walletAddress = :address
+        )`,
+        { address },
+      )
+      .orderBy('call.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+  }
+
+  async searchVisible(
+    search: string,
+    page: number,
+    limit: number,
+  ): Promise<[Call[], number]> {
     return this.visibleQuery()
       .andWhere(
         '(LOWER(call.title) LIKE :term OR LOWER(call.description) LIKE :term)',

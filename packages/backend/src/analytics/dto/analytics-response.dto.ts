@@ -33,13 +33,22 @@ export class WinLossCount {
 }
 
 export class UserAnalyticsResponse {
-  @ApiProperty({ type: [ProfitDataPoint], description: 'Cumulative profit over time' })
+  @ApiProperty({
+    type: [ProfitDataPoint],
+    description: 'Cumulative profit over time',
+  })
   cumulativeProfitPerDay: ProfitDataPoint[];
 
-  @ApiProperty({ type: [ProfitDataPoint], description: 'Cumulative profit per week' })
+  @ApiProperty({
+    type: [ProfitDataPoint],
+    description: 'Cumulative profit per week',
+  })
   cumulativeProfitPerWeek: ProfitDataPoint[];
 
-  @ApiProperty({ type: [AccuracyDataPoint], description: 'Accuracy trend over time' })
+  @ApiProperty({
+    type: [AccuracyDataPoint],
+    description: 'Accuracy trend over time',
+  })
   accuracyTrend: AccuracyDataPoint[];
 
   @ApiProperty({ type: WinLossCount, description: 'Win/loss statistics' })

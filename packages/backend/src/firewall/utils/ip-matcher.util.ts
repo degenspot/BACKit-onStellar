@@ -50,9 +50,11 @@ export function ipMatchesCidr(ip: string, cidr: string): boolean {
 // ─── IPv4 helpers ──────────────────────────────────────────────────────────
 
 function ipToUint32(ip: string): number {
-  return ip
-    .split('.')
-    .reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+  return (
+    ip
+      .split('.')
+      .reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0
+  );
 }
 
 function ipv4InCidr(ip: string, range: string, bits: number): boolean {
@@ -78,7 +80,9 @@ function expandIPv6(ip: string): string {
     const right = halves[1] ? halves[1].split(':') : [];
     const missing = 8 - left.length - right.length;
     const middle = Array(missing).fill('0');
-    return [...left, ...middle, ...right].map((g) => g.padStart(4, '0')).join(':');
+    return [...left, ...middle, ...right]
+      .map((g) => g.padStart(4, '0'))
+      .join(':');
   }
   return ip
     .split(':')
@@ -88,7 +92,8 @@ function expandIPv6(ip: string): string {
 
 function ipv6InCidr(ip: string, range: string, bits: number): boolean {
   if (bits < 0 || bits > 128) return false;
-  const mask = bits === 0 ? 0n : (~0n << BigInt(128 - bits)) & ((1n << 128n) - 1n);
+  const mask =
+    bits === 0 ? 0n : (~0n << BigInt(128 - bits)) & ((1n << 128n) - 1n);
   return (ipv6ToBigInt(ip) & mask) === (ipv6ToBigInt(range) & mask);
 }
 
@@ -118,7 +123,7 @@ export const BOT_UA_PATTERNS: RegExp[] = [
   /wget\//i,
   /python-requests/i,
   /go-http-client/i,
-  /axios\//i,        // headless scripts often forget to change UA
+  /axios\//i, // headless scripts often forget to change UA
   /java\//i,
   /libwww-perl/i,
   /scrapy/i,

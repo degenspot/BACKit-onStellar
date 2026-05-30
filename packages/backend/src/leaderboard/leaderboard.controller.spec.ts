@@ -7,7 +7,7 @@ import {
   UserLeaderboardStatsDto,
   LeaderboardSort,
   LeaderboardTimeframe,
-} from './dto/leaderboard.dto';
+} from './leaderboard.dto';
 
 const mockLeaderboardResponse: LeaderboardResponseDto = {
   data: [
@@ -54,7 +54,9 @@ describe('LeaderboardController', () => {
         {
           provide: LeaderboardService,
           useValue: {
-            getLeaderboard: jest.fn().mockResolvedValue(mockLeaderboardResponse),
+            getLeaderboard: jest
+              .fn()
+              .mockResolvedValue(mockLeaderboardResponse),
             getUserStats: jest.fn().mockResolvedValue(mockUserStats),
           },
         },
@@ -93,7 +95,10 @@ describe('LeaderboardController', () => {
       await controller.getLeaderboard(query);
 
       expect(service.getLeaderboard).toHaveBeenCalledWith(
-        expect.objectContaining({ sort: LeaderboardSort.WINRATE, timeframe: LeaderboardTimeframe.MONTH }),
+        expect.objectContaining({
+          sort: LeaderboardSort.WINRATE,
+          timeframe: LeaderboardTimeframe.MONTH,
+        }),
       );
     });
 
@@ -128,7 +133,11 @@ describe('LeaderboardController', () => {
     });
 
     it('returns stats with qualifiesForWinRate flag', async () => {
-      service.getUserStats.mockResolvedValue({ ...mockUserStats, totalCalls: 3, qualifiesForWinRate: false });
+      service.getUserStats.mockResolvedValue({
+        ...mockUserStats,
+        totalCalls: 3,
+        qualifiesForWinRate: false,
+      });
 
       const result = await controller.getUserStats('some-uuid');
 

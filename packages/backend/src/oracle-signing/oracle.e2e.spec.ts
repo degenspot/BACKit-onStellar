@@ -7,7 +7,9 @@ import { OracleModule } from '../oracle.module';
 
 // Generate a deterministic test key
 const { privateKey: _testPrivateKey } = crypto.generateKeyPairSync('ed25519');
-const testPrivateKeyHex = (_testPrivateKey.export({ type: 'pkcs8', format: 'der' }) as Buffer)
+const testPrivateKeyHex = (
+  _testPrivateKey.export({ type: 'pkcs8', format: 'der' }) as Buffer
+)
   .slice(-32)
   .toString('hex');
 
@@ -19,14 +21,13 @@ describe('Oracle E2E', () => {
     process.env.ORACLE_PRIVATE_KEY_HEX = testPrivateKeyHex;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot({ isGlobal: true }),
-        OracleModule,
-      ],
+      imports: [ConfigModule.forRoot({ isGlobal: true }), OracleModule],
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
+    );
     await app.init();
   });
 
@@ -39,7 +40,9 @@ describe('Oracle E2E', () => {
 
   describe('GET /oracle/public-key', () => {
     it('returns 200 with a 64-char hex public key', async () => {
-      const res = await request(app.getHttpServer()).get('/oracle/public-key').expect(200);
+      const res = await request(app.getHttpServer())
+        .get('/oracle/public-key')
+        .expect(200);
       expect(res.body.publicKey).toMatch(/^[0-9a-f]{64}$/);
       publicKeyHex = res.body.publicKey; // save for subsequent assertions
     });
@@ -48,7 +51,11 @@ describe('Oracle E2E', () => {
   // ── POST /oracle/sign ───────────────────────────────────────────────────────
 
   describe('POST /oracle/sign', () => {
-    const validBody = { asset: 'BTC_USD', price: '65000.50', timestamp: 1700000000 };
+    const validBody = {
+      asset: 'BTC_USD',
+      price: '65000.50',
+      timestamp: 1700000000,
+    };
 
     it('returns 200 with a fully signed payload', async () => {
       const res = await request(app.getHttpServer())
@@ -87,7 +94,12 @@ describe('Oracle E2E', () => {
         type: 'spki',
       });
 
-      const isValid = crypto.verify(null, message, pubKeyObj, Buffer.from(signature, 'hex'));
+      const isValid = crypto.verify(
+        null,
+        message,
+        pubKeyObj,
+        Buffer.from(signature, 'hex'),
+      );
       expect(isValid).toBe(true);
     });
 

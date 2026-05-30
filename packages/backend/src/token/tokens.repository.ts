@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, Repository, IsNull } from 'typeorm';  // add IsNull
+import { DataSource, Repository, IsNull } from 'typeorm'; // add IsNull
 import { InjectDataSource } from '@nestjs/typeorm';
 import { Token } from './entities/token.entity';
 
@@ -10,10 +10,16 @@ export class TokensRepository extends Repository<Token> {
   }
 
   findAllActive(): Promise<Token[]> {
-    return this.find({ where: { isActive: true }, order: { assetCode: 'ASC' } });
+    return this.find({
+      where: { isActive: true },
+      order: { assetCode: 'ASC' },
+    });
   }
 
-  findByAsset(assetCode: string, assetIssuer: string | null): Promise<Token | null> {
+  findByAsset(
+    assetCode: string,
+    assetIssuer: string | null,
+  ): Promise<Token | null> {
     return this.findOne({
       where: {
         assetCode,

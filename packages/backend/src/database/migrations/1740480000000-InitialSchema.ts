@@ -23,7 +23,12 @@ export class InitialSchema1740480000000 implements MigrationInterface {
             generationStrategy: 'uuid',
             default: 'uuid_generate_v4()',
           },
-          { name: 'wallet_address', type: 'varchar', length: '56', isUnique: true },
+          {
+            name: 'wallet_address',
+            type: 'varchar',
+            length: '56',
+            isUnique: true,
+          },
           { name: 'username', type: 'varchar', length: '64', isNullable: true },
           { name: 'created_at', type: 'timestamptz', default: 'now()' },
           { name: 'updated_at', type: 'timestamptz', default: 'now()' },
@@ -51,7 +56,8 @@ export class InitialSchema1740480000000 implements MigrationInterface {
             type: 'numeric',
             precision: 38,
             scale: 7,
-            comment: 'Stellar stroops — must be >= 0 (enforced by CHECK constraint)',
+            comment:
+              'Stellar stroops — must be >= 0 (enforced by CHECK constraint)',
           },
           {
             name: 'rewards_accrued',
@@ -110,7 +116,12 @@ export class InitialSchema1740480000000 implements MigrationInterface {
             generationStrategy: 'uuid',
             default: 'uuid_generate_v4()',
           },
-          { name: 'contract_id', type: 'varchar', length: '56', isUnique: true },
+          {
+            name: 'contract_id',
+            type: 'varchar',
+            length: '56',
+            isUnique: true,
+          },
           { name: 'name', type: 'varchar', length: '128' },
           {
             name: 'total_staked',

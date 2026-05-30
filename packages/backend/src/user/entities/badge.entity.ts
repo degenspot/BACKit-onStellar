@@ -8,9 +8,9 @@ import {
 import { Users } from './users.entity';
 
 export enum BadgeType {
-  EARLY_ADOPTER  = 'EARLY_ADOPTER',   // joined in first 30 days of platform
-  WHALE          = 'WHALE',           // total stake volume exceeds threshold
-  HIGH_ACCURACY  = 'HIGH_ACCURACY',   // win rate >= 70% with >= 10 resolved calls
+  EARLY_ADOPTER = 'EARLY_ADOPTER', // joined in first 30 days of platform
+  WHALE = 'WHALE', // total stake volume exceeds threshold
+  HIGH_ACCURACY = 'HIGH_ACCURACY', // win rate >= 70% with >= 10 resolved calls
 }
 
 @Entity('badges')

@@ -1,41 +1,52 @@
 'use client'
 
 import { useState } from 'react'
-import { Call, TabType } from '@/types'
+import { Call, TabType, User } from '@/types'
 import { truncateAddress } from '@/lib/utils'
 import { Clock, CheckCircle, XCircle, Users } from 'lucide-react'
 
 interface ProfileTabsProps {
-  createdCalls: Call[]
-  participatedCalls: Call[]
-  resolvedCalls: Call[]
+   createdCalls: Call[]
+   participatedCalls: Call[]
+   resolvedCalls: Call[]
+   followers: User[]
+   following: User[]
+   followersTotal: number
+   followingTotal: number
+   suggestedUsers?: User[]
+   onLoadMoreFollowers: () => Promise<void>
+   onLoadMoreFollowing: () => Promise<void>
+   onFollowToggle: (address: string, isFollowing: boolean) => Promise<void>
+   loading?: boolean
+   error?: string | null
 }
 
 export default function ProfileTabs({
-  createdCalls,
-  participatedCalls,
-  resolvedCalls
-}: ProfileTabsProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('created')
+   createdCalls,
+   participatedCalls,
+   resolvedCalls,
+   followers,
+   following,
+   followersTotal,
+   followingTotal,
+   suggestedUsers = [],
+   onLoadMoreFollowers,
+   onLoadMoreFollowing,
+   onFollowToggle,
+   loading = false,
+   error = null,
+  }: ProfileTabsProps) {
+   const [activeTab, setActiveTab] = useState<TabType>('created')
+  const [followersPage, setFollowersPage] = useState(1)
+  const [followingPage, setFollowingPage] = useState(1)
 
   const tabs: { id: TabType; label: string; count: number }[] = [
     { id: 'created', label: 'Created Calls', count: createdCalls.length },
     { id: 'participated', label: 'Participated', count: participatedCalls.length },
-    { id: 'resolved', label: 'Resolved', count: resolvedCalls.length }
+    { id: 'resolved', label: 'Resolved', count: resolvedCalls.length },
+    { id: 'followers', label: 'Followers', count: followersTotal },
+    { id: 'following', label: 'Following', count: followingTotal }
   ]
-
-  const getCallsForTab = () => {
-    switch (activeTab) {
-      case 'created':
-        return createdCalls
-      case 'participated':
-        return participatedCalls
-      case 'resolved':
-        return resolvedCalls
-      default:
-        return createdCalls
-    }
-  }
 
   const getOutcomeIcon = (outcome?: string) => {
     switch (outcome) {
@@ -57,6 +68,91 @@ export default function ProfileTabs({
       default:
         return 'text-gray-600 bg-gray-100'
     }
+  }
+
+  const CallCard = ({ call }: { call: Call }) => (
+    <div
+      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <h3 className="text-lg font-medium text-gray-900">{call.title}</h3>
+          <p className="text-sm text-gray-600 mt-1">{call.description}</p>
+
+          <div className="flex items-center space-x-4 mt-3 text-sm text-gray-500">
+            <span>Token: {call.token}</span>
+            <span>•</span>
+            <span>Stake: {call.stake}</span>
+            <span>•</span>
+            <div className="flex items-center space-x-1">
+              <Users className="w-4 h-4" />
+              <span>{call.participants}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2 mt-2">
+            <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+              {truncateAddress(call.creator)}
+            </code>
+            <span className="text-xs text-gray-500">
+              {new Date(call.startTs * 1000).toLocaleDateString()}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-col items-end space-y-2">
+          <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${getOutcomeColor(call.outcome)}`}>
+            {getOutcomeIcon(call.outcome)}
+            <span>{call.outcome || 'PENDING'}</span>
+          </div>
+
+          {call.finalPrice && (
+            <span className="text-sm text-gray-600">
+              Final: ${call.finalPrice}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
+  const UserCard = ({ user }: { user: User }) => (
+    <div
+      className="border border-gray-200 rounded-lg p-4 flex items-center space-x-4 hover:shadow-md transition-shadow"
+    >
+      <div className="flex-shrink-0">
+        <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
+          <span className="text-gray-500">{user.displayName?.charAt(0) ?? '?'}</span>
+        </div>
+      </div>
+      <div className="flex-1 space-y-2">
+        <div className="flex justify-between">
+          <h3 className="text-lg font-medium text-gray-900">{user.displayName}</h3>
+          <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-medium ${
+            user.isFollowing
+              ? 'text-red-600 bg-red-100 hover:bg-red-200'
+              : 'text-primary-600 bg-primary-100 hover:bg-primary-200'
+          }`} onClick={async () => {
+              await onFollowToggle(user.address, user.isFollowing ?? false)
+            }}>
+            {user.isFollowing ? 'Unfollow' : 'Follow'}
+          </div>
+        </div>
+        <p className="text-sm text-gray-500">
+          Reputation: {Math.round(user.winRate * 100)}% • {user.totalCalls} calls
+        </p>
+      </div>
+    </div>
+  )
+
+  const handleLoadMoreFollowers = async () => {
+    setFollowersPage(prev => prev + 1)
+    await onLoadMoreFollowers()
+  }
+
+  const handleLoadMoreFollowing = async () => {
+    setFollowingPage(prev => prev + 1)
+    await onLoadMoreFollowing()
   }
 
   return (
@@ -83,58 +179,55 @@ export default function ProfileTabs({
       </div>
 
       <div className="p-6">
-        {getCallsForTab().length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-gray-500">No calls found for this tab.</p>
-          </div>
-        ) : (
+        {activeTab === 'followers' && (
           <div className="space-y-4">
-            {getCallsForTab().map((call) => (
-              <div
-                key={call.id}
-                className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+{followers.map((follower) => (
+               <UserCard key={follower.address} user={follower} />
+             ))}
+            {followers.length < followersTotal && (
+              <button
+                onClick={handleLoadMoreFollowers}
+                className="w-full py-2 px-4 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-medium text-gray-900">{call.title}</h3>
-                    <p className="text-sm text-gray-600 mt-1">{call.description}</p>
-                    
-                    <div className="flex items-center space-x-4 mt-3 text-sm text-gray-500">
-                      <span>Token: {call.token}</span>
-                      <span>•</span>
-                      <span>Stake: {call.stake}</span>
-                      <span>•</span>
-                      <div className="flex items-center space-x-1">
-                        <Users className="w-4 h-4" />
-                        <span>{call.participants}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-2 mt-2">
-                      <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                        {truncateAddress(call.creator)}
-                      </code>
-                      <span className="text-xs text-gray-500">
-                        {new Date(call.startTs * 1000).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col items-end space-y-2">
-                    <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${getOutcomeColor(call.outcome)}`}>
-                      {getOutcomeIcon(call.outcome)}
-                      <span>{call.outcome || 'PENDING'}</span>
-                    </div>
-                    
-                    {call.finalPrice && (
-                      <span className="text-sm text-gray-600">
-                        Final: ${call.finalPrice}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
+                Load More
+              </button>
+            )}
+          </div>
+        )}
+        {activeTab === 'following' && (
+          <div className="space-y-4">
+{following.map((followed) => (
+               <UserCard key={followed.address} user={followed} />
+             ))}
+            {following.length < followingTotal && (
+              <button
+                onClick={handleLoadMoreFollowing}
+                className="w-full py-2 px-4 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+              >
+                Load More
+              </button>
+            )}
+          </div>
+        )}
+        {activeTab === 'created' && createdCalls.length > 0 && (
+          <div className="space-y-4">
+{createdCalls.map((call) => (
+               <CallCard key={call.id} call={call} />
+             ))}
+          </div>
+        )}
+        {activeTab === 'participated' && participatedCalls.length > 0 && (
+          <div className="space-y-4">
+{participatedCalls.map((call) => (
+               <CallCard key={call.id} call={call} />
+             ))}
+          </div>
+        )}
+        {activeTab === 'resolved' && resolvedCalls.length > 0 && (
+          <div className="space-y-4">
+{resolvedCalls.map((call) => (
+               <CallCard key={call.id} call={call} />
+             ))}
           </div>
         )}
       </div>

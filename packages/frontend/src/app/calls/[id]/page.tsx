@@ -4,6 +4,8 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import CallDetail from "@/components/CallDetail";
 import { CallDetailData } from "@/types";
+import PriceChartSkeleton from "@/components/skeletons/PriceChartSkeleton";
+import ActivityLogSkeleton from "@/components/skeletons/ActivityLogSkeleton";
 
 // Health check function (checks if our mock API is responsive)
 async function checkApiHealth(): Promise<boolean> {
@@ -68,27 +70,64 @@ export default function CallDetailPage() {
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-7xl mx-auto p-4">
-          {/* Skeleton loader */}
-          <div className="animate-pulse">
-            {/* Header skeleton */}
-            <div className="bg-gradient-to-r from-gray-300 to-gray-200 h-48 rounded-xl mb-6"></div>
-            
-            {/* Content skeleton */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
-                <div className="bg-white h-64 rounded-xl"></div>
-                <div className="bg-white h-96 rounded-xl"></div>
+      <div className="min-h-screen bg-gray-50 pt-20">
+        <div className="max-w-7xl mx-auto p-4 lg:py-10">
+          <div className="lg:grid lg:grid-cols-3 lg:gap-10">
+            {/* Left column - Main content skeletons */}
+            <div className="lg:col-span-2 space-y-8">
+              {/* Header skeleton */}
+              <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm space-y-4">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-2">
+                    <div className="h-6 w-32 rounded animate-shimmer" />
+                    <div className="h-4 w-48 rounded animate-shimmer" />
+                  </div>
+                  <div className="h-8 w-24 rounded-lg animate-shimmer" />
+                </div>
+                <div className="h-6 w-full rounded animate-shimmer" />
               </div>
-              <div className="space-y-6">
-                <div className="bg-white h-80 rounded-xl"></div>
-                <div className="bg-white h-32 rounded-xl"></div>
+
+              {/* Live Price Chart Skeleton */}
+              <PriceChartSkeleton />
+
+              {/* Analysis Skeleton */}
+              <div className="bg-white rounded-2xl border border-gray-100 p-8 shadow-sm space-y-4">
+                <div className="h-6 w-48 rounded animate-shimmer" />
+                <div className="space-y-2">
+                  <div className="h-4 w-full rounded animate-shimmer" />
+                  <div className="h-4 w-full rounded animate-shimmer" />
+                  <div className="h-4 w-3/4 rounded animate-shimmer" />
+                </div>
+              </div>
+
+              {/* Activity Log Skeleton */}
+              <ActivityLogSkeleton />
+            </div>
+
+            {/* Right column - Staking Interface / Pool Liquidity Skeleton */}
+            <div className="hidden lg:block space-y-8">
+              <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm space-y-6">
+                <div className="h-4 w-28 rounded animate-shimmer" />
+                <div className="space-y-3">
+                  <div className="h-10 w-full rounded-xl animate-shimmer" />
+                  <div className="h-10 w-full rounded-xl animate-shimmer" />
+                </div>
+                <div className="h-12 w-full rounded-2xl animate-shimmer" />
+              </div>
+
+              <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm space-y-4">
+                <div className="flex justify-between">
+                  <div className="h-4 w-28 rounded animate-shimmer" />
+                  <div className="h-4 w-16 rounded animate-shimmer" />
+                </div>
+                <div className="h-2 w-full bg-gray-100 rounded-full animate-shimmer" />
+                <div className="space-y-2 pt-2">
+                  <div className="h-3 w-20 rounded animate-shimmer" />
+                  <div className="h-6 w-32 rounded animate-shimmer" />
+                </div>
               </div>
             </div>
           </div>
-          
-          <p className="text-center text-gray-500 mt-4">Loading call details...</p>
         </div>
       </div>
     );
@@ -131,7 +170,7 @@ export default function CallDetailPage() {
             <ul className="text-xs text-gray-600 space-y-1 list-disc pl-4">
               <li>Make sure your backend server is running on port 3001</li>
               <li>Check if the API endpoint is accessible</li>
-              <li>Verify the call ID "{id}" exists in mock data</li>
+              <li>Verify the call ID &quot;{id}&quot; exists in mock data</li>
               <li>Check browser console for detailed errors</li>
             </ul>
           </div>
@@ -153,7 +192,7 @@ export default function CallDetailPage() {
           
           <h2 className="text-2xl font-bold text-gray-800 mb-2">Call Not Found</h2>
           <p className="text-gray-600 mb-6">
-            The prediction call with ID "{id}" doesn't exist.
+            The prediction call with ID &quot;{id}&quot; doesn&apos;t exist.
           </p>
           
           <a 

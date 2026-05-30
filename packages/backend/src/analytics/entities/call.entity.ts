@@ -18,6 +18,9 @@ export class Call {
   @Index()
   creatorAddress: string;
 
+  @Column({ type: 'varchar', length: 255 })
+  title: string;
+
   @Column({ type: 'text' })
   description: string;
 

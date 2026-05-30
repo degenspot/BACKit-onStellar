@@ -7,19 +7,21 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint src",
     "type-check": "tsc --noEmit",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
+    "@albedo-link/intent": "0.13.0",
     "@headlessui/react": "^2.2.9",
     "@heroicons/react": "^2.2.0",
     "@hookform/resolvers": "^5.2.2",
     "@stellar/freighter-api": "^1.6.0",
     "@stellar/stellar-sdk": "^12.2.0",
     "clsx": "^2.0.0",
+    "lightweight-charts": "^5.2.0",
     "lodash.debounce": "^4.0.8",
     "lucide-react": "^0.294.0",
     "next": "16.1.4",
@@ -27,9 +29,9 @@
     "react-dom": "19.2.3",
     "react-hook-form": "^7.71.1",
     "react-markdown": "^10.1.0",
+    "swr": "^2.2.0",
     "tailwind-merge": "^2.2.0",
-    "zod": "^4.3.5",
-    "swr": "^2.2.0"
+    "zod": "^4.3.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.0",

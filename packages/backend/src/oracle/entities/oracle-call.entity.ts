@@ -9,12 +9,12 @@ import {
 import { OracleOutcome } from './oracle-outcome.entity';
 
 export enum OracleCallStatus {
-  DRAFT        = 'DRAFT',
-  OPEN         = 'OPEN',
-  PAUSED       = 'PAUSED',        // circuit-breaker state — oracle blocked
-  SETTLING     = 'SETTLING',
+  DRAFT = 'DRAFT',
+  OPEN = 'OPEN',
+  PAUSED = 'PAUSED', // circuit-breaker state — oracle blocked
+  SETTLING = 'SETTLING',
   RESOLVED_YES = 'RESOLVED_YES',
-  RESOLVED_NO  = 'RESOLVED_NO',
+  RESOLVED_NO = 'RESOLVED_NO',
 }
 
 @Entity('oracle_calls')

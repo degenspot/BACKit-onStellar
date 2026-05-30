@@ -6,10 +6,10 @@ import { Badge, BadgeType } from './entities/badge.entity';
 import { Users } from './entities/users.entity';
 
 // ── Thresholds — tweak without touching logic ──────────────────────────────
-const EARLY_ADOPTER_DAYS   = 30;    // days from platform launch to qualify
+const EARLY_ADOPTER_DAYS = 30; // days from platform launch to qualify
 const WHALE_STAKE_THRESHOLD = 1000; // total XLM staked across all calls
 const HIGH_ACCURACY_MIN_CALLS = 10; // minimum resolved calls to qualify
-const HIGH_ACCURACY_WIN_RATE  = 0.7; // 70% win rate required
+const HIGH_ACCURACY_WIN_RATE = 0.7; // 70% win rate required
 
 // Platform launch date — used to determine early adopter eligibility
 const PLATFORM_LAUNCH = new Date('2024-01-01T00:00:00.000Z');
@@ -65,7 +65,9 @@ export class BadgeWorker implements OnApplicationBootstrap {
     ];
 
     for (const def of definitions) {
-      const exists = await this.badgeRepo.findOne({ where: { type: def.type } });
+      const exists = await this.badgeRepo.findOne({
+        where: { type: def.type },
+      });
       if (!exists) {
         await this.badgeRepo.save(this.badgeRepo.create(def));
         this.logger.log(`Seeded badge: ${def.type}`);
@@ -99,8 +101,13 @@ export class BadgeWorker implements OnApplicationBootstrap {
       [cutoff, badge.id],
     );
 
-    await this.bulkAssign(qualifying.map((r) => r.id), badge);
-    this.logger.log(`Early Adopter: assigned to ${qualifying.length} new users`);
+    await this.bulkAssign(
+      qualifying.map((r) => r.id),
+      badge,
+    );
+    this.logger.log(
+      `Early Adopter: assigned to ${qualifying.length} new users`,
+    );
   }
 
   // ── Whale ─────────────────────────────────────────────────────────────────
@@ -127,7 +134,10 @@ export class BadgeWorker implements OnApplicationBootstrap {
       [WHALE_STAKE_THRESHOLD, badge.id],
     );
 
-    await this.bulkAssign(qualifying.map((r) => r.id), badge);
+    await this.bulkAssign(
+      qualifying.map((r) => r.id),
+      badge,
+    );
     this.logger.log(`Whale: assigned to ${qualifying.length} new users`);
   }
 
@@ -162,8 +172,13 @@ export class BadgeWorker implements OnApplicationBootstrap {
       [HIGH_ACCURACY_MIN_CALLS, HIGH_ACCURACY_WIN_RATE, badge.id],
     );
 
-    await this.bulkAssign(qualifying.map((r) => r.id), badge);
-    this.logger.log(`High Accuracy: assigned to ${qualifying.length} new users`);
+    await this.bulkAssign(
+      qualifying.map((r) => r.id),
+      badge,
+    );
+    this.logger.log(
+      `High Accuracy: assigned to ${qualifying.length} new users`,
+    );
   }
 
   // ── Shared bulk-assign (idempotent via NOT EXISTS guard in queries) ────────

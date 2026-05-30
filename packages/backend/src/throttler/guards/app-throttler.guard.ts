@@ -18,6 +18,8 @@ export class AppThrottlerGuard extends ThrottlerGuard {
     const response = context.switchToHttp().getResponse<Response>();
     const retryAfter = Math.ceil(throttlerLimitDetail.timeToExpire / 1000);
     response.setHeader('Retry-After', retryAfter);
-    throw new ThrottlerException(`Too Many Requests. Retry after ${retryAfter}s.`);
+    throw new ThrottlerException(
+      `Too Many Requests. Retry after ${retryAfter}s.`,
+    );
   }
 }

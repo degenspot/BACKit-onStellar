@@ -5,14 +5,27 @@ import { DataSource } from 'typeorm';
 export class SearchService {
   constructor(private readonly dataSource: DataSource) {}
 
+  private toPrefixTsQuery(query: string): string {
+    return query
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((term) => `${term.replace(/[':]/g, '')}:*`)
+      .join(' & ');
+  }
+
   async globalSearch(query: string) {
-    const formattedQuery = query.split(' ').join(' & ');
+    const formattedQuery = this.toPrefixTsQuery(query);
+    if (!formattedQuery) {
+      return { calls: [], users: [] };
+    }
 
     const calls = await this.dataSource.query(
       `
-      SELECT id, title, ts_rank(search_vector, to_tsquery($1)) as rank
-      FROM call
-      WHERE search_vector @@ to_tsquery($1)
+      SELECT id, title, "creatorAddress", "createdAt",
+             ts_rank("searchVector", to_tsquery('simple', $1)) as rank
+      FROM calls
+      WHERE "searchVector" @@ to_tsquery('simple', $1)
       ORDER BY rank DESC
       LIMIT 10
       `,
@@ -21,13 +34,14 @@ export class SearchService {
 
     const users = await this.dataSource.query(
       `
-      SELECT id, display_name, ts_rank(search_vector, to_tsquery($1)) as rank
-      FROM "user"
-      WHERE search_vector @@ to_tsquery($1)
+      SELECT id, "walletAddress",
+             CASE WHEN LOWER("walletAddress") LIKE LOWER($2) THEN 1 ELSE 0 END as rank
+      FROM users
+      WHERE LOWER("walletAddress") LIKE LOWER($2)
       ORDER BY rank DESC
       LIMIT 10
       `,
-      [formattedQuery],
+      [formattedQuery, `%${query}%`],
     );
 
     return {

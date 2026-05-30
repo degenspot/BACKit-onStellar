@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "shared",
   "call_registry",
   "outcome_manager",
   "contracts/hello-world",
@@ -8,6 +9,7 @@ members = [
 
 [workspace.dependencies]
 soroban-sdk = "23.0.0"
+backit-shared = { path = "shared" }
 
 [profile.release]
 opt-level = "z"

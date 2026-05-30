@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { TokensService } from './tokens.service';
 import { Token } from './entities/token.entity';
 
@@ -13,5 +13,15 @@ export class TokensController {
   @Get()
   async getTokens(): Promise<Token[]> {
     return this.tokensService.getAll();
+  }
+
+  @Get('search')
+  async searchTokens(@Query('q') query: string) {
+    return this.tokensService.searchDexPairs(query ?? '');
+  }
+
+  @Get(':pair/price')
+  async getPairPrice(@Param('pair') pair: string) {
+    return this.tokensService.getPairPrice(pair);
   }
 }

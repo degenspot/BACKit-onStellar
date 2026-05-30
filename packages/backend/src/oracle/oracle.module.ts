@@ -12,17 +12,28 @@ import { CoinGeckoService } from './coinGeko.service';
 import { PriceDeviationService } from './deiviation.service';
 import { PriceDeviationWorker } from './deviation.worker';
 import { PriceDeviationLog } from './entities/log.entity';
+import { OraclePriceEntity } from './entities/storedOraclePrice.entity';
+import { OracleHealthLog } from './entities/oracle-health-log.entity';
+import { OracleHealthService } from './oracle-health.service';
+import { OracleHealthController } from './oracle-health.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([OracleCall, OracleOutcome, PriceDeviationLog]),
+    TypeOrmModule.forFeature([
+      OracleCall,
+      OracleOutcome,
+      PriceDeviationLog,
+      OraclePriceEntity,
+      OracleHealthLog,
+    ]),
     forwardRef(() => CallsModule),
   ],
-  controllers: [OracleController],
+  controllers: [OracleController, OracleHealthController],
   providers: [
     OracleService,
     PriceFetcherService,
     SigningService,
+    OracleHealthService,
     CoinGeckoService,
     PriceDeviationService,
     PriceDeviationWorker,
@@ -35,6 +46,6 @@ import { PriceDeviationLog } from './entities/log.entity';
       },
     },
   ],
-  exports: [OracleService, PriceDeviationService],
+  exports: [OracleService, PriceDeviationService, OracleHealthService],
 })
-export class OracleModule { }
+export class OracleModule {}

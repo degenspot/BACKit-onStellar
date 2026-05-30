@@ -7,6 +7,8 @@ import { PlatformSettings } from './entities/platform-settings.entity';
 import { retryWithBackoff } from '../utils/retry';
 import { ConfigService } from '../config/config.service';
 import { parseAdminParamsChanged } from './parsers/admin-params.parser';
+import { PayoutsService } from '../payouts/payouts.service';
+import { TreasuryService } from '../treasury/treasury.service';
 
 @Injectable()
 export class IndexerService {
@@ -20,6 +22,8 @@ export class IndexerService {
     @InjectRepository(PlatformSettings)
     private readonly platformSettingsRepository: Repository<PlatformSettings>,
     private readonly configService: ConfigService,
+    private readonly payoutsService: PayoutsService,
+    private readonly treasuryService: TreasuryService,
   ) {}
 
   // ─── Status ───────────────────────────────────────────────────────────────
@@ -34,9 +38,9 @@ export class IndexerService {
 
     return {
       isRunning,
-      lastProcessedLedger:  latestEvent?.ledger    ?? null,
+      lastProcessedLedger: latestEvent?.ledger ?? null,
       totalEventsIndexed,
-      latestEventLedger:    latestEvent?.ledger    ?? null,
+      latestEventLedger: latestEvent?.ledger ?? null,
       latestEventTimestamp: latestEvent?.timestamp ?? null,
     };
   }
@@ -64,7 +68,10 @@ export class IndexerService {
 
     try {
       const startLedger = await this.resolveStartLedger();
-      const response    = await this.fetchContractEvents(this.contractId, startLedger);
+      const response = await this.fetchContractEvents(
+        this.contractId,
+        startLedger,
+      );
 
       for (const event of response.events) {
         await this.dispatchEvent(event);
@@ -76,9 +83,11 @@ export class IndexerService {
 
   // ─── Event Dispatcher ─────────────────────────────────────────────────────
 
-  private async dispatchEvent(event: SorobanRpc.Api.EventResponse): Promise<void> {
+  private async dispatchEvent(
+    event: SorobanRpc.Api.EventResponse,
+  ): Promise<void> {
     const topics = event.topic;
-    const data   = event.value;
+    const data = event.value;
     const txHash = event.txHash;
     const ledger = event.ledger;
 
@@ -92,6 +101,9 @@ export class IndexerService {
     switch (eventName) {
       case 'AdminParamsChanged':
         await this.handleAdminParamsChanged(topics, data, txHash, ledger);
+        break;
+      case 'PayoutClaimed':
+        await this.handlePayoutClaimed(topics, txHash, ledger);
         break;
 
       // ── extend here as you add more contract events ───────────────────
@@ -119,22 +131,76 @@ export class IndexerService {
 
     this.logger.log(
       `AdminParamsChanged applied — feePercent: ${parsed.feePercent}% ` +
-      `ledger: ${ledger} tx: ${txHash}`,
+        `ledger: ${ledger} tx: ${txHash}`,
     );
 
     await this.eventLogRepository.save(
       this.eventLogRepository.create({
-        eventId:     `${txHash}-admin-params`,
+        eventId: `${txHash}-admin-params`,
         pagingToken: `${ledger}-${txHash}`,
-        contractId:  this.contractId,
-        eventType:   EventType.ADMIN_PARAMS_CHANGED,
+        contractId: this.contractId,
+        eventType: EventType.ADMIN_PARAMS_CHANGED,
         ledger,
         txHash,
-        txOrder:     0,
-        eventData:   parsed,
-        timestamp:   new Date(),
+        txOrder: 0,
+        eventData: parsed,
+        timestamp: new Date(),
       }),
     );
+  }
+
+  private async handlePayoutClaimed(
+    topics: xdr.ScVal[],
+    txHash: string,
+    ledger: number,
+  ): Promise<void> {
+    try {
+      const asString = (val?: xdr.ScVal): string | null => {
+        if (!val) return null;
+        const t = val.switch();
+        if (t === xdr.ScValType.scvString()) return val.str().toString();
+        if (t === xdr.ScValType.scvSymbol()) return val.sym().toString();
+        return null;
+      };
+
+      const asU64 = (val?: xdr.ScVal): string | null => {
+        if (!val) return null;
+        if (val.switch() === xdr.ScValType.scvU64()) return val.u64().toString();
+        return null;
+      };
+
+      const asI128Lo = (val?: xdr.ScVal): string | null => {
+        if (!val) return null;
+        if (val.switch() === xdr.ScValType.scvI128()) {
+          return val.i128().lo().toString();
+        }
+        return null;
+      };
+
+      // Support both legacy topic layouts and tuple payloads.
+      const callId = asString(topics[1]) ?? asU64(topics[1]) ?? '';
+      const stakerAddress = asString(topics[2]) ?? '';
+      const amount = asI128Lo(topics[3]) ?? asU64(topics[3]) ?? '0';
+      if (!callId || !stakerAddress) return;
+
+      await this.payoutsService.markClaimed(
+        callId,
+        stakerAddress,
+        txHash,
+        new Date(),
+      );
+
+      // Record a treasury fee entry for this claim.
+      // If your event emits an explicit fee amount or token address, wire it here.
+      await this.treasuryService.recordFeeFromPayoutClaimed({
+        callId,
+        claimedAmount: String(amount ?? '0'),
+        collectedAt: new Date(),
+      });
+      this.logger.log(`PayoutClaimed synced: call=${callId} staker=${stakerAddress}`);
+    } catch (err: any) {
+      this.logger.warn(`Failed to parse PayoutClaimed event: ${err.message}`);
+    }
   }
 
   // ─── Platform Settings ────────────────────────────────────────────────────

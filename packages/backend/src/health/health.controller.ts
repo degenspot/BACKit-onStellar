@@ -61,9 +61,7 @@ export class HealthController {
     ]);
 
     const status =
-      database === 'connected' && stellar_rpc === 'reachable'
-        ? 'ok'
-        : 'error';
+      database === 'connected' && stellar_rpc === 'reachable' ? 'ok' : 'error';
 
     const payload = {
       status,

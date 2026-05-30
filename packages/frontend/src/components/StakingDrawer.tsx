@@ -81,7 +81,7 @@ export default function StakingDrawer({ isOpen, onClose, call, onStake, odds }: 
                     
                     <div className="p-8 border-t border-gray-100 bg-white/50">
                         <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.1em] text-center">
-                            By clicking stake you agree to the protocol's decentralized settlement mechanisms.
+                            By clicking stake you agree to the protocol&apos;s decentralized settlement mechanisms.
                         </p>
                     </div>
                   </div>

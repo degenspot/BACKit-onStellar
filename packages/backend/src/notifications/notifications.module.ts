@@ -6,12 +6,12 @@ import { NotificationsController } from './notifications.controller';
 import { ExternalDispatcherModule } from './external-dispatcher/external-dispatcher.module';
 
 @Module({
-    imports: [
-        TypeOrmModule.forFeature([NotificationEntity]),
-        ExternalDispatcherModule,
-    ],
-    controllers: [NotificationsController],
-    providers: [NotificationsService],
-    exports: [NotificationsService],
+  imports: [
+    TypeOrmModule.forFeature([NotificationEntity]),
+    ExternalDispatcherModule,
+  ],
+  controllers: [NotificationsController],
+  providers: [NotificationsService],
+  exports: [NotificationsService],
 })
-export class NotificationsModule { }
+export class NotificationsModule {}

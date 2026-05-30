@@ -49,7 +49,10 @@ export class AuditController {
   })
   @ApiResponse({ status: 200, description: 'Paginated audit log results' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — admin access required',
+  })
   async findAll(
     @Query() query: QueryAuditLogsDto,
   ): Promise<{ data: AuditLog[]; total: number; page: number; limit: number }> {

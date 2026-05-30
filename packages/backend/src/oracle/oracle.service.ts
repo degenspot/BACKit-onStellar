@@ -11,6 +11,9 @@ import { OracleCall, OracleCallStatus } from './entities/oracle-call.entity';
 import { OracleOutcome } from './entities/oracle-outcome.entity';
 import { retryWithBackoff, Retryable } from '../utils/retry';
 import { REPORT_THRESHOLD } from '../calls/constants/moderation.constants';
+import { OracleHealthService } from './oracle-health.service';
+import { OracleOperationType } from './entities/oracle-health-log.entity';
+import { SigningService } from './signing.service';
 
 /**
  * High-level lifecycle status for a market/call, used by analytics and UI.
@@ -37,6 +40,8 @@ export class OracleService {
     private readonly oracleCallRepository: Repository<OracleCall>,
     @InjectRepository(OracleOutcome)
     private readonly oracleOutcomeRepository: Repository<OracleOutcome>,
+    private readonly oracleHealthService: OracleHealthService,
+    private readonly signingService: SigningService,
   ) {}
 
   // ─── Core CRUD ────────────────────────────────────────────────────────────
@@ -99,25 +104,63 @@ export class OracleService {
   // ─── Price Fetching ───────────────────────────────────────────────────────
 
   @Retryable(4, 1000)
-  async fetchOraclePrice(contractId: string, assetSymbol: string): Promise<bigint> {
-    const contract = new Contract(contractId);
+  async fetchOraclePrice(
+    contractId: string,
+    assetSymbol: string,
+  ): Promise<bigint> {
+    const submissionTime = new Date();
 
-    // Extract operation first so the cast stays on one clean expression
-    const operation = contract.call('lastprice', xdr.ScVal.scvSymbol(assetSymbol));
-    const tx = await this.rpcServer.simulateTransaction(
-      operation as unknown as Parameters<SorobanRpc.Server['simulateTransaction']>[0],
-    );
+    try {
+      const contract = new Contract(contractId);
 
-    if (SorobanRpc.Api.isSimulationError(tx)) {
-      throw new Error(`Oracle simulation error for ${assetSymbol}: ${tx.error}`);
+      // Extract operation first so the cast stays on one clean expression
+      const operation = contract.call(
+        'lastprice',
+        xdr.ScVal.scvSymbol(assetSymbol),
+      );
+      const tx = await this.rpcServer.simulateTransaction(
+        operation as unknown as Parameters<
+          SorobanRpc.Server['simulateTransaction']
+        >[0],
+      );
+
+      if (SorobanRpc.Api.isSimulationError(tx)) {
+        throw new Error(
+          `Oracle simulation error for ${assetSymbol}: ${tx.error}`,
+        );
+      }
+
+      const result = (tx as SorobanRpc.Api.SimulateTransactionSuccessResponse)
+        .result;
+      if (!result) {
+        throw new Error(
+          `No result returned for oracle price of ${assetSymbol}`,
+        );
+      }
+
+      const price = result.retval.i128().lo().toBigInt();
+      await this.oracleHealthService.recordOperation({
+        oracleKey: contractId,
+        callId: assetSymbol,
+        operation: OracleOperationType.FETCH,
+        submissionTime,
+        priceFetched: Number(price),
+        success: true,
+      });
+
+      return price;
+    } catch (error) {
+      await this.oracleHealthService.recordOperation({
+        oracleKey: contractId,
+        callId: assetSymbol,
+        operation: OracleOperationType.FETCH,
+        submissionTime,
+        priceFetched: null,
+        success: false,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
-
-    const result = (tx as SorobanRpc.Api.SimulateTransactionSuccessResponse).result;
-    if (!result) {
-      throw new Error(`No result returned for oracle price of ${assetSymbol}`);
-    }
-
-    return result.retval.i128().lo().toBigInt();
   }
 
   async fetchAllPrices(
@@ -159,6 +202,7 @@ export class OracleService {
    * Throws before touching Soroban if the market is PAUSED.
    */
   async resolveMarket(callId: number, observedPrice: string): Promise<void> {
+    const submissionTime = new Date();
     const call = await this.findCallOrThrow(callId);
 
     // ── CIRCUIT BREAKER ──────────────────────────────────────────────────
@@ -169,6 +213,16 @@ export class OracleService {
       // Mark as failed so the cron stops retrying until admin intervenes
       call.failedAt = new Date();
       await this.oracleCallRepository.save(call);
+      await this.oracleHealthService.recordOperation({
+        oracleKey: call.pairAddress,
+        callId,
+        operation: OracleOperationType.SUBMIT,
+        submissionTime,
+        priceFetched: Number(observedPrice),
+        expectedPrice: Number(call.strikePrice),
+        success: false,
+        errorMessage: `Market ${callId} is paused due to community reports.`,
+      });
 
       throw new BadRequestException(
         `Market ${callId} is paused due to community reports. Admin review required.`,
@@ -176,28 +230,67 @@ export class OracleService {
     }
 
     // Guard: already resolved — idempotent, no error
-    const terminal = [OracleCallStatus.RESOLVED_YES, OracleCallStatus.RESOLVED_NO];
+    const terminal = [
+      OracleCallStatus.RESOLVED_YES,
+      OracleCallStatus.RESOLVED_NO,
+    ];
     if (terminal.includes(call.status)) {
       this.logger.log(`Call ${callId} already resolved — skipping.`);
       return;
     }
 
-    if (![OracleCallStatus.OPEN, OracleCallStatus.SETTLING].includes(call.status)) {
-      throw new BadRequestException(`Cannot resolve call in status ${call.status}`);
+    if (
+      ![OracleCallStatus.OPEN, OracleCallStatus.SETTLING].includes(call.status)
+    ) {
+      await this.oracleHealthService.recordOperation({
+        oracleKey: call.pairAddress,
+        callId,
+        operation: OracleOperationType.SUBMIT,
+        submissionTime,
+        priceFetched: Number(observedPrice),
+        expectedPrice: Number(call.strikePrice),
+        success: false,
+        errorMessage: `Cannot resolve call in status ${call.status}`,
+      });
+      throw new BadRequestException(
+        `Cannot resolve call in status ${call.status}`,
+      );
     }
 
     const outcome = this.evaluateOutcome(call, observedPrice);
 
-    // TODO: swap stub for real Soroban signing + submission
-    // const builtTx = await this.signingService.buildResolutionTx(callId, outcome);
-    // const signed  = await this.signingService.sign(builtTx);
-    // await this.rpcServer.sendTransaction(signed);
+    const signature = this.signingService.signOutcome({
+      callId,
+      price: Number(observedPrice),
+      timestamp: Math.floor(Date.now() / 1000),
+      outcome: outcome === OracleCallStatus.RESOLVED_YES ? 'YES' : 'NO',
+      pairAddress: call.pairAddress,
+    });
 
-    call.status      = outcome;
-    call.finalPrice  = observedPrice;
-    call.resolvedAt  = new Date();
+    await this.oracleOutcomeRepository.save(
+      this.oracleOutcomeRepository.create({
+        call,
+        price: Number(observedPrice),
+        outcome: outcome === OracleCallStatus.RESOLVED_YES ? 'YES' : 'NO',
+        signature,
+        transactionHash: undefined,
+      } as any),
+    );
+
+    call.status = outcome;
+    call.finalPrice = observedPrice;
+    call.resolvedAt = new Date();
     call.processedAt = new Date();
     await this.oracleCallRepository.save(call);
+    await this.oracleHealthService.recordOperation({
+      oracleKey: call.pairAddress,
+      callId,
+      operation: OracleOperationType.SUBMIT,
+      submissionTime,
+      priceFetched: Number(observedPrice),
+      expectedPrice: Number(call.strikePrice),
+      success: true,
+    });
 
     this.logger.log(`Call ${callId} resolved → ${outcome} @ ${observedPrice}`);
   }
@@ -234,7 +327,7 @@ export class OracleService {
       );
     }
 
-    call.status   = OracleCallStatus.OPEN;
+    call.status = OracleCallStatus.OPEN;
     call.failedAt = null;
 
     this.logger.log(`Call ${callId} manually UNPAUSED by admin.`);
@@ -262,14 +355,13 @@ export class OracleService {
       );
     }
 
-    call.status      = resolution;
-    call.resolvedAt  = new Date();
+    call.status = resolution;
+    call.resolvedAt = new Date();
     call.processedAt = new Date();
-    call.failedAt    = null;
+    call.failedAt = null;
     if (finalPrice !== undefined) call.finalPrice = finalPrice;
 
-  
-  this.logger.log(`Call ${callId} FORCE-RESOLVED by admin → ${resolution}`);
+    this.logger.log(`Call ${callId} FORCE-RESOLVED by admin → ${resolution}`);
     return this.oracleCallRepository.save(call);
   }
 
@@ -279,7 +371,9 @@ export class OracleService {
     feedId: string,
     params: { minResponses: number; heartbeatSeconds: number },
   ): Promise<{ success: boolean; feedId: string }> {
-    this.logger.log(`Oracle params updated for feed ${feedId}: ${JSON.stringify(params)}`);
+    this.logger.log(
+      `Oracle params updated for feed ${feedId}: ${JSON.stringify(params)}`,
+    );
     // In a real app, this would send a Soroban transaction
     return { success: true, feedId };
   }
@@ -296,7 +390,9 @@ export class OracleService {
   // ─── Private Helpers ──────────────────────────────────────────────────────
 
   private async findCallOrThrow(callId: number): Promise<OracleCall> {
-    const call = await this.oracleCallRepository.findOne({ where: { id: callId } });
+    const call = await this.oracleCallRepository.findOne({
+      where: { id: callId },
+    });
     if (!call) throw new NotFoundException(`OracleCall ${callId} not found`);
     return call;
   }

@@ -10,6 +10,7 @@ import { PlatformSettings } from './entities/platform-settings.entity';
 import { PlatformSettingsService } from './platform-settings.service';
 import { PlatformConfigModule } from '../config/config.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { PayoutsModule } from '../payouts/payouts.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     ScheduleModule.forRoot(),
     PlatformConfigModule,
     NotificationsModule,
+    PayoutsModule,
   ],
   controllers: [IndexerController],
   providers: [
@@ -34,4 +36,4 @@ import { NotificationsModule } from '../notifications/notifications.module';
   ],
   exports: [IndexerService],
 })
-export class IndexerModule { }
+export class IndexerModule {}

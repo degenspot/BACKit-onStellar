@@ -1,5 +1,16 @@
 use soroban_sdk::{contracttype, Address, Bytes, Map};
 
+/// Describes the condition used to determine whether a call resolves as UP.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum ConditionType {
+    TargetAbove(i128),
+    TargetBelow(i128),
+    PercentUp(u32),
+    PercentDown(u32),
+    Range(i128, i128),
+}
+
 /// Represents a prediction call with all its metadata
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -34,10 +45,15 @@ pub struct Call {
     pub start_price: i128,
     /// Final price after resolution
     pub end_price: i128,
+    /// On-chain condition used for outcome evaluation
+    pub condition: ConditionType,
     /// Whether the call has been settled
     pub settled: bool,
     /// Creation timestamp
     pub created_at: u64,
+    /// Whether the call has been cancelled by its creator
+    pub cancelled: bool,
+    pub metadata_version: u32,
 }
 
 /// Enum representing stake positions on a call
@@ -77,6 +93,21 @@ pub struct ContractConfig {
     pub outcome_manager: Address,
     /// Protocol fee in basis points (e.g. 100 = 1%). Default: 0.
     pub fee_bps: u32,
+    /// Maximum stake any single user may place per call per position.
+    /// `0` means unlimited.
+    pub max_stake_per_user: i128,
+    pub whitelisted_tokens: Map<Address, bool>,
+    pub min_stake: i128,
+    pub metadata_version: u32,
+}
+
+/// Contract-wide aggregated statistics for dashboards.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct GlobalStats {
+    pub total_calls: u64,
+    pub total_stake_volume: i128,
+    pub total_unique_stakers: u64,
 }
 
 /// Statistics for a call

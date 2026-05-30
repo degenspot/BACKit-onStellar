@@ -1,29 +1,45 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { OracleController } from '../oracle.controller';
-import { OracleSigningService } from '../services/oracle-signing.service';
-import { SignPriceDto } from '../dto/sign-price.dto';
-import { SignedPriceData, OraclePublicKeyResponse } from '../interfaces/oracle.interfaces';
+import { OracleController } from './oracle.controller';
+import { OracleSigningService } from './oracle-signing.service';
+import { SignPriceDto } from './sign-price.dto';
+import {
+  SignedPriceData,
+  OraclePublicKeyResponse,
+} from './oracle.interfaces';
+import { getQueueToken } from '@nestjs/bullmq';
+import { QUEUE_ORACLE_SIGNING } from '../common/queues/queues.constants';
 
 const MOCK_PUBLIC_KEY = 'a'.repeat(64);
 
 const mockSigningService: jest.Mocked<Partial<OracleSigningService>> = {
-  getPublicKey: jest.fn((): OraclePublicKeyResponse => ({ publicKey: MOCK_PUBLIC_KEY })),
-  sign: jest.fn((payload): SignedPriceData => ({
-    asset: payload.asset,
-    price: payload.price,
-    timestamp: payload.timestamp,
-    signature: 'b'.repeat(128),
-    publicKey: MOCK_PUBLIC_KEY,
-  })),
+  getPublicKey: jest.fn(
+    (): OraclePublicKeyResponse => ({ publicKey: MOCK_PUBLIC_KEY }),
+  ),
+  sign: jest.fn(
+    (payload): SignedPriceData => ({
+      asset: payload.asset,
+      price: payload.price,
+      timestamp: payload.timestamp,
+      signature: 'b'.repeat(128),
+      publicKey: MOCK_PUBLIC_KEY,
+    }),
+  ),
 };
 
 describe('OracleController', () => {
   let controller: OracleController;
+  const mockQueue = {
+    add: jest.fn(),
+    getJob: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [OracleController],
-      providers: [{ provide: OracleSigningService, useValue: mockSigningService }],
+      providers: [
+        { provide: OracleSigningService, useValue: mockSigningService },
+        { provide: getQueueToken(QUEUE_ORACLE_SIGNING), useValue: mockQueue },
+      ],
     }).compile();
 
     controller = module.get<OracleController>(OracleController);
@@ -39,7 +55,11 @@ describe('OracleController', () => {
   });
 
   describe('POST /oracle/sign', () => {
-    const dto: SignPriceDto = { asset: 'BTC_USD', price: '65000.00', timestamp: 1700000000 };
+    const dto: SignPriceDto = {
+      asset: 'BTC_USD',
+      price: '65000.00',
+      timestamp: 1700000000,
+    };
 
     it('delegates to the signing service with correct payload', () => {
       controller.signPrice(dto);

@@ -28,7 +28,8 @@ describe('CallsController (e2e)', () => {
       await callsService.createDraft({
         title: 'Test Call 1',
         thesis: 'This is a test call',
-        tokenAddress: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IK7FH7XBQMG5VHJ3ZR',
+        tokenAddress:
+          'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IK7FH7XBQMG5VHJ3ZR',
         pairId: 'test_pair_id_1',
         stakeToken: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IK7FH7XBQMG5VHJ3ZR',
         stakeAmount: 100,
@@ -65,7 +66,8 @@ describe('CallsController (e2e)', () => {
       const call = await callsService.createDraft({
         title: 'Test Call Detail',
         thesis: 'This is a test call for detail view',
-        tokenAddress: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IK7FH7XBQMG5VHJ3ZR',
+        tokenAddress:
+          'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IK7FH7XBQMG5VHJ3ZR',
         pairId: 'test_pair_id_2',
         stakeToken: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IK7FH7XBQMG5VHJ3ZR',
         stakeAmount: 200,
@@ -82,9 +84,7 @@ describe('CallsController (e2e)', () => {
     });
 
     it('should return 404 for non-existent call', async () => {
-      return request(app.getHttpServer())
-        .get('/calls/999999')
-        .expect(404);
+      return request(app.getHttpServer()).get('/calls/999999').expect(404);
     });
   });
 
@@ -93,7 +93,8 @@ describe('CallsController (e2e)', () => {
       const newCallData = {
         title: 'New Test Call',
         thesis: 'This is a new test call thesis',
-        tokenAddress: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IK7FH7XBQMG5VHJ3ZR',
+        tokenAddress:
+          'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IK7FH7XBQMG5VHJ3ZR',
         pairId: 'test_pair_id_3',
         stakeToken: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IK7FH7XBQMG5VHJ3ZR',
         stakeAmount: 300,
@@ -123,13 +124,15 @@ describe('CallsController (e2e)', () => {
 
   describe('GET /calls/user/:address', () => {
     it('should return calls by user address', async () => {
-      const userAddress = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IK7FH7XBQMG5VHJ3ZR';
-      
+      const userAddress =
+        'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IK7FH7XBQMG5VHJ3ZR';
+
       // Create a test call with the user address
       await callsService.createDraft({
         title: 'User Test Call',
         thesis: 'This is a test call for user',
-        tokenAddress: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IK7FH7XBQMG5VHJ3ZR',
+        tokenAddress:
+          'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IK7FH7XBQMG5VHJ3ZR',
         pairId: 'test_pair_id_4',
         stakeToken: userAddress,
         stakeAmount: 400,

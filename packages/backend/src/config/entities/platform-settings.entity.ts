@@ -30,6 +30,18 @@ export class PlatformSettings {
   @Column({ type: 'varchar', length: 56, nullable: true })
   oracleContractId: string | null;
 
+  @Column({ type: 'decimal', precision: 20, scale: 7, default: 0 })
+  minStake: number;
+
+  @Column({ type: 'int', default: 86400 })
+  maxDuration: number;
+
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  supportedTokens: string[];
+
+  @Column({ type: 'jsonb', default: () => "'{}'" })
+  contractAddresses: Record<string, string>;
+
   // ─── audit trail ─────────────────────────────────────────────────────────
   @Column({ type: 'varchar', length: 100, nullable: true })
   lastUpdatedByTxHash: string | null;

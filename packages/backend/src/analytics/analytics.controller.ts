@@ -28,7 +28,7 @@ import { TotalValueLockedResponseDto } from './dto/tvl.dto';
 @ApiTags('Analytics')
 @Controller('users')
 export class AnalyticsController {
-  constructor(private readonly analyticsService: AnalyticsService) { }
+  constructor(private readonly analyticsService: AnalyticsService) {}
 
   @Get(':address/analytics')
   @UseInterceptors(CacheInterceptor)
@@ -120,10 +120,13 @@ export class AnalyticsController {
   @ApiOperation({
     summary: 'Get Total Value Locked',
     description:
-      "Sums the amounts of every stake whose underlying call is still PENDING. " +
+      'Sums the amounts of every stake whose underlying call is still PENDING. ' +
       "This represents the user's active capital that has not yet been resolved.",
   })
-  @ApiParam({ name: 'userAddress', description: 'Stellar wallet address of the user' })
+  @ApiParam({
+    name: 'userAddress',
+    description: 'Stellar wallet address of the user',
+  })
   @ApiResponse({
     status: 200,
     description: 'Total value locked successfully aggregated',

@@ -29,7 +29,10 @@ export class CallsService {
 
   async getFeed(query: QueryCallsDto) {
     const { page = 1, limit = 20 } = query;
-    const [data, total] = await this.callsRepository.findFeed(page, limit);
+    const [data, total] =
+      query.sort === 'trending'
+        ? await this.callsRepository.findTrendingFeed(page, limit)
+        : await this.callsRepository.findFeed(page, limit);
     return { data, total, page, limit };
   }
 
@@ -37,6 +40,19 @@ export class CallsService {
     const { search = '', page = 1, limit = 20 } = query;
     const [data, total] = await this.callsRepository.searchVisible(
       search,
+      page,
+      limit,
+    );
+    return { data, total, page, limit };
+  }
+
+  async getFollowingFeed(
+    address: string,
+    query: QueryCallsDto,
+  ): Promise<{ data: Call[]; total: number; page: number; limit: number }> {
+    const { page = 1, limit = 20 } = query;
+    const [data, total] = await this.callsRepository.findFeedByFollowing(
+      address,
       page,
       limit,
     );
@@ -53,11 +69,7 @@ export class CallsService {
 
   // ─── Reporting & Auto-Pause (circuit breaker) ─────────────────────────────
 
-  async reportCall(
-    id: string,
-    reporterAddress: string,
-    dto: ReportCallDto,
-  ) {
+  async reportCall(id: string, reporterAddress: string, dto: ReportCallDto) {
     const call = await this.getCallOrThrow(id);
 
     const nonReportable: CallStatus[] = [
@@ -129,7 +141,7 @@ export class CallsService {
       );
     }
 
-    call.status     = resolution;
+    call.status = resolution;
     call.resolvedAt = new Date();
     if (finalPrice !== undefined) call.finalPrice = finalPrice;
 
@@ -154,8 +166,8 @@ export class CallsService {
       };
     }
 
-    const yesOdds = yesStake > 0 ? (totalPool / yesStake) : 2.0;
-    const noOdds = noStake > 0 ? (totalPool / noStake) : 2.0;
+    const yesOdds = yesStake > 0 ? totalPool / yesStake : 2.0;
+    const noOdds = noStake > 0 ? totalPool / noStake : 2.0;
 
     return {
       yes: Number(yesOdds.toFixed(2)),

@@ -1,10 +1,23 @@
-import { Controller, Get } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiOkResponse } from '@nestjs/swagger';
 import { ConfigService } from './config.service';
 import { PlatformSettings } from './entities/platform-settings.entity';
+import { UpdateConfigDto } from './dto/update-config.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AdminGuard } from '../auth/guards/admin.guard';
+import { Audited } from '../audit/decorators/audited.decorator';
+import { AuditActionType } from '../audit/audit-log.entity';
 
 @ApiTags('config')
-@Controller('config')
+@Controller()
 export class PlatformConfigController {
   constructor(private readonly configService: ConfigService) {}
 
@@ -23,7 +36,7 @@ export class PlatformConfigController {
    *   "updatedAt": "2024-01-26T10:30:00.000Z"
    * }
    */
-  @Get()
+  @Get('config')
   @ApiOperation({
     summary: 'Get platform configuration',
     description:
@@ -44,7 +57,21 @@ export class PlatformConfigController {
     },
   })
   async getConfig(): Promise<Omit<PlatformSettings, 'id' | 'createdAt'>> {
-    const { id, createdAt, ...settings } = await this.configService.getSettings();
+    const { id, createdAt, ...settings } =
+      await this.configService.getSettings();
+    return settings;
+  }
+
+  @Patch('admin/config')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @Audited(AuditActionType.ADMIN_ACTION, () => 'config:platform')
+  @ApiOperation({
+    summary: 'Update platform configuration (admin)',
+  })
+  async updateConfig(@Body() dto: UpdateConfigDto) {
+    const { id, createdAt, ...settings } =
+      await this.configService.updateOffChainSettings(dto);
     return settings;
   }
 }

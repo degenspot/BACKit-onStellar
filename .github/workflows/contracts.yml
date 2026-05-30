@@ -1,0 +1,103 @@
+name: Soroban Contracts CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'packages/contracts/**'
+      - '.github/workflows/contracts.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'packages/contracts/**'
+      - '.github/workflows/contracts.yml'
+
+jobs:
+  test-and-build:
+    name: Test & Build Contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown,wasm32v1-none
+          components: clippy, rustfmt
+
+      - name: Ensure wasm32v1-none target is available
+        run: rustup target add wasm32v1-none
+
+      - name: Cache Cargo & Rust Build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/contracts/target
+          key: ${{ runner.os }}-cargo-contracts-${{ hashFiles('packages/contracts/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-contracts-
+
+      - name: Run Cargo Test
+        run: |
+          cd packages/contracts
+          cargo test
+
+      - name: Install Stellar CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CURL_ARGS=(-sS -L -H "Accept: application/vnd.github+json")
+          if [ -n "${GITHUB_TOKEN:-}" ]; then
+            CURL_ARGS+=(-H "Authorization: Bearer $GITHUB_TOKEN")
+          fi
+
+          release_json="$(mktemp)"
+          trap 'rm -f "$release_json"' EXIT
+          curl "${CURL_ARGS[@]}" --fail --retry 3 --retry-connrefused \
+            -o "$release_json" \
+            "https://api.github.com/repos/stellar/stellar-cli/releases/latest"
+
+          # File + one-line python3 -c: avoids `curl | python3 <<'PY'` (heredoc steals stdin)
+          # and avoids multiline -c (breaks YAML if continuation lines lose indent).
+          STELLAR_TAG="$(python3 -c 'import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); exec("try:\n data=json.loads(p.read_text())\nexcept json.JSONDecodeError as e:\n raise SystemExit(\"Failed to parse GitHub API response: \"+str(e))\ntag=data.get(\"tag_name\")\nif not tag:\n raise SystemExit(\"Failed to fetch stellar-cli latest release tag_name: \"+str(data.get(\"message\") or \"no tag_name\"))\nprint(tag)")' "$release_json")"
+
+          STELLAR_VERSION="${STELLAR_TAG#v}"
+          STELLAR_URL="https://github.com/stellar/stellar-cli/releases/download/${STELLAR_TAG}/stellar-cli-${STELLAR_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          curl -sSL --fail --retry 3 -o stellar-cli.tar.gz "$STELLAR_URL"
+          tar -xzf stellar-cli.tar.gz
+          sudo mv stellar /usr/local/bin/
+          stellar --version
+
+      - name: Build Contracts with Stellar CLI
+        run: |
+          cd packages/contracts
+          stellar contract build
+
+      - name: Report Contract Sizes
+        run: |
+          echo "### Compiled Soroban WASM Sizes" >> $GITHUB_STEP_SUMMARY
+          echo "| Contract WASM | Size (KB) |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          for dir in packages/contracts/target/wasm32v1-none/release packages/contracts/target/wasm32-unknown-unknown/release; do
+            if [ -d "$dir" ]; then
+              for f in "$dir"/*.wasm; do
+                [ -e "$f" ] || continue
+                sz=$(du -h "$f" | cut -f1)
+                name=$(basename "$f")
+                echo "| $name | $sz |" >> $GITHUB_STEP_SUMMARY
+                echo "WASM: $name Size: $sz"
+              done
+            fi
+          done
+
+      - name: Upload WASM Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: soroban-contracts-wasm
+          path: |
+            packages/contracts/target/wasm32v1-none/release/*.wasm
+            packages/contracts/target/wasm32-unknown-unknown/release/*.wasm
+          retention-days: 7

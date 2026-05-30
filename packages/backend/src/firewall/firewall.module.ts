@@ -8,7 +8,6 @@ import { FirewallMiddleware } from './firewall.middleware';
 import { TurnstileGuard } from './guards/turnstile.guard';
 import { FirewallController } from './firewall.controller';
 
-
 @Module({
   imports: [
     TypeOrmModule.forFeature([IpRule, BlockedRequest]),

@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
+import "./notification-animations.css";
 import { Bell } from "lucide-react";
 import { useNotifications } from "@/hooks/useNotifications";
 import { NotificationItem } from "./NotificationItem";
@@ -13,6 +14,24 @@ export function NotificationBell({ userId }: Props) {
     const [open, setOpen] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const { notifications, unreadCount, markRead } = useNotifications(userId);
+    const [animateIds, setAnimateIds] = useState<number[]>([]);
+    const animatedIdsRef = useRef<Set<number>>(new Set());
+
+    // Animate new notifications
+    useEffect(() => {
+        if (notifications.length === 0) return;
+        const latestId = notifications[0].id;
+        if (animatedIdsRef.current.has(latestId)) return;
+
+        animatedIdsRef.current.add(latestId);
+        setAnimateIds((prev) => [latestId, ...prev].slice(0, 10));
+        const timeoutId = window.setTimeout(() => {
+            setAnimateIds((prev) => prev.filter((id) => id !== latestId));
+            animatedIdsRef.current.delete(latestId);
+        }, 1200);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [notifications]);
 
     const handleMarkAllRead = async () => {
         await markRead();
@@ -71,11 +90,15 @@ export function NotificationBell({ userId }: Props) {
                                 </div>
                             ) : (
                                 notifications.map((n) => (
-                                    <NotificationItem
+                                    <div
                                         key={n.id}
-                                        notification={n}
-                                        onMarkRead={handleMarkOneRead}
-                                    />
+                                        className={animateIds.includes(n.id) ? "animate-fade-in" : ""}
+                                    >
+                                        <NotificationItem
+                                            notification={n}
+                                            onMarkRead={handleMarkOneRead}
+                                        />
+                                    </div>
                                 ))
                             )}
                         </div>

@@ -20,14 +20,10 @@ export const dataSourceOptions: DataSourceOptions = {
 
   // ─── Entities ────────────────────────────────────────────────────────────
   // Resolved at runtime so the CLI (which compiles to JS) still finds them.
-  entities: [
-    path.join(__dirname, '..', '**', '*.entity.{ts,js}'),
-  ],
+  entities: [path.join(__dirname, '..', '**', '*.entity.{ts,js}')],
 
   // ─── Migrations ──────────────────────────────────────────────────────────
-  migrations: [
-    path.join(__dirname, 'migrations', '*.{ts,js}'),
-  ],
+  migrations: [path.join(__dirname, 'migrations', '*.{ts,js}')],
   migrationsTableName: 'typeorm_migrations',
 
   // ─── Logging ─────────────────────────────────────────────────────────────
@@ -35,9 +31,7 @@ export const dataSourceOptions: DataSourceOptions = {
   logger: 'advanced-console',
 
   // ─── SSL (production) ────────────────────────────────────────────────────
-  ssl: isProduction
-    ? { rejectUnauthorized: true }
-    : false,
+  ssl: isProduction ? { rejectUnauthorized: true } : false,
 };
 
 /** Singleton DataSource used both by the NestJS app and the TypeORM CLI. */

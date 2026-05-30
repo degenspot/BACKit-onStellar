@@ -28,3 +28,31 @@ pub fn emit_payout_claimed(env: &Env, call_id: u64, staker: &soroban_sdk::Addres
         (call_id, staker.clone(), amount),
     );
 }
+
+/// Emitted when the protocol fee is collected during payout settlement
+pub fn emit_fee_collected(
+    env: &Env,
+    call_id: u64,
+    fee_amount: i128,
+    fee_collector: &soroban_sdk::Address,
+) {
+    env.events().publish(
+        (symbol_short!("fee"), symbol_short!("collected")),
+        (call_id, fee_amount, fee_collector.clone()),
+    );
+}
+
+/// Emitted once at the start of a batch settlement
+pub fn emit_batch_payout_started(env: &Env, call_id: u64, staker_count: u32) {
+    env.events().publish(
+        (symbol_short!("payout"), symbol_short!("batch")),
+        (call_id, staker_count),
+    );
+}
+
+pub fn emit_outcome_disputed(env: &Env, call_id: u64, new_outcome: u32, new_price: i128) {
+    env.events().publish(
+        (symbol_short!("outcome"), symbol_short!("disputed")),
+        (call_id, new_outcome, new_price),
+    );
+}

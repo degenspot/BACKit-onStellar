@@ -1,6 +1,8 @@
+use soroban_sdk::symbol_short;
 use soroban_sdk::{Address, Bytes, Env, Symbol};
 
-// ── Existing events (unchanged) ───────────────────────────────────────────────
+pub const PARAM_MAX_STAKE_PER_USER: &str = "max_stake_per_user";
+pub const PARAM_MIN_STAKE: &str = "min_stake";
 
 /// Emitted when a new call is created
 pub fn emit_call_created(
@@ -98,6 +100,61 @@ pub fn emit_admin_params_changed_u32(
             changed_by.clone(),
             old_value,
             new_value,
+        ),
+    );
+}
+
+/// Emitted when a creator cancels their call and reclaims their stake
+pub fn emit_call_cancelled(env: &Env, call_id: u64, creator: &Address, refunded_amount: i128) {
+    env.events().publish(
+        ("call_registry", "call_cancelled"),
+        (call_id, creator.clone(), refunded_amount),
+    );
+}
+
+pub fn emit_admin_params_changed_i128(
+    env: &Env,
+    param: &str,
+    changed_by: &Address,
+    old_value: i128,
+    new_value: i128,
+) {
+    env.events().publish(
+        ("call_registry", "admin_params_changed"),
+        (
+            Symbol::new(env, param),
+            changed_by.clone(),
+            old_value,
+            new_value,
+        ),
+    );
+}
+pub fn emit_token_whitelisted(env: &Env, token: &Address) {
+    env.events()
+        .publish(("call_registry", "token_whitelisted"), token.clone());
+}
+
+pub fn emit_token_delisted(env: &Env, token: &Address) {
+    env.events()
+        .publish(("call_registry", "token_delisted"), token.clone());
+}
+
+pub fn emit_call_metadata_updated(
+    env: &Env,
+    call_id: u64,
+    creator: &Address,
+    old_cid: &Bytes,
+    new_cid: &Bytes,
+    version: u32,
+) {
+    env.events().publish(
+        (symbol_short!("call"), symbol_short!("meta_upd")),
+        (
+            call_id,
+            creator.clone(),
+            old_cid.clone(),
+            new_cid.clone(),
+            version,
         ),
     );
 }

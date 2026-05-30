@@ -23,7 +23,7 @@ import {
 @ApiTags('Leaderboard')
 @Controller('leaderboard')
 export class LeaderboardController {
-  constructor(private readonly leaderboardService: LeaderboardService) { }
+  constructor(private readonly leaderboardService: LeaderboardService) {}
 
   @Get()
   @ApiOperation({
@@ -41,7 +41,8 @@ export class LeaderboardController {
   @Get('users/:userId')
   @ApiOperation({
     summary: "Get a specific user's leaderboard stats",
-    description: 'Returns win rate, total profit, rank, and call history for a user.',
+    description:
+      'Returns win rate, total profit, rank, and call history for a user.',
   })
   @ApiResponse({ status: HttpStatus.OK, type: UserLeaderboardStatsDto })
   async getUserStats(

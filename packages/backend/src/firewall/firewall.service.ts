@@ -3,7 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { IpRule, IpRuleType } from './entities/ip-rule.entity';
 import { BlockedRequest, BlockReason } from './entities/blocked-request.entity';
-import { ipMatchesCidr, isBotUserAgent, generateFirewallErrorCode } from './utils/ip-matcher.util';
+import {
+  ipMatchesCidr,
+  isBotUserAgent,
+  generateFirewallErrorCode,
+} from './utils/ip-matcher.util';
 
 export interface FirewallVerdict {
   allowed: boolean;
@@ -38,7 +42,9 @@ export class FirewallService implements OnModuleInit {
 
   async onModuleInit() {
     await this.refreshCache();
-    this.logger.log(`Firewall initialised — ${this.ruleCache.length} IP rules loaded`);
+    this.logger.log(
+      `Firewall initialised — ${this.ruleCache.length} IP rules loaded`,
+    );
   }
 
   // ─── Public API ───────────────────────────────────────────────────────────
@@ -80,7 +86,9 @@ export class FirewallService implements OnModuleInit {
    * Called from the Turnstile guard after a failed challenge verification.
    * Writes a TURNSTILE_FAILED blocked-request record.
    */
-  async recordTurnstileFailure(snapshot: RequestSnapshot): Promise<FirewallVerdict> {
+  async recordTurnstileFailure(
+    snapshot: RequestSnapshot,
+  ): Promise<FirewallVerdict> {
     return this.block(snapshot, BlockReason.TURNSTILE_FAILED);
   }
 
@@ -99,7 +107,9 @@ export class FirewallService implements OnModuleInit {
     const rule = this.ruleRepo.create({ cidr, type, reason, createdBy });
     const saved = await this.ruleRepo.save(rule);
     await this.refreshCache(); // immediate cache bust
-    this.logger.log(`Firewall rule added: [${type}] ${cidr} by ${createdBy ?? 'system'}`);
+    this.logger.log(
+      `Firewall rule added: [${type}] ${cidr} by ${createdBy ?? 'system'}`,
+    );
     return saved;
   }
 
@@ -140,7 +150,10 @@ export class FirewallService implements OnModuleInit {
 
     // Persist asynchronously — do not await in the hot path
     this.persistBlockedRequest(snapshot, reason, errorCode).catch((err) =>
-      this.logger.error('Failed to persist blocked-request log', (err as Error).stack),
+      this.logger.error(
+        'Failed to persist blocked-request log',
+        (err as Error).stack,
+      ),
     );
 
     this.logger.warn(

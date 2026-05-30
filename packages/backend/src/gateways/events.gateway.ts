@@ -42,6 +42,11 @@ export interface UserNotificationPayload {
   meta?: Record<string, unknown>;
 }
 
+export interface ConfigUpdatedPayload {
+  feePercent: number;
+  source: 'admin' | 'indexer';
+}
+
 // ---------------------------------------------------------------------------
 // Room helpers
 // ---------------------------------------------------------------------------
@@ -261,6 +266,11 @@ export class EventsGateway
     const room = userRoom(payload.userId);
     this.logger.debug(`Broadcasting notification to room "${room}"`);
     this.server.to(room).emit('notification', payload);
+  }
+
+  @OnEvent('config.updated')
+  onConfigUpdated(payload: ConfigUpdatedPayload) {
+    this.server.emit('config:updated', payload);
   }
 
   // -------------------------------------------------------------------------

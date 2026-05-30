@@ -55,6 +55,7 @@ export interface Notification {
   userId: string;
   type: "BACKED_CALL" | "CALL_ENDED" | "PAYOUT_READY" | "NEW_FOLLOWER";
   referenceId?: string;
+  address?: string; // for profile
   message: string;
   readStatus: boolean;
   createdAt: string;

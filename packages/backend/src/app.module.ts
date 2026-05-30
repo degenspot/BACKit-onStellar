@@ -18,7 +18,11 @@ import { FirewallMiddleware } from './firewall/firewall.middleware';
 import { CacheModule } from '@nestjs/cache-manager';
 import { TokensModule } from './token/tokens.module';
 import { RelayModule } from './relay/relay.module';
-
+import { CommentsModule } from './comments/comments.module';
+import { PayoutsModule } from './payouts/payouts.module';
+import { QueuesModule } from './common/queues/queues.module';
+import { StorageModule } from './storage/storage.module';
+import { TreasuryModule } from './treasury/treasury.module';
 
 @Module({
   imports: [
@@ -37,6 +41,8 @@ import { RelayModule } from './relay/relay.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    QueuesModule,
+    StorageModule,
     ScheduleModule.forRoot(),
     TypeOrmModule.forRoot({
       type: 'postgres',
@@ -66,11 +72,15 @@ import { RelayModule } from './relay/relay.module';
     AnalyticsModule,
     NotificationsModule,
     SearchModule,
-    UsersModule,TokensModule,
+    UsersModule,
+    TokensModule,
+    PayoutsModule,
+    TreasuryModule,
     GatewaysModule,
     AuditModule,
     FirewallModule,
     RelayModule,
+    CommentsModule,
   ],
   controllers: [],
   providers: [],

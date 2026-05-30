@@ -1,10 +1,16 @@
-import { IsOptional, IsString, IsInt, Min, Max } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, Max, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
+
+export type CallsFeedSort = 'recent' | 'trending';
 
 export class QueryCallsDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsIn(['recent', 'trending'])
+  sort?: CallsFeedSort = 'recent';
 
   @IsOptional()
   @Type(() => Number)

@@ -51,7 +51,9 @@ const mockCalls: Record<string, any> = {
             targetPrice: 3000,
             comparison: ">",
             deadline: "2024-12-31T23:59:59Z"
-        }
+        },
+        startPrice: 2350.00,
+        createdAt: "2024-01-14T00:00:00Z"
     },
     "2": {
         id: 2,
@@ -95,7 +97,9 @@ const mockCalls: Record<string, any> = {
             targetPrice: 50000,
             comparison: ">",
             deadline: "2024-02-29T23:59:59Z"
-        }
+        },
+        startPrice: 41200.00,
+        createdAt: "2024-01-13T00:00:00Z"
     },
     "3": {
         id: 3,
@@ -146,7 +150,9 @@ const mockCalls: Record<string, any> = {
             targetPrice: 100,
             comparison: ">",
             deadline: "2024-01-20T23:59:59Z"
-        }
+        },
+        startPrice: 82.10,
+        createdAt: "2024-01-14T06:00:00Z"
     },
 };
 

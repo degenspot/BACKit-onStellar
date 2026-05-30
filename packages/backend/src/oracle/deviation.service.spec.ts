@@ -21,7 +21,10 @@ describe('PriceDeviationService', () => {
       providers: [
         PriceDeviationService,
         { provide: CoinGeckoService, useValue: mockCoinGecko },
-        { provide: getRepositoryToken(PriceDeviationLog), useValue: mockLogRepo },
+        {
+          provide: getRepositoryToken(PriceDeviationLog),
+          useValue: mockLogRepo,
+        },
       ],
     }).compile();
 
@@ -44,10 +47,12 @@ describe('PriceDeviationService', () => {
   // ─── runDeviationCheck — within threshold ─────────────────────────────────
 
   it('does not halt signing when deviation is within threshold', async () => {
-    mockCoinGecko.getPrices.mockResolvedValue(new Map([['XLM', 0.10]]));
+    mockCoinGecko.getPrices.mockResolvedValue(new Map([['XLM', 0.1]]));
 
     // Oracle is 2 % above reference — within default 5 % threshold
-    const results = await service.runDeviationCheck([{ symbol: 'XLM', usdPrice: 0.102 }]);
+    const results = await service.runDeviationCheck([
+      { symbol: 'XLM', usdPrice: 0.102 },
+    ]);
 
     expect(results).toHaveLength(1);
     expect(results[0].breached).toBe(false);
@@ -59,10 +64,12 @@ describe('PriceDeviationService', () => {
   // ─── runDeviationCheck — breach ───────────────────────────────────────────
 
   it('halts signing and logs when deviation exceeds threshold', async () => {
-    mockCoinGecko.getPrices.mockResolvedValue(new Map([['XLM', 0.10]]));
+    mockCoinGecko.getPrices.mockResolvedValue(new Map([['XLM', 0.1]]));
 
     // Oracle is 20 % above reference — exceeds 5 % threshold
-    const results = await service.runDeviationCheck([{ symbol: 'XLM', usdPrice: 0.12 }]);
+    const results = await service.runDeviationCheck([
+      { symbol: 'XLM', usdPrice: 0.12 },
+    ]);
 
     expect(results[0].breached).toBe(true);
     expect(results[0].deviationPercent).toBeCloseTo(20, 1);
@@ -74,14 +81,14 @@ describe('PriceDeviationService', () => {
   it('halts signing if any one symbol breaches, even if others are fine', async () => {
     mockCoinGecko.getPrices.mockResolvedValue(
       new Map([
-        ['XLM', 0.10],
+        ['XLM', 0.1],
         ['BTC', 50000],
       ]),
     );
 
     const results = await service.runDeviationCheck([
-      { symbol: 'XLM', usdPrice: 0.101 },  // 1 % — fine
-      { symbol: 'BTC', usdPrice: 60000 },   // 20 % — breach
+      { symbol: 'XLM', usdPrice: 0.101 }, // 1 % — fine
+      { symbol: 'BTC', usdPrice: 60000 }, // 20 % — breach
     ]);
 
     expect(results.find((r) => r.symbol === 'XLM')!.breached).toBe(false);
@@ -95,7 +102,9 @@ describe('PriceDeviationService', () => {
   it('skips a symbol when CoinGecko returns no price for it', async () => {
     mockCoinGecko.getPrices.mockResolvedValue(new Map()); // nothing returned
 
-    const results = await service.runDeviationCheck([{ symbol: 'XLM', usdPrice: 0.10 }]);
+    const results = await service.runDeviationCheck([
+      { symbol: 'XLM', usdPrice: 0.1 },
+    ]);
 
     expect(results).toHaveLength(0);
     expect(mockLogRepo.save).not.toHaveBeenCalled();
@@ -107,7 +116,9 @@ describe('PriceDeviationService', () => {
   it('does not divide by zero when reference price is 0', async () => {
     mockCoinGecko.getPrices.mockResolvedValue(new Map([['XLM', 0]]));
 
-    const results = await service.runDeviationCheck([{ symbol: 'XLM', usdPrice: 0.10 }]);
+    const results = await service.runDeviationCheck([
+      { symbol: 'XLM', usdPrice: 0.1 },
+    ]);
 
     expect(results[0].deviationPercent).toBe(0);
     expect(results[0].breached).toBe(false);
