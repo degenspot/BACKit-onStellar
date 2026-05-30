@@ -44,26 +44,25 @@ fn test_set_admin_emits_admin_params_changed() {
  
     client.set_admin(&new_admin);
  
-    /* EVENT CHECKING TEMPORARILY DISABLED
-    let events = env.events().all();
-    let last = events.last().expect("no events");
- 
-    assert_eq!(
-        last.0,
-        vec![
-            &env,
-            "call_registry".into_val(&env),
-            "admin_params_changed".into_val(&env),
-        ]
-    );
- 
-    let (param, _changed_by, old_val, new_val): (Symbol, Address, Address, Address) =
-        last.1.into_val(&env);
- 
-    assert_eq!(param, Symbol::new(&env, "admin"));
-    assert_eq!(old_val, _old_admin);
-    assert_eq!(new_val, new_admin);
-    */
+    // EVENT CHECKING TEMPORARILY DISABLED
+    // let events = env.events().all();
+    // let last = events.last().expect("no events");
+    // 
+    // assert_eq!(
+    //     last.0,
+    //     vec![
+    //         &env,
+    //         "call_registry".into_val(&env),
+    //         "admin_params_changed".into_val(&env),
+    //     ]
+    // );
+    // 
+    // let (param, _changed_by, old_val, new_val): (Symbol, Address, Address, Address) =
+    //     last.1.into_val(&env);
+    // 
+    // assert_eq!(param, Symbol::new(&env, "admin"));
+    // assert_eq!(old_val, _old_admin);
+    // assert_eq!(new_val, new_admin);
 }
  
 // ── set_outcome_manager ───────────────────────────────────────────────────────
