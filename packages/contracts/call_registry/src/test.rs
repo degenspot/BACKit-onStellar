@@ -71,7 +71,7 @@ fn test_set_admin_emits_admin_params_changed() {
         last.2.into_val(&env);
  
     assert_eq!(param, Symbol::new(&env, "admin"));
-    assert_eq!(old_val, old_admin);
+    assert_eq!(old_val, _old_admin);
     assert_eq!(new_val, new_admin);
 }
  

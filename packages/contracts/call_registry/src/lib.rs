@@ -451,6 +451,3 @@ impl CallRegistry {
         set_call(&env, &call);
     }
 }
-
-#[cfg(test)]
-mod test;

@@ -21,7 +21,7 @@
                 {
                   "vec": [
                     {
-                      "bytes": "23e855da004a03d7bab5f6626c137cd99876a6470be4c4195aed2aab7b057446"
+                      "bytes": "f9b4c970a7d605218dd82e33ed9f3e2863dca06a9bdaddf7d10b279c820e5baf"
                     }
                   ]
                 },
@@ -46,7 +46,7 @@
               "function_name": "add_oracle",
               "args": [
                 {
-                  "bytes": "787ccea777144a9eca2d47ebc7554c9b99c6122dc639cb18262a64c65cb60db2"
+                  "bytes": "bcbf4ff76c231d3d496d87f37135bd5562803324229d55486e190657ac1ee342"
                 }
               ]
             }
@@ -66,7 +66,7 @@
               "function_name": "remove_oracle",
               "args": [
                 {
-                  "bytes": "787ccea777144a9eca2d47ebc7554c9b99c6122dc639cb18262a64c65cb60db2"
+                  "bytes": "bcbf4ff76c231d3d496d87f37135bd5562803324229d55486e190657ac1ee342"
                 }
               ]
             }
@@ -233,7 +233,7 @@
                           "map": [
                             {
                               "key": {
-                                "bytes": "23e855da004a03d7bab5f6626c137cd99876a6470be4c4195aed2aab7b057446"
+                                "bytes": "f9b4c970a7d605218dd82e33ed9f3e2863dca06a9bdaddf7d10b279c820e5baf"
                               },
                               "val": {
                                 "bool": true
