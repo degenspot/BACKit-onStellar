@@ -23,6 +23,8 @@ import { PayoutsModule } from './payouts/payouts.module';
 import { QueuesModule } from './common/queues/queues.module';
 import { StorageModule } from './storage/storage.module';
 import { TreasuryModule } from './treasury/treasury.module';
+import { AuthModule } from './auth/auth.module';
+import { LoggerModule } from './common/logger/logger.module';
 
 @Module({
   imports: [
@@ -41,6 +43,8 @@ import { TreasuryModule } from './treasury/treasury.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    LoggerModule,
+    AuthModule,
     QueuesModule,
     StorageModule,
     ScheduleModule.forRoot(),

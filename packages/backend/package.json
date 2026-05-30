@@ -26,8 +26,8 @@
     "typeorm:show": "npm run typeorm -- migration:show"
   },
   "dependencies": {
-    "@nestjs/bullmq": "^11.0.2",
     "@nestjs/axios": "^4.0.1",
+    "@nestjs/bullmq": "^11.0.2",
     "@nestjs/cache-manager": "^3.0.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
@@ -87,7 +87,7 @@
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
-    "typescript": "^5.7.3",
+    "typescript": "^5.9.3",
     "typescript-eslint": "^8.20.0"
   }
   ,

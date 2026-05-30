@@ -1,11 +1,13 @@
 import { NestFactory } from '@nestjs/core';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
+import { Logger } from 'nestjs-pino';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.useLogger(app.get(Logger)); // Use pino logger
 
   // Attach the Socket.io WebSocket adapter — required for the EventsGateway
   app.useWebSocketAdapter(new IoAdapter(app));
@@ -100,34 +102,32 @@ async function bootstrap() {
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
   await app.listen(port);
 
-  Logger.log(`🚀 Backend running on http://localhost:${port}`, 'Bootstrap');
-  Logger.log(
+  const logger = app.get(Logger);
+
+  logger.log(`🚀 Backend running on http://localhost:${port}`, 'Bootstrap');
+  logger.log(
     `📚 Swagger documentation available at http://localhost:${port}/api/docs`,
     'Bootstrap',
   );
-  Logger.log(
+  logger.log(
     `📊 API JSON spec available at http://localhost:${port}/api/docs-json`,
     'Bootstrap',
   );
-  Logger.log(
+  logger.log(
     `💚 Health check available at http://localhost:${port}/health`,
     'Bootstrap',
   );
-  Logger.log(
+  logger.log(
     `🔌 WebSocket gateway available at ws://localhost:${port}/ws`,
     'Bootstrap',
   );
-  Logger.log(
+  logger.log(
     `🌍 Environment: ${process.env.NODE_ENV || 'development'}`,
     'Bootstrap',
   );
 }
 
 bootstrap().catch((error) => {
-  Logger.error(
-    `Failed to start application: ${error.message}`,
-    error.stack,
-    'Bootstrap',
-  );
+  console.error(`Failed to start application: ${error.message}`, error.stack);
   process.exit(1);
 });
