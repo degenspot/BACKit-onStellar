@@ -1,51 +1,227 @@
-import {
-  Injectable,
-  Logger,
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
-import { SorobanRpc, Contract, xdr } from '@stellar/stellar-sdk';
-import { OracleCall, OracleCallStatus } from './entities/oracle-call.entity';
-import { OracleOutcome } from './entities/oracle-outcome.entity';
-import { retryWithBackoff, Retryable } from '../utils/retry';
-import { REPORT_THRESHOLD } from '../calls/constants/moderation.constants';
-import { OracleHealthService } from './oracle-health.service';
-import { OracleOperationType } from './entities/oracle-health-log.entity';
+import { Repository, LessThanOrEqual, IsNull } from 'typeorm';
+import { PriceFetcherService } from './price-fetcher.service';
 import { SigningService } from './signing.service';
-
-/**
- * High-level lifecycle status for a market/call, used by analytics and UI.
- *
- * - PENDING: Created but not yet active on the oracle.
- * - ACTIVE:  Live and eligible for resolution (OPEN or SETTLING).
- * - PAUSED:  Temporarily disabled due to moderation/circuit breaker.
- * - RESOLVED: Terminal state (RESOLVED_YES or RESOLVED_NO).
- */
-export enum MarketStatus {
-  PENDING = 'PENDING',
-  ACTIVE = 'ACTIVE',
-  PAUSED = 'PAUSED',
-  RESOLVED = 'RESOLVED',
-}
+import { OracleCall } from './entities/oracle-call.entity';
+import { OracleOutcome } from './entities/oracle-outcome.entity';
+import { IpfsService } from '../storage/ipfs.service';
+import * as nacl from 'tweetnacl';
 
 @Injectable()
-export class OracleService {
+export class OracleService implements OnModuleInit {
   private readonly logger = new Logger(OracleService.name);
+  private pollingInterval: NodeJS.Timeout;
+  private readonly POLL_INTERVAL_MS = 30000; // 30 seconds
 
   constructor(
-    private readonly rpcServer: SorobanRpc.Server,
     @InjectRepository(OracleCall)
-    private readonly oracleCallRepository: Repository<OracleCall>,
+    private oracleCallRepository: Repository<OracleCall>,
     @InjectRepository(OracleOutcome)
-    private readonly oracleOutcomeRepository: Repository<OracleOutcome>,
-    private readonly oracleHealthService: OracleHealthService,
-    private readonly signingService: SigningService,
-  ) {}
+    private oracleOutcomeRepository: Repository<OracleOutcome>,
+    private priceFetcherService: PriceFetcherService,
+    private signingService: SigningService,
+    private ipfsService: IpfsService,
+  ) { }
 
-  // ─── Core CRUD ────────────────────────────────────────────────────────────
+  onModuleInit() {
+    this.startPolling();
+  }
 
+  /**
+   * Start polling for due calls every 30 seconds
+   */
+  private startPolling() {
+    this.logger.log('Starting Oracle Worker polling...');
+
+    this.pollingInterval = setInterval(async () => {
+      try {
+        await this.processDueCalls();
+      } catch (error) {
+        this.logger.error('Error during polling cycle:', error);
+      }
+    }, this.POLL_INTERVAL_MS);
+  }
+
+  /**
+   * Stop the polling interval
+   */
+  stopPolling() {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.logger.log('Oracle Worker polling stopped');
+    }
+  }
+
+  /**
+   * Process all calls that are due (call time <= now) and haven't been processed
+   */
+  private async processDueCalls() {
+    try {
+      const now = new Date();
+
+      // Find all due calls that haven't been processed yet
+      const dueCalls = await this.oracleCallRepository.find({
+        where: {
+          callTime: LessThanOrEqual(now),
+          processedAt: IsNull(),
+        },
+      });
+
+      if (dueCalls.length === 0) {
+        this.logger.debug('No due calls found');
+        return;
+      }
+
+      this.logger.log(`Found ${dueCalls.length} due calls to process`);
+
+      for (const call of dueCalls) {
+        await this.processCall(call);
+      }
+    } catch (error) {
+      this.logger.error('Error processing due calls:', error);
+    }
+  }
+
+  /**
+   * Process a single call: fetch price, sign outcome, submit transaction
+   */
+  private async processCall(call: OracleCall, retryCount = 0) {
+    const MAX_RETRIES = 3;
+
+    try {
+      this.logger.log(`Processing call ${call.id} - pair: ${call.pairAddress}`);
+
+      // Fetch price from DexScreener with fallback to StellarX/SDEX
+      const price = await this.priceFetcherService.fetchPrice(
+        call.pairAddress,
+        call.baseToken,
+        call.quoteToken,
+      );
+
+      if (!price) {
+        throw new Error(`Failed to fetch price for pair ${call.pairAddress}`);
+      }
+
+      this.logger.log(`Fetched price for ${call.pairAddress}: ${price}`);
+
+      // Determine outcome (above or below strike price)
+      const outcome = price >= call.strikePrice ? 'YES' : 'NO';
+
+      // Create message to sign: callId + price + timestamp
+      const messageData = {
+        callId: call.id,
+        price: price,
+        timestamp: Date.now(),
+        outcome: outcome,
+        pairAddress: call.pairAddress,
+      };
+
+      // Sign the outcome with ed25519
+      const signature = this.signingService.signOutcome(messageData);
+
+      // Submit transaction to OutcomeManager contract
+      await this.submitOutcomeTransaction(call, outcome, price, signature);
+
+      // Pin oracle evidence to IPFS (non-blocking failure)
+      let evidenceCid: string | undefined;
+      try {
+        evidenceCid = await this.ipfsService.pinEvidencePayload({
+          callId: call.id,
+          source: 'DexScreener',
+          apiUrl: `https://api.dexscreener.com/latest/dex/pairs/${call.pairAddress}`,
+          rawResponse: { pairAddress: call.pairAddress, price },
+          fetchedAt: new Date().toISOString(),
+          priceUsed: price,
+        });
+      } catch (err) {
+        this.logger.warn(`Evidence pinning failed for call ${call.id}, continuing without it`);
+      }
+
+      // Record the outcome
+      const oracleOutcome = new OracleOutcome();
+      oracleOutcome.call = call;
+      oracleOutcome.price = price;
+      oracleOutcome.outcome = outcome;
+      oracleOutcome.signature = signature;
+      oracleOutcome.transactionHash = signature; // Placeholder - replace with actual tx hash
+      if (evidenceCid) oracleOutcome.evidence_cid = evidenceCid;
+
+      await this.oracleOutcomeRepository.save(oracleOutcome);
+
+      // Mark call as processed
+      call.processedAt = new Date();
+      await this.oracleCallRepository.save(call);
+
+      this.logger.log(
+        `Successfully processed call ${call.id}: outcome=${outcome}, price=${price}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error processing call ${call.id} (attempt ${retryCount + 1}/${MAX_RETRIES}):`,
+        error,
+      );
+
+      if (retryCount < MAX_RETRIES) {
+        // Exponential backoff: 10s, 30s, 60s
+        const delayMs = Math.pow(2, retryCount) * 10000;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        await this.processCall(call, retryCount + 1);
+      } else {
+        this.logger.error(
+          `Failed to process call ${call.id} after ${MAX_RETRIES} retries`,
+        );
+        // Mark call as failed
+        call.failedAt = new Date();
+        call.failureReason = error.message;
+        await this.oracleCallRepository.save(call);
+      }
+    }
+  }
+
+  /**
+   * Submit outcome transaction to OutcomeManager contract
+   * This is a placeholder - implement based on your contract interaction library
+   */
+  private async submitOutcomeTransaction(
+    call: OracleCall,
+    outcome: string,
+    price: number,
+    signature: string,
+  ): Promise<void> {
+    try {
+      // TODO: Implement actual contract transaction submission
+      // This should call the OutcomeManager contract with:
+      // - callId
+      // - outcome (YES/NO)
+      // - price
+      // - signature (ed25519)
+
+      this.logger.log(
+        `Submitting outcome transaction for call ${call.id}: outcome=${outcome}, price=${price}`,
+      );
+
+      // Placeholder implementation
+      // Example using web3.js or ethers.js depending on your setup
+      // const tx = await outcomeManagerContract.submitOutcome(
+      //   call.id,
+      //   outcome,
+      //   price,
+      //   signature
+      // );
+      // await tx.wait();
+    } catch (error) {
+      this.logger.error(
+        `Failed to submit outcome transaction for call ${call.id}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new oracle call to be processed
+   */
   async createOracleCall(
     pairAddress: string,
     baseToken: string,
@@ -53,357 +229,36 @@ export class OracleService {
     strikePrice: number,
     callTime: Date,
   ): Promise<OracleCall> {
-    const call = this.oracleCallRepository.create({
-      pairAddress,
-      baseToken,
-      quoteToken,
-      strikePrice,
-      callTime,
-    });
-    return this.oracleCallRepository.save(call);
+    const oracleCall = new OracleCall();
+    oracleCall.pairAddress = pairAddress;
+    oracleCall.baseToken = baseToken;
+    oracleCall.quoteToken = quoteToken;
+    oracleCall.strikePrice = strikePrice;
+    oracleCall.callTime = callTime;
+
+    return await this.oracleCallRepository.save(oracleCall);
   }
 
+  /**
+   * Get all pending oracle calls
+   */
   async getPendingCalls(): Promise<OracleCall[]> {
-    return this.oracleCallRepository.find({
-      where: { processedAt: IsNull(), failedAt: IsNull() },
+    return await this.oracleCallRepository.find({
+      where: {
+        processedAt: IsNull(),
+        failedAt: IsNull(),
+      },
     });
   }
 
+  /**
+   * Get oracle outcomes for a specific call
+   */
   async getOutcomesForCall(callId: number): Promise<OracleOutcome[]> {
-    return this.oracleOutcomeRepository.find({
-      where: { call: { id: callId } },
-      relations: ['call'],
+    return await this.oracleOutcomeRepository.find({
+      where: {
+        call: { id: callId },
+      },
     });
-  }
-
-  /**
-   * Derive a coarse-grained lifecycle status for a given oracle call.
-   * This centralizes how low-level OracleCallStatus values are exposed
-   * to other modules (analytics, API, UI).
-   */
-  async getMarketStatus(callId: number): Promise<MarketStatus> {
-    const call = await this.findCallOrThrow(callId);
-
-    switch (call.status) {
-      case OracleCallStatus.DRAFT:
-        return MarketStatus.PENDING;
-      case OracleCallStatus.OPEN:
-      case OracleCallStatus.SETTLING:
-        return MarketStatus.ACTIVE;
-      case OracleCallStatus.PAUSED:
-        return MarketStatus.PAUSED;
-      case OracleCallStatus.RESOLVED_YES:
-      case OracleCallStatus.RESOLVED_NO:
-        return MarketStatus.RESOLVED;
-      default:
-        // Fallback for any future/unknown status values
-        return MarketStatus.PENDING;
-    }
-  }
-
-  // ─── Price Fetching ───────────────────────────────────────────────────────
-
-  @Retryable(4, 1000)
-  async fetchOraclePrice(
-    contractId: string,
-    assetSymbol: string,
-  ): Promise<bigint> {
-    const submissionTime = new Date();
-
-    try {
-      const contract = new Contract(contractId);
-
-      // Extract operation first so the cast stays on one clean expression
-      const operation = contract.call(
-        'lastprice',
-        xdr.ScVal.scvSymbol(assetSymbol),
-      );
-      const tx = await this.rpcServer.simulateTransaction(
-        operation as unknown as Parameters<
-          SorobanRpc.Server['simulateTransaction']
-        >[0],
-      );
-
-      if (SorobanRpc.Api.isSimulationError(tx)) {
-        throw new Error(
-          `Oracle simulation error for ${assetSymbol}: ${tx.error}`,
-        );
-      }
-
-      const result = (tx as SorobanRpc.Api.SimulateTransactionSuccessResponse)
-        .result;
-      if (!result) {
-        throw new Error(
-          `No result returned for oracle price of ${assetSymbol}`,
-        );
-      }
-
-      const price = result.retval.i128().lo().toBigInt();
-      await this.oracleHealthService.recordOperation({
-        oracleKey: contractId,
-        callId: assetSymbol,
-        operation: OracleOperationType.FETCH,
-        submissionTime,
-        priceFetched: Number(price),
-        success: true,
-      });
-
-      return price;
-    } catch (error) {
-      await this.oracleHealthService.recordOperation({
-        oracleKey: contractId,
-        callId: assetSymbol,
-        operation: OracleOperationType.FETCH,
-        submissionTime,
-        priceFetched: null,
-        success: false,
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
-      throw error;
-    }
-  }
-
-  async fetchAllPrices(
-    contractId: string,
-    symbols: string[],
-  ): Promise<Record<string, bigint>> {
-    const results: Record<string, bigint> = {};
-
-    await Promise.all(
-      symbols.map(async (symbol) => {
-        results[symbol] = await retryWithBackoff(
-          () => this.fetchOraclePrice(contractId, symbol),
-          4,
-          1000,
-          `fetchOraclePrice(${symbol})`,
-        );
-      }),
-    );
-
-    return results;
-  }
-
-  async simulateContractRead(
-    tx: Parameters<SorobanRpc.Server['simulateTransaction']>[0],
-    label = 'simulateContractRead',
-  ): Promise<SorobanRpc.Api.SimulateTransactionResponse> {
-    return retryWithBackoff(
-      () => this.rpcServer.simulateTransaction(tx),
-      4,
-      1000,
-      label,
-    );
-  }
-
-  // ─── Circuit Breaker Resolution ───────────────────────────────────────────
-
-  /**
-   * Called by the oracle cron for every pending market.
-   * Throws before touching Soroban if the market is PAUSED.
-   */
-  async resolveMarket(callId: number, observedPrice: string): Promise<void> {
-    const submissionTime = new Date();
-    const call = await this.findCallOrThrow(callId);
-
-    // ── CIRCUIT BREAKER ──────────────────────────────────────────────────
-    if (call.status === OracleCallStatus.PAUSED) {
-      this.logger.warn(
-        `Oracle BLOCKED for call ${callId} — PAUSED (reports: ${call.reportCount}/${REPORT_THRESHOLD})`,
-      );
-      // Mark as failed so the cron stops retrying until admin intervenes
-      call.failedAt = new Date();
-      await this.oracleCallRepository.save(call);
-      await this.oracleHealthService.recordOperation({
-        oracleKey: call.pairAddress,
-        callId,
-        operation: OracleOperationType.SUBMIT,
-        submissionTime,
-        priceFetched: Number(observedPrice),
-        expectedPrice: Number(call.strikePrice),
-        success: false,
-        errorMessage: `Market ${callId} is paused due to community reports.`,
-      });
-
-      throw new BadRequestException(
-        `Market ${callId} is paused due to community reports. Admin review required.`,
-      );
-    }
-
-    // Guard: already resolved — idempotent, no error
-    const terminal = [
-      OracleCallStatus.RESOLVED_YES,
-      OracleCallStatus.RESOLVED_NO,
-    ];
-    if (terminal.includes(call.status)) {
-      this.logger.log(`Call ${callId} already resolved — skipping.`);
-      return;
-    }
-
-    if (
-      ![OracleCallStatus.OPEN, OracleCallStatus.SETTLING].includes(call.status)
-    ) {
-      await this.oracleHealthService.recordOperation({
-        oracleKey: call.pairAddress,
-        callId,
-        operation: OracleOperationType.SUBMIT,
-        submissionTime,
-        priceFetched: Number(observedPrice),
-        expectedPrice: Number(call.strikePrice),
-        success: false,
-        errorMessage: `Cannot resolve call in status ${call.status}`,
-      });
-      throw new BadRequestException(
-        `Cannot resolve call in status ${call.status}`,
-      );
-    }
-
-    const outcome = this.evaluateOutcome(call, observedPrice);
-
-    const signature = this.signingService.signOutcome({
-      callId,
-      price: Number(observedPrice),
-      timestamp: Math.floor(Date.now() / 1000),
-      outcome: outcome === OracleCallStatus.RESOLVED_YES ? 'YES' : 'NO',
-      pairAddress: call.pairAddress,
-    });
-
-    await this.oracleOutcomeRepository.save(
-      this.oracleOutcomeRepository.create({
-        call,
-        price: Number(observedPrice),
-        outcome: outcome === OracleCallStatus.RESOLVED_YES ? 'YES' : 'NO',
-        signature,
-        transactionHash: undefined,
-      } as any),
-    );
-
-    call.status = outcome;
-    call.finalPrice = observedPrice;
-    call.resolvedAt = new Date();
-    call.processedAt = new Date();
-    await this.oracleCallRepository.save(call);
-    await this.oracleHealthService.recordOperation({
-      oracleKey: call.pairAddress,
-      callId,
-      operation: OracleOperationType.SUBMIT,
-      submissionTime,
-      priceFetched: Number(observedPrice),
-      expectedPrice: Number(call.strikePrice),
-      success: true,
-    });
-
-    this.logger.log(`Call ${callId} resolved → ${outcome} @ ${observedPrice}`);
-  }
-
-  // ─── Reporting — increments count and auto-pauses ─────────────────────────
-
-  async recordReport(callId: number): Promise<OracleCall> {
-    const call = await this.findCallOrThrow(callId);
-
-    call.reportCount += 1;
-    call.isHidden = call.reportCount >= REPORT_THRESHOLD;
-
-    if (
-      call.reportCount >= REPORT_THRESHOLD &&
-      call.status === OracleCallStatus.OPEN
-    ) {
-      call.status = OracleCallStatus.PAUSED;
-      this.logger.warn(
-        `Call ${callId} AUTO-PAUSED after ${call.reportCount} reports.`,
-      );
-    }
-
-    return this.oracleCallRepository.save(call);
-  }
-
-  // ─── Admin: Unpause ───────────────────────────────────────────────────────
-
-  async unpauseCall(callId: number): Promise<OracleCall> {
-    const call = await this.findCallOrThrow(callId);
-
-    if (call.status !== OracleCallStatus.PAUSED) {
-      throw new BadRequestException(
-        `Call is not paused (current status: ${call.status})`,
-      );
-    }
-
-    call.status = OracleCallStatus.OPEN;
-    call.failedAt = null;
-
-    this.logger.log(`Call ${callId} manually UNPAUSED by admin.`);
-    return this.oracleCallRepository.save(call);
-  }
-
-  // ─── Admin: Force Resolve ─────────────────────────────────────────────────
-
-  async adminResolveCall(
-    callId: number,
-    resolution: OracleCallStatus.RESOLVED_YES | OracleCallStatus.RESOLVED_NO,
-    finalPrice?: string,
-  ): Promise<OracleCall> {
-    const call = await this.findCallOrThrow(callId);
-
-    const resolvable = [
-      OracleCallStatus.OPEN,
-      OracleCallStatus.PAUSED,
-      OracleCallStatus.SETTLING,
-    ];
-
-    if (!resolvable.includes(call.status)) {
-      throw new BadRequestException(
-        `Cannot force-resolve a call with status ${call.status}`,
-      );
-    }
-
-    call.status = resolution;
-    call.resolvedAt = new Date();
-    call.processedAt = new Date();
-    call.failedAt = null;
-    if (finalPrice !== undefined) call.finalPrice = finalPrice;
-
-    this.logger.log(`Call ${callId} FORCE-RESOLVED by admin → ${resolution}`);
-    return this.oracleCallRepository.save(call);
-  }
-
-  // ─── Admin: Oracle Configuration ──────────────────────────────────────────
-
-  async updateParams(
-    feedId: string,
-    params: { minResponses: number; heartbeatSeconds: number },
-  ): Promise<{ success: boolean; feedId: string }> {
-    this.logger.log(
-      `Oracle params updated for feed ${feedId}: ${JSON.stringify(params)}`,
-    );
-    // In a real app, this would send a Soroban transaction
-    return { success: true, feedId };
-  }
-
-  async setQuorum(
-    roundId: string,
-    quorum: number,
-  ): Promise<{ success: boolean; roundId: string }> {
-    this.logger.log(`Oracle quorum set for round ${roundId}: ${quorum}`);
-    // In a real app, this would send a Soroban transaction
-    return { success: true, roundId };
-  }
-
-  // ─── Private Helpers ──────────────────────────────────────────────────────
-
-  private async findCallOrThrow(callId: number): Promise<OracleCall> {
-    const call = await this.oracleCallRepository.findOne({
-      where: { id: callId },
-    });
-    if (!call) throw new NotFoundException(`OracleCall ${callId} not found`);
-    return call;
-  }
-
-  private evaluateOutcome(
-    call: OracleCall,
-    observedPrice: string,
-  ): OracleCallStatus.RESOLVED_YES | OracleCallStatus.RESOLVED_NO {
-    const observed = parseFloat(observedPrice);
-    return observed >= call.strikePrice
-      ? OracleCallStatus.RESOLVED_YES
-      : OracleCallStatus.RESOLVED_NO;
   }
 }

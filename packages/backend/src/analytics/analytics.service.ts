@@ -1,12 +1,6 @@
-import { InjectRepository } from '@nestjs/typeorm';
-import { TotalValueLockedResponseDto } from './dto/tvl.dto';
-import { TokensService } from '../token/tokens.service';
-import { CoinGeckoService } from '../oracle/coinGeko.service';
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
-import { Inject, Logger } from '@nestjs/common';
 import { DateRangeFilter } from './dto/analytics-query.dto';
 import {
   UserAnalyticsResponse,
@@ -14,93 +8,21 @@ import {
   AccuracyDataPoint,
   WinLossCount,
 } from './dto/analytics-response.dto';
-import {
-  StakeLedgerItemDto,
-  UserStakesResponseDto,
-} from './dto/user-stakes.dto';
 import { Call } from './entities/call.entity';
 import { Stake } from './entities/stake.entity';
 
 @Injectable()
 export class AnalyticsService {
-  private readonly logger = new Logger(AnalyticsService.name);
+  private readonly platformCache = new Map<string, { data: any; expiresAt: number }>();
 
   constructor(
     @InjectRepository(Call)
     private readonly callRepository: Repository<Call>,
     @InjectRepository(Stake)
     private readonly stakeRepository: Repository<Stake>,
-    @InjectRepository(Stake)
-    private readonly stakeLedgerRepository: Repository<Stake>,
 
     private readonly dataSource: DataSource,
-    @Inject(CACHE_MANAGER) private cacheManager: Cache,
-    private readonly tokensService: TokensService,
-    private readonly coinGeckoService: CoinGeckoService,
   ) {}
-
-  /**
-   * Get a paginated ledger of a user's stakes joined with call info.
-   */
-  async getUserStakes(
-    userAddress: string,
-    page: number = 1,
-    limit: number = 20,
-  ): Promise<UserStakesResponseDto> {
-    const qb = this.stakeRepository
-      .createQueryBuilder('stake')
-      .leftJoinAndSelect('stake.call', 'call')
-      .where('stake.userAddress = :userAddress', { userAddress })
-      .orderBy('stake.createdAt', 'DESC')
-      .skip((page - 1) * limit)
-      .take(limit);
-
-    const [stakes, total] = await qb.getManyAndCount();
-
-    const data: StakeLedgerItemDto[] = stakes.map((stake) => {
-      const call = stake.call;
-
-      const resolutionStatus: 'PENDING' | 'RESOLVED' =
-        call && call.outcome && call.outcome !== 'PENDING'
-          ? 'RESOLVED'
-          : 'PENDING';
-
-      return {
-        id: stake.id,
-        callId: stake.callId,
-        userAddress: stake.userAddress,
-        amount: Number(stake.amount),
-        position: stake.position,
-        profitLoss:
-          stake.profitLoss === null || stake.profitLoss === undefined
-            ? null
-            : Number(stake.profitLoss),
-        transactionHash: stake.transactionHash ?? null,
-        createdAt: stake.createdAt,
-        updatedAt: stake.updatedAt,
-        resolutionStatus,
-        call: call && {
-          id: call.id,
-          title: call.title,
-          description: call.description,
-          outcome: call.outcome,
-          resolvedAt: call.resolvedAt ?? null,
-          expiresAt: call.expiresAt ?? null,
-          createdAt: call.createdAt,
-          contractAddress: call.contractAddress ?? null,
-          totalYesStake: Number(call.totalYesStake ?? 0),
-          totalNoStake: Number(call.totalNoStake ?? 0),
-        },
-      };
-    });
-
-    return {
-      data,
-      total,
-      page,
-      limit,
-    };
-  }
 
   /**
    * Get comprehensive analytics for a user
@@ -110,15 +32,6 @@ export class AnalyticsService {
     userAddress: string,
     range: DateRangeFilter,
   ): Promise<UserAnalyticsResponse> {
-    const cacheKey = `profile:${userAddress}:${range}`;
-    const cachedData =
-      await this.cacheManager.get<UserAnalyticsResponse>(cacheKey);
-
-    if (cachedData) {
-      this.logger.debug(`Returning cached analytics for ${userAddress}`);
-      return cachedData;
-    }
-
     const { startDate, endDate } = this.getDateRange(range);
 
     // Execute all queries in parallel for better performance
@@ -136,7 +49,7 @@ export class AnalyticsService {
       this.getOverallStats(userAddress, startDate, endDate),
     ]);
 
-    const response: UserAnalyticsResponse = {
+    return {
       cumulativeProfitPerDay: dailyProfitData,
       cumulativeProfitPerWeek: weeklyProfitData,
       accuracyTrend: accuracyData,
@@ -145,9 +58,6 @@ export class AnalyticsService {
       overallAccuracy: overallStats.overallAccuracy,
       dateRange: range,
     };
-
-    await this.cacheManager.set(cacheKey, response, 300000); // 300s = 5m
-    return response;
   }
 
   /**
@@ -412,6 +322,182 @@ export class AnalyticsService {
     return filledData;
   }
 
+  async getPlatformAnalytics(): Promise<any> {
+    const cacheKey = 'platform_analytics';
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
+
+    const [callStats, stakeStats, userStats, tokenPairs] = await Promise.all([
+      this.dataSource.query(`
+        SELECT
+          COUNT(*) AS total_calls_created,
+          COUNT(CASE WHEN outcome IN ('YES','NO') THEN 1 END) AS total_calls_resolved,
+          AVG(EXTRACT(EPOCH FROM (COALESCE("resolvedAt", NOW()) - "createdAt"))/3600)
+            AS avg_call_duration_hours
+        FROM calls
+      `),
+      this.dataSource.query(`
+        SELECT
+          COALESCE(SUM(amount), 0) AS total_stake_volume,
+          COUNT(DISTINCT "userAddress") AS total_unique_users
+        FROM stakes
+      `),
+      this.dataSource.query(`
+        SELECT COUNT(DISTINCT "userAddress") AS total_unique_users FROM stakes
+      `),
+      this.dataSource.query(`
+        SELECT "contractAddress" AS token_pair, COUNT(*) AS cnt
+        FROM calls
+        WHERE "contractAddress" IS NOT NULL
+        GROUP BY "contractAddress"
+        ORDER BY cnt DESC
+        LIMIT 5
+      `),
+    ]);
+
+    const result = {
+      totalCallsCreated: parseInt(callStats[0]?.total_calls_created || 0),
+      totalCallsResolved: parseInt(callStats[0]?.total_calls_resolved || 0),
+      totalStakeVolume: parseFloat(stakeStats[0]?.total_stake_volume || 0),
+      totalUniqueUsers: parseInt(userStats[0]?.total_unique_users || 0),
+      averageCallDurationHours: parseFloat(callStats[0]?.avg_call_duration_hours || 0),
+      mostPopularTokenPairs: tokenPairs.map((r: any) => ({
+        tokenPair: r.token_pair,
+        count: parseInt(r.cnt),
+      })),
+    };
+
+    this.setCache(cacheKey, result, 300);
+    return result;
+  }
+
+  async getPlatformTrends(period: string): Promise<any> {
+    const cacheKey = `platform_trends_${period}`;
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
+
+    const days = period === '30d' ? 30 : period === '14d' ? 14 : 7;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const [callTrends, userTrends, stakeTrends] = await Promise.all([
+      this.dataSource.query(`
+        SELECT DATE_TRUNC('day', "createdAt") AS day, COUNT(*) AS new_calls
+        FROM calls
+        WHERE "createdAt" >= $1
+        GROUP BY DATE_TRUNC('day', "createdAt")
+        ORDER BY day ASC
+      `, [startDate]),
+      this.dataSource.query(`
+        SELECT DATE_TRUNC('day', "createdAt") AS day, COUNT(DISTINCT "userAddress") AS new_users
+        FROM stakes
+        WHERE "createdAt" >= $1
+        GROUP BY DATE_TRUNC('day', "createdAt")
+        ORDER BY day ASC
+      `, [startDate]),
+      this.dataSource.query(`
+        SELECT DATE_TRUNC('day', "createdAt") AS day, COALESCE(SUM(amount), 0) AS stake_volume
+        FROM stakes
+        WHERE "createdAt" >= $1
+        GROUP BY DATE_TRUNC('day', "createdAt")
+        ORDER BY day ASC
+      `, [startDate]),
+    ]);
+
+    const result = {
+      period,
+      dataPoints: callTrends.map((row: any) => {
+        const dayStr = new Date(row.day).toISOString().split('T')[0];
+        const userRow = userTrends.find((u: any) => new Date(u.day).toISOString().split('T')[0] === dayStr);
+        const stakeRow = stakeTrends.find((s: any) => new Date(s.day).toISOString().split('T')[0] === dayStr);
+        return {
+          date: dayStr,
+          newCalls: parseInt(row.new_calls || 0),
+          newUsers: parseInt(userRow?.new_users || 0),
+          stakeVolume: parseFloat(stakeRow?.stake_volume || 0),
+        };
+      }),
+    };
+
+    this.setCache(cacheKey, result, 300);
+    return result;
+  }
+
+  async getUserStakes(
+    address: string,
+    status?: string,
+    page = 1,
+    limit = 20,
+  ): Promise<any> {
+    const offset = (page - 1) * limit;
+    const qb = this.stakeRepository
+      .createQueryBuilder('stake')
+      .leftJoinAndSelect('stake.call', 'call')
+      .where('stake.userAddress = :address', { address })
+      .orderBy('stake.createdAt', 'DESC')
+      .take(limit)
+      .skip(offset);
+
+    if (status) {
+      // Derive status from profitLoss field
+      if (status === 'ACTIVE') {
+        qb.andWhere('stake.profitLoss IS NULL');
+      } else if (status === 'WON') {
+        qb.andWhere('stake.profitLoss > 0');
+      } else if (status === 'LOST') {
+        qb.andWhere('stake.profitLoss < 0');
+      } else if (status === 'REFUNDED') {
+        qb.andWhere('stake.profitLoss = 0');
+      }
+    }
+
+    const [stakes, total] = await qb.getManyAndCount();
+
+    const data = stakes.map((stake) => {
+      const winPool = stake.position === 'YES' ? Number(stake.call?.totalNoStake || 0) : Number(stake.call?.totalYesStake || 0);
+      const stakePool = stake.position === 'YES' ? Number(stake.call?.totalYesStake || 1) : Number(stake.call?.totalNoStake || 1);
+      const potentialPayout = stake.profitLoss == null
+        ? Number(stake.amount) + (Number(stake.amount) / stakePool) * winPool
+        : null;
+
+      const derivedStatus =
+        stake.profitLoss == null ? 'ACTIVE' :
+        Number(stake.profitLoss) > 0 ? 'WON' :
+        Number(stake.profitLoss) < 0 ? 'LOST' : 'REFUNDED';
+
+      return {
+        id: stake.id,
+        callId: stake.callId,
+        stakerAddress: stake.userAddress,
+        amount: stake.amount,
+        position: stake.position === 'YES' ? 'UP' : 'DOWN',
+        status: derivedStatus,
+        createdAt: stake.createdAt,
+        call: stake.call
+          ? {
+              title: stake.call.description,
+              contractAddress: stake.call.contractAddress,
+              outcome: stake.call.outcome,
+            }
+          : null,
+        potentialPayout: potentialPayout ? Number(potentialPayout.toFixed(7)) : null,
+      };
+    });
+
+    return { data, total, page, limit };
+  }
+
+  private getCached(key: string): any | null {
+    const entry = this.platformCache.get(key);
+    if (entry && Date.now() < entry.expiresAt) return entry.data;
+    this.platformCache.delete(key);
+    return null;
+  }
+
+  private setCache(key: string, data: any, ttlSeconds: number): void {
+    this.platformCache.set(key, { data, expiresAt: Date.now() + ttlSeconds * 1000 });
+  }
+
   async calculatePredictorReliability(userId: string): Promise<number> {
     const result = await this.dataSource.query(
       `
@@ -437,179 +523,5 @@ export class AnalyticsService {
     const reputation = winRate * 0.7 + normalizedVolume * 0.3;
 
     return Number(reputation.toFixed(4));
-  }
-
-  async calculateReputationScore(userAddress: string): Promise<number> {
-    const stats = await this.dataSource.query(
-      `
-      SELECT
-        COUNT(*) FILTER (WHERE c.outcome IN ('YES', 'NO'))::int AS resolved_calls,
-        COUNT(*) FILTER (
-          WHERE c.outcome IN ('YES', 'NO') AND s.position = c.outcome
-        )::int AS wins,
-        COALESCE(SUM(s.amount), 0)::numeric AS total_volume
-      FROM stakes s
-      JOIN calls c ON c.id = s."callId"
-      WHERE s."userAddress" = $1
-      `,
-      [userAddress],
-    );
-
-    const row = stats[0] ?? {
-      resolved_calls: 0,
-      wins: 0,
-      total_volume: 0,
-    };
-
-    const resolvedCalls = Number(row.resolved_calls || 0);
-    const wins = Number(row.wins || 0);
-    const totalVolume = Number(row.total_volume || 0);
-    const winRate = resolvedCalls > 0 ? wins / resolvedCalls : 0;
-
-    const medianResult = await this.dataSource.query(
-      `
-      SELECT COALESCE(
-        percentile_cont(0.5) WITHIN GROUP (ORDER BY user_volume),
-        0
-      ) AS median_volume
-      FROM (
-        SELECT COALESCE(SUM(amount), 0)::numeric AS user_volume
-        FROM stakes
-        GROUP BY "userAddress"
-      ) volumes
-      `,
-    );
-
-    const medianVolume = Number(medianResult[0]?.median_volume || 0);
-    const volumeScore =
-      medianVolume > 0 ? Math.min(1, totalVolume / medianVolume) : 0;
-
-    const activityRows = await this.dataSource.query(
-      `
-      SELECT DISTINCT DATE_TRUNC('week', s."createdAt")::date AS week_start
-      FROM stakes s
-      WHERE s."userAddress" = $1
-      ORDER BY week_start ASC
-      `,
-      [userAddress],
-    );
-
-    const weeks: Date[] = activityRows.map((r: { week_start: string }) => {
-      return new Date(r.week_start);
-    });
-    const activeWeeks = weeks.length;
-
-    let longestStreak = 0;
-    let currentStreak = 0;
-    let prevWeekTime = 0;
-    for (const week of weeks) {
-      const currentTime = week.getTime();
-      if (prevWeekTime && currentTime - prevWeekTime === 7 * 24 * 60 * 60 * 1000) {
-        currentStreak += 1;
-      } else {
-        currentStreak = 1;
-      }
-      longestStreak = Math.max(longestStreak, currentStreak);
-      prevWeekTime = currentTime;
-    }
-
-    const consistencyScore = Math.min(
-      1,
-      (Math.min(longestStreak, 8) / 8) * 0.7 +
-        (Math.min(activeWeeks, 12) / 12) * 0.3,
-    );
-
-    const confidenceMultiplier =
-      resolvedCalls >= 10 ? 1 : 0.3 + (resolvedCalls / 10) * 0.7;
-
-    const score =
-      (winRate * 0.4 + volumeScore * 0.3 + consistencyScore * 0.3) *
-      confidenceMultiplier *
-      100;
-
-    return Number(score.toFixed(2));
-  }
-
-  /**
-   * Aggregates a user's active Portfolio "Total Value Locked".
-   *
-   * Loops over every Stake row where:
-   *   - userAddress matches the caller
-   *   - the parent Call has status OPEN or SETTLING
-   *
-   * Returns the USDC sum of those amounts, a count, and a breakdown.
-   */
-  async getTotalValueLocked(
-    userAddress: string,
-  ): Promise<TotalValueLockedResponseDto> {
-    const stakes = await this.stakeLedgerRepository
-      .createQueryBuilder('stake')
-      .innerJoinAndSelect('stake.call', 'call')
-      .where('stake.userAddress = :userAddress', { userAddress })
-      .andWhere('call.status IN (:...statuses)', { statuses: ['OPEN', 'SETTLING'] })
-      .getMany();
-
-    if (!stakes.length) {
-      return {
-        userAddress,
-        totalValueLocked: 0,
-        pendingStakesCount: 0,
-        breakdown: [],
-      };
-    }
-
-    // Get all active tokens to map addresses to symbols
-    const tokens = await this.tokensService.getAll();
-    const tokenMap = new Map(tokens.map(t => [t.assetIssuer || t.assetCode, t.assetCode]));
-
-    // Identify unique symbols needed for price lookup
-    const symbolsToFetch = new Set<string>();
-    stakes.forEach(stake => {
-      const stakeToken = stake.call.stakeToken;
-      const symbol = stakeToken ? tokenMap.get(stakeToken) || 'XLM' : 'XLM'; // fallback
-      symbolsToFetch.add(symbol);
-    });
-
-    // Fetch prices in USD
-    const prices = await this.coinGeckoService.getPrices(Array.from(symbolsToFetch));
-
-    let totalLocked = 0;
-    const breakdown = stakes.map(stake => {
-      const call = stake.call;
-      const stakeToken = call.stakeToken;
-      const tokenSymbol = stakeToken ? tokenMap.get(stakeToken) || 'XLM' : 'XLM';
-      const usdPrice = prices.get(tokenSymbol) || 0; // Default to 0 if price missing
-
-      const amount = Number(stake.amount);
-      const usdValue = amount * usdPrice;
-      totalLocked += usdValue;
-
-      // Calculate potential win
-      const totalYes = Number(call.totalYesStake || 0);
-      const totalNo = Number(call.totalNoStake || 0);
-      const poolSize = stake.position === 'YES' ? totalYes : totalNo;
-      const totalPool = totalYes + totalNo;
-
-      let potentialWin = 0;
-      if (poolSize > 0) {
-        potentialWin = (amount / poolSize) * totalPool;
-      }
-      const potentialWinUsd = potentialWin * usdPrice;
-
-      return {
-        callId: call.id,
-        amount: Number(usdValue.toFixed(2)),
-        position: stake.position,
-        tokenSymbol,
-        potentialWin: Number(potentialWinUsd.toFixed(2)),
-      };
-    });
-
-    return {
-      userAddress,
-      totalValueLocked: Number(totalLocked.toFixed(2)),
-      pendingStakesCount: stakes.length,
-      breakdown,
-    };
   }
 }

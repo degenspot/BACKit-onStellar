@@ -31,6 +31,9 @@ export class OracleOutcome {
   @Column({ type: 'varchar', length: 255, nullable: true })
   transactionHash: string;
 
+  @Column({ type: 'varchar', length: 512, nullable: true })
+  evidence_cid: string;
+
   @CreateDateColumn()
   createdAt: Date;
 }

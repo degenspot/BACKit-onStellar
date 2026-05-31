@@ -5,10 +5,7 @@ import {
   Query,
   HttpStatus,
   ValidationPipe,
-  UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
-import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import {
   ApiTags,
   ApiOperation,
@@ -16,127 +13,88 @@ import {
   ApiParam,
   ApiQuery,
 } from '@nestjs/swagger';
+import { IsOptional, IsIn, IsInt, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsQueryDto, DateRangeFilter } from './dto/analytics-query.dto';
 import { UserAnalyticsResponse } from './dto/analytics-response.dto';
-import {
-  UserStakesQueryDto,
-  UserStakesResponseDto,
-} from './dto/user-stakes.dto';
-import { TotalValueLockedResponseDto } from './dto/tvl.dto';
+
+class StakesQueryDto {
+  @IsOptional()
+  @IsIn(['ACTIVE', 'WON', 'LOST', 'REFUNDED'])
+  status?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 20;
+}
+
+class TrendsQueryDto {
+  @IsOptional()
+  @IsIn(['7d', '14d', '30d'])
+  period?: string = '7d';
+}
 
 @ApiTags('Analytics')
-@Controller('users')
+@Controller('analytics')
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
+  @Get('platform')
+  @ApiOperation({ summary: 'Get platform-wide aggregate metrics' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Platform analytics retrieved' })
+  getPlatformAnalytics() {
+    return this.analyticsService.getPlatformAnalytics();
+  }
+
+  @Get('platform/trends')
+  @ApiOperation({ summary: 'Get daily trend data points for the platform' })
+  @ApiQuery({ name: 'period', enum: ['7d', '14d', '30d'], required: false })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Platform trends retrieved' })
+  getPlatformTrends(
+    @Query(new ValidationPipe({ transform: true })) query: TrendsQueryDto,
+  ) {
+    return this.analyticsService.getPlatformTrends(query.period ?? '7d');
+  }
+}
+
+@ApiTags('Analytics')
+@Controller('users')
+export class UserAnalyticsController {
+  constructor(private readonly analyticsService: AnalyticsService) {}
+
   @Get(':address/analytics')
-  @UseInterceptors(CacheInterceptor)
-  @CacheTTL(300) // 5 minutes
-  @ApiOperation({
-    summary: 'Get user analytics',
-    description:
-      'Retrieve comprehensive analytics for a user including cumulative profit, accuracy trends, and win/loss statistics',
-  })
-  @ApiParam({
-    name: 'address',
-    description: 'Stellar wallet address of the user',
-    example: 'GCXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
-  })
-  @ApiQuery({
-    name: 'range',
-    enum: DateRangeFilter,
-    required: false,
-    description: 'Date range filter (7d, 30d, or all)',
-    example: '7d',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'User analytics retrieved successfully',
-    type: UserAnalyticsResponse,
-  })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: 'Invalid address or query parameters',
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'User not found',
-  })
+  @ApiOperation({ summary: 'Get user analytics' })
+  @ApiParam({ name: 'address', description: 'Stellar wallet address' })
+  @ApiQuery({ name: 'range', enum: DateRangeFilter, required: false })
+  @ApiResponse({ status: HttpStatus.OK, type: UserAnalyticsResponse })
   async getUserAnalytics(
     @Param('address') address: string,
-    @Query(new ValidationPipe({ transform: true }))
-    query: AnalyticsQueryDto,
+    @Query(new ValidationPipe({ transform: true })) query: AnalyticsQueryDto,
   ): Promise<UserAnalyticsResponse> {
-    const range = query.range || DateRangeFilter.SEVEN_DAYS;
-    return this.analyticsService.getUserAnalytics(address, range);
+    return this.analyticsService.getUserAnalytics(address, query.range ?? DateRangeFilter.SEVEN_DAYS);
   }
 
   @Get(':address/stakes')
-  @ApiOperation({
-    summary: 'Get user stakes ledger',
-    description:
-      'Retrieve a paginated ledger of a user’s stakes joined with call information and resolution status',
-  })
-  @ApiParam({
-    name: 'address',
-    description: 'Stellar wallet address of the user',
-    example: 'GCXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
-  })
-  @ApiQuery({
-    name: 'page',
-    required: false,
-    description: 'Page number (1-based)',
-    example: 1,
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    description: 'Number of items per page',
-    example: 20,
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'User stakes retrieved successfully',
-    type: UserStakesResponseDto,
-  })
-  async getUserStakes(
+  @ApiOperation({ summary: 'Get paginated stake history for a user' })
+  @ApiParam({ name: 'address', description: 'Stellar wallet address' })
+  @ApiQuery({ name: 'status', enum: ['ACTIVE', 'WON', 'LOST', 'REFUNDED'], required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiResponse({ status: HttpStatus.OK, description: 'User stakes retrieved' })
+  getUserStakes(
     @Param('address') address: string,
-    @Query(new ValidationPipe({ transform: true }))
-    query: UserStakesQueryDto,
-  ): Promise<UserStakesResponseDto> {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-    return this.analyticsService.getUserStakes(address, page, limit);
-  }
-
-  /**
-   * GET /analytics/:userAddress/tvl
-   *
-   * Returns the total XLM value locked in all unresolved (Pending) stakes
-   * for the given wallet address.
-   */
-  @Get(':userAddress/tvl')
-  @UseInterceptors(CacheInterceptor)
-  @CacheTTL(60000) // 1 minute
-  @ApiOperation({
-    summary: 'Get Total Value Locked',
-    description:
-      'Sums the amounts of every stake whose underlying call is still PENDING. ' +
-      "This represents the user's active capital that has not yet been resolved.",
-  })
-  @ApiParam({
-    name: 'userAddress',
-    description: 'Stellar wallet address of the user',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Total value locked successfully aggregated',
-    type: TotalValueLockedResponseDto,
-  })
-  getTotalValueLocked(
-    @Param('userAddress') userAddress: string,
-  ): Promise<TotalValueLockedResponseDto> {
-    return this.analyticsService.getTotalValueLocked(userAddress);
+    @Query(new ValidationPipe({ transform: true })) query: StakesQueryDto,
+  ) {
+    return this.analyticsService.getUserStakes(address, query.status, query.page, query.limit);
   }
 }
