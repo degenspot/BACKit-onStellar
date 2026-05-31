@@ -1,6 +1,7 @@
 "use client";
 
 import StakeBar from "./StakeBar";
+import CountdownTimer from "./CountdownTimer";
 import { useState, useEffect } from "react";
 
 interface CallCardProps {
@@ -16,25 +17,6 @@ export default function CallCard({ call }: CallCardProps) {
       .then((data) => setOdds(data))
       .catch(() => setOdds({ yes: 2.0, no: 2.0 }));
   }, [call.id]);
-
-  // Calculate time remaining
-  const calculateTimeRemaining = () => {
-    if (!call.endTime) return "Unknown";
-    
-    const now = new Date().getTime();
-    const end = new Date(call.endTime).getTime();
-    const diff = end - now;
-
-    if (diff <= 0) return "Ended";
-
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-
-    if (days > 0) return `${days}d ${hours}h`;
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
-  };
 
   // Determine status
   const getStatus = () => {
@@ -64,7 +46,9 @@ export default function CallCard({ call }: CallCardProps) {
         </div>
         <div className="text-right">
           <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Ends In</div>
-          <div className="text-sm font-mono font-medium text-orange-500 bg-orange-50 px-2 py-1 rounded-lg border border-orange-100 italic">{calculateTimeRemaining()}</div>
+          <div className="bg-gray-50 px-2 py-1 rounded-lg border border-gray-100">
+            <CountdownTimer endTime={call.endTime} />
+          </div>
         </div>
       </div>
 
