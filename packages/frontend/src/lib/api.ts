@@ -10,12 +10,21 @@ export async function searchTokens(query: string) {
 export async function fetchFeed(
   type: "for-you" | "following",
   cursor?: string,
-  filters?: { status: string | null }
+  filters?: {
+    status?: string | null;
+    sort?: string;
+    token?: string | null;
+    minStake?: number;
+  }
 ) {
   const params = new URLSearchParams();
   params.set("type", type);
   if (cursor) params.set("cursor", cursor);
   if (filters?.status) params.set("status", filters.status);
+  if (filters?.sort && filters.sort !== "newest") params.set("sort", filters.sort);
+  if (filters?.token) params.set("token", filters.token);
+  if (filters?.minStake && filters.minStake > 0)
+    params.set("minStake", String(filters.minStake));
 
   const res = await fetch(`/api/feed?${params.toString()}`);
 

@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { fetchFeed } from "@/lib/api";
+import type { FilterState } from "@/components/FilterBar";
 
-export function useFeed(type: "for-you" | "following", filters?: { status: string | null }) {
-  const cacheKey = `feed-cache-${type}-${filters?.status || 'all'}`;
+export function useFeed(type: "for-you" | "following", filters?: FilterState) {
+  const cacheKey = `feed-cache-${type}-${filters?.status ?? "all"}-${filters?.sort ?? "newest"}-${filters?.token ?? "all"}-${filters?.minStake ?? 0}`;
 
   const [items, setItems] = useState<any[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -30,7 +31,7 @@ export function useFeed(type: "for-you" | "following", filters?: { status: strin
     }
     resetAndFetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, filters?.status]);
+  }, [type, filters?.status, filters?.sort, filters?.token, filters?.minStake]);
 
   async function resetAndFetch() {
     setLoading(true);
