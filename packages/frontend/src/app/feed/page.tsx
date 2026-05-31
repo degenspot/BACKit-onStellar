@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import FeedTabs from "@/components/FeedTabs";
 import { CallCardSkeleton } from "@/components/CardCallSkeleton";
@@ -19,26 +19,26 @@ import { ArrowUp } from "lucide-react";
 
 /** Parse URL search params into a FilterState */
 function parseFiltersFromParams(params: URLSearchParams): FilterState {
-  const status = params.get("status") as StatusFilter | null;
-  const sort = (params.get("sort") as SortOption) || DEFAULT_FILTERS.sort;
-  const token = params.get("token") || null;
-  const minStake = Number(params.get("minStake") ?? 0);
+  const rawStatus = params.get("status");
+  const status: StatusFilter =
+    rawStatus === "OPEN" || rawStatus === "RESOLVED" ? rawStatus : null;
 
-  return {
-    status: status ?? null,
-    sort: ["newest", "ending_soon", "most_staked", "trending"].includes(sort)
-      ? sort
-      : DEFAULT_FILTERS.sort,
-    token,
-    minStake: isNaN(minStake) ? 0 : minStake,
-  };
+  const rawSort = params.get("sort") as SortOption | null;
+  const sort: SortOption =
+    rawSort &&
+    (["newest", "ending_soon", "most_staked", "trending"] as SortOption[]).includes(rawSort)
+      ? rawSort
+      : DEFAULT_FILTERS.sort;
+
+  const token = params.get("token") || null;
+  const rawStake = Number(params.get("minStake") ?? 0);
+  const minStake = isNaN(rawStake) ? 0 : rawStake;
+
+  return { status, sort, token, minStake };
 }
 
 /** Serialize a FilterState into URL search params */
-function buildSearchParams(
-  tab: string,
-  filters: FilterState
-): URLSearchParams {
+function buildSearchParams(tab: string, filters: FilterState): URLSearchParams {
   const params = new URLSearchParams();
   if (tab !== "for-you") params.set("tab", tab);
   if (filters.status) params.set("status", filters.status);
@@ -48,12 +48,13 @@ function buildSearchParams(
   return params;
 }
 
-export default function FeedPage() {
+// ─── Inner component (needs useSearchParams, so must be inside Suspense) ─────
+
+function FeedContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Initialise state from URL
   const [tab, setTab] = useState<"for-you" | "following">(
     (searchParams.get("tab") as "for-you" | "following") ?? "for-you"
   );
@@ -61,7 +62,6 @@ export default function FeedPage() {
     parseFiltersFromParams(searchParams)
   );
 
-  // Sync state → URL whenever tab or filters change
   const syncUrl = useCallback(
     (nextTab: string, nextFilters: FilterState) => {
       const params = buildSearchParams(nextTab, nextFilters);
@@ -83,27 +83,24 @@ export default function FeedPage() {
     syncUrl(tab, newFilters);
   };
 
-  // Derive available tokens from loaded items for the token dropdown
-  const { items, loading, loadingMore, hasMore, loadMore } = useFeed(
-    tab,
-    filters
-  );
+  const { items, loading, loadingMore, hasMore, loadMore } = useFeed(tab, filters);
 
+  // Derive available tokens from already-loaded items for the token dropdown
   const availableTokens = Array.from(
     new Set(
       items
         .map(
           (c: any) =>
-            c.token ??
-            c.conditionJson?.token ??
-            c.stakeToken ??
-            null
+            c.token ?? c.conditionJson?.token ?? c.stakeToken ?? null
         )
         .filter(Boolean) as string[]
     )
   ).sort();
 
-  const cacheKey = `${tab}-${filters.status ?? "all"}-${filters.sort}-${filters.token ?? "all"}-${filters.minStake}`;
+  const cacheKey = `${tab}-${filters.status ?? "all"}-${filters.sort}-${
+    filters.token ?? "all"
+  }-${filters.minStake}`;
+
   const { triggerRef, showBackToTop, scrollToTop } = useInfiniteScroll({
     loadMore,
     hasMore,
@@ -112,16 +109,14 @@ export default function FeedPage() {
     cacheKey,
   });
 
-  // Build a human-readable empty state message
   const emptyMessage = (() => {
     const parts: string[] = [];
     if (filters.status) parts.push(filters.status.toLowerCase());
     if (filters.token) parts.push(`${filters.token} token`);
     if (filters.minStake > 0)
       parts.push(`≥ ${filters.minStake.toLocaleString()} XLM pool`);
-
-    const filterDesc = parts.length > 0 ? ` matching ${parts.join(", ")}` : "";
-
+    const filterDesc =
+      parts.length > 0 ? ` matching ${parts.join(", ")}` : "";
     if (tab === "for-you") {
       return filterDesc
         ? `No markets${filterDesc} found in "For You" feed.`
@@ -167,7 +162,7 @@ export default function FeedPage() {
         ))}
       </div>
 
-      {/* Infinite Scroll Trigger */}
+      {/* Infinite scroll trigger */}
       {hasMore && !loading && (
         <div ref={triggerRef} className="flex justify-center py-6">
           <svg
@@ -209,5 +204,31 @@ export default function FeedPage() {
         </button>
       )}
     </main>
+  );
+}
+
+// ─── Page export — wraps inner component in Suspense ─────────────────────────
+
+export default function FeedPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="max-w-2xl mx-auto p-4 min-h-screen pb-16">
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-gray-900">Prediction Feed</h1>
+            <p className="text-gray-600">
+              Explore trending predictions and stake on outcomes
+            </p>
+          </div>
+          <div className="space-y-4 mt-4">
+            {[...Array(6)].map((_, i) => (
+              <CallCardSkeleton key={i} />
+            ))}
+          </div>
+        </main>
+      }
+    >
+      <FeedContent />
+    </Suspense>
   );
 }
