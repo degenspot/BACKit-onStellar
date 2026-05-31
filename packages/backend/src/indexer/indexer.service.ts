@@ -1,313 +1,331 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { SorobanRpc, xdr } from '@stellar/stellar-sdk';
+import { Cron } from '@nestjs/schedule';
+import { SorobanRpc } from '@stellar/stellar-sdk';
 import { EventLog, EventType } from './event-log.entity';
-import { PlatformSettings } from './entities/platform-settings.entity';
-import { retryWithBackoff } from '../utils/retry';
-import { ConfigService } from '../config/config.service';
-import { parseAdminParamsChanged } from './parsers/admin-params.parser';
-import { PayoutsService } from '../payouts/payouts.service';
-import { TreasuryService } from '../treasury/treasury.service';
+import { EventParser, ParsedEvent } from './event-parser';
+import { NotificationsService } from '../notifications/notifications.service';
+import { Retryable } from '../common/decorators/retryable.decorator';
 
 @Injectable()
-export class IndexerService {
+export class IndexerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(IndexerService.name);
-  private readonly contractId = process.env.SOROBAN_CONTRACT_ID ?? '';
+  private server: SorobanRpc.Server;
+  private lastProcessedLedger: number | null = null;
+  private isProcessing = false;
+  private pollingInterval: NodeJS.Timeout | null = null;
+  private isPolling = false;
 
   constructor(
-    private readonly rpcServer: SorobanRpc.Server,
     @InjectRepository(EventLog)
     private readonly eventLogRepository: Repository<EventLog>,
-    @InjectRepository(PlatformSettings)
-    private readonly platformSettingsRepository: Repository<PlatformSettings>,
-    private readonly configService: ConfigService,
-    private readonly payoutsService: PayoutsService,
-    private readonly treasuryService: TreasuryService,
+    private readonly eventParser: EventParser,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
-  // ─── Status ───────────────────────────────────────────────────────────────
+  async onModuleInit() {
+    this.logger.log('Initializing Indexer Service...');
+    this.startPolling();
 
-  async getStatus() {
-    const isRunning = true;
-    const totalEventsIndexed = await this.eventLogRepository.count();
-    const latestEvent = await this.eventLogRepository.findOne({
-      where: {},
-      order: { ledger: 'DESC' },
-    });
+    // Initialize Soroban RPC client
+    const rpcUrl =
+      process.env.SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org';
+    this.server = new SorobanRpc.Server(rpcUrl);
 
-    return {
-      isRunning,
-      lastProcessedLedger: latestEvent?.ledger ?? null,
-      totalEventsIndexed,
-      latestEventLedger: latestEvent?.ledger ?? null,
-      latestEventTimestamp: latestEvent?.timestamp ?? null,
-    };
+    // Load last processed ledger from database
+    await this.loadLastProcessedLedger();
+
+    this.logger.log(
+      `Indexer initialized. Last processed ledger: ${this.lastProcessedLedger || 'None'}`,
+    );
   }
 
-  async getEventsByType(
-    eventType: EventType,
-    arg2?: any,
-    arg3?: any,
-    limit: number = 50,
-  ) {
-    return this.eventLogRepository.find({
-      where: { eventType },
-      order: { ledger: 'DESC' },
-      take: limit,
-    });
+  async onModuleDestroy() {
+    this.logger.log('Shutting down Indexer Service...');
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+    }
   }
 
-  // ─── Main Entry Point ─────────────────────────────────────────────────────
-
-  async processNewEvents(): Promise<void> {
-    if (!this.contractId) {
-      this.logger.warn('SOROBAN_CONTRACT_ID not set — skipping indexer tick');
+  /**
+   * Main polling function that runs every 5 seconds
+   */
+  @Cron('*/5 * * * * *')
+  async pollEvents() {
+    if (this.isProcessing) {
+      this.logger.debug(
+        'Indexer is already processing events, skipping this cycle',
+      );
       return;
     }
 
-    try {
-      const startLedger = await this.resolveStartLedger();
-      const response = await this.fetchContractEvents(
-        this.contractId,
-        startLedger,
-      );
+    this.isProcessing = true;
 
-      for (const event of response.events) {
-        await this.dispatchEvent(event);
+    try {
+      await this.processEvents();
+    } catch (error) {
+      this.logger.error('Error during event polling', error);
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  /**
+   * Process events from SorobanRPC
+   */
+  private async processEvents() {
+    try {
+      // Get the starting ledger
+      const startLedger = this.lastProcessedLedger
+        ? this.lastProcessedLedger + 1
+        : await this.getLatestLedger();
+
+      this.logger.debug(`Polling events from ledger ${startLedger}`);
+
+      // Get contract IDs from environment
+      const callRegistryId = process.env.CALL_REGISTRY_CONTRACT_ID;
+      const outcomeManagerId = process.env.OUTCOME_MANAGER_CONTRACT_ID;
+
+      if (!callRegistryId || !outcomeManagerId) {
+        this.logger.warn('Contract IDs not configured, skipping event polling');
+        return;
       }
-    } catch (err: any) {
-      this.logger.error(`Indexer tick failed: ${err.message}`);
-    }
-  }
 
-  // ─── Event Dispatcher ─────────────────────────────────────────────────────
+      // Fetch events from SorobanRPC
+      const response = await this.server.getEvents({
+        startLedger,
+        filters: [
+          {
+            type: 'contract',
+            contractIds: [callRegistryId, outcomeManagerId],
+          },
+        ],
+        limit: 100,
+      });
 
-  private async dispatchEvent(
-    event: SorobanRpc.Api.EventResponse,
-  ): Promise<void> {
-    const topics = event.topic;
-    const data = event.value;
-    const txHash = event.txHash;
-    const ledger = event.ledger;
+      this.logger.debug(`Found ${response.events.length} events`);
 
-    if (topics.length === 0) return;
-
-    const firstTopic = topics[0];
-    if (firstTopic.switch() !== xdr.ScValType.scvSymbol()) return;
-
-    const eventName = firstTopic.sym().toString();
-
-    switch (eventName) {
-      case 'AdminParamsChanged':
-        await this.handleAdminParamsChanged(topics, data, txHash, ledger);
-        break;
-      case 'PayoutClaimed':
-        await this.handlePayoutClaimed(topics, txHash, ledger);
-        break;
-
-      // ── extend here as you add more contract events ───────────────────
-      // case 'MarketCreated':  await this.handleMarketCreated(...); break;
-      // case 'BetPlaced':      await this.handleBetPlaced(...);     break;
-
-      default:
-        this.logger.debug(`Unhandled event type: ${eventName}`);
-        break;
-    }
-  }
-
-  // ─── AdminParamsChanged ───────────────────────────────────────────────────
-
-  private async handleAdminParamsChanged(
-    topics: xdr.ScVal[],
-    data: xdr.ScVal,
-    txHash: string,
-    ledger: number,
-  ): Promise<void> {
-    const parsed = parseAdminParamsChanged(topics, data, txHash, ledger);
-    if (!parsed) return;
-
-    await this.configService.applyAdminParamsChanged(parsed);
-
-    this.logger.log(
-      `AdminParamsChanged applied — feePercent: ${parsed.feePercent}% ` +
-        `ledger: ${ledger} tx: ${txHash}`,
-    );
-
-    await this.eventLogRepository.save(
-      this.eventLogRepository.create({
-        eventId: `${txHash}-admin-params`,
-        pagingToken: `${ledger}-${txHash}`,
-        contractId: this.contractId,
-        eventType: EventType.ADMIN_PARAMS_CHANGED,
-        ledger,
-        txHash,
-        txOrder: 0,
-        eventData: parsed,
-        timestamp: new Date(),
-      }),
-    );
-  }
-
-  private async handlePayoutClaimed(
-    topics: xdr.ScVal[],
-    txHash: string,
-    ledger: number,
-  ): Promise<void> {
-    try {
-      const asString = (val?: xdr.ScVal): string | null => {
-        if (!val) return null;
-        const t = val.switch();
-        if (t === xdr.ScValType.scvString()) return val.str().toString();
-        if (t === xdr.ScValType.scvSymbol()) return val.sym().toString();
-        return null;
-      };
-
-      const asU64 = (val?: xdr.ScVal): string | null => {
-        if (!val) return null;
-        if (val.switch() === xdr.ScValType.scvU64()) return val.u64().toString();
-        return null;
-      };
-
-      const asI128Lo = (val?: xdr.ScVal): string | null => {
-        if (!val) return null;
-        if (val.switch() === xdr.ScValType.scvI128()) {
-          return val.i128().lo().toString();
+      // Process each event
+      let processedCount = 0;
+      for (const event of response.events) {
+        const parsedEvent = this.eventParser.parseEvent(event);
+        if (parsedEvent) {
+          await this.persistEvent(parsedEvent);
+          processedCount++;
         }
-        return null;
-      };
+      }
 
-      // Support both legacy topic layouts and tuple payloads.
-      const callId = asString(topics[1]) ?? asU64(topics[1]) ?? '';
-      const stakerAddress = asString(topics[2]) ?? '';
-      const amount = asI128Lo(topics[3]) ?? asU64(topics[3]) ?? '0';
-      if (!callId || !stakerAddress) return;
+      // Update checkpoint
+      if (
+        response.latestLedger &&
+        response.latestLedger > (this.lastProcessedLedger || 0)
+      ) {
+        this.lastProcessedLedger = response.latestLedger;
+        await this.saveCheckpoint(response.latestLedger);
+        this.logger.log(
+          `Processed ${processedCount} events. Checkpoint updated to ledger ${response.latestLedger}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error('Failed to process events', error);
+      // Don't throw - let the next polling cycle retry
+    }
+  }
 
-      await this.payoutsService.markClaimed(
-        callId,
-        stakerAddress,
-        txHash,
-        new Date(),
+  /**
+   * Persist parsed event to database
+   */
+  private async persistEvent(parsedEvent: ParsedEvent) {
+    try {
+      const eventLog = this.eventLogRepository.create({
+        contractId: parsedEvent.contractId,
+        eventType: parsedEvent.eventType,
+        ledger: parsedEvent.ledger,
+        txHash: parsedEvent.txHash,
+        txOrder: parseInt(parsedEvent.txOrder, 10),
+        eventData: parsedEvent.eventData,
+        timestamp: parsedEvent.timestamp,
+      });
+
+      await this.eventLogRepository.save(eventLog);
+
+      // Trigger in-app notifications based on event type
+      await this.dispatchNotification(parsedEvent);
+
+      this.logger.verbose(
+        `Persisted event: ${parsedEvent.eventType} at ledger ${parsedEvent.ledger}`,
       );
-
-      // Record a treasury fee entry for this claim.
-      // If your event emits an explicit fee amount or token address, wire it here.
-      await this.treasuryService.recordFeeFromPayoutClaimed({
-        callId,
-        claimedAmount: String(amount ?? '0'),
-        collectedAt: new Date(),
-      });
-      this.logger.log(`PayoutClaimed synced: call=${callId} staker=${stakerAddress}`);
-    } catch (err: any) {
-      this.logger.warn(`Failed to parse PayoutClaimed event: ${err.message}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to persist event: ${parsedEvent.eventType}`,
+        error,
+      );
+      throw error;
     }
   }
 
-  // ─── Platform Settings ────────────────────────────────────────────────────
-
-  async getPlatformSettings(): Promise<PlatformSettings> {
-    let settings = await this.platformSettingsRepository.findOne({
-      where: { id: 1 },
-    });
-
-    if (!settings) {
-      settings = this.platformSettingsRepository.create({
-        id: 1,
-        feePercent: 0,
-      });
-      await this.platformSettingsRepository.save(settings);
+  /**
+   * Dispatch notifications based on indexed on-chain event type.
+   */
+  private async dispatchNotification(parsedEvent: ParsedEvent) {
+    try {
+      const data = parsedEvent.eventData || {};
+      if (parsedEvent.eventType === EventType.STAKE_ADDED) {
+        // data.call_creator, data.backer, data.call_id expected from contract events
+        if (data.call_creator && data.backer && data.call_id) {
+          await this.notificationsService.notifyBackedCall(
+            String(data.call_creator),
+            String(data.backer),
+            Number(data.call_id),
+          );
+        }
+      } else if (parsedEvent.eventType === EventType.CALL_RESOLVED) {
+        if (data.creator && data.call_id) {
+          await this.notificationsService.notifyCallEnded(
+            String(data.creator),
+            Number(data.call_id),
+          );
+        }
+      } else if (parsedEvent.eventType === EventType.CALL_SETTLED) {
+        if (data.winner && data.call_id) {
+          await this.notificationsService.notifyPayoutReady(
+            String(data.winner),
+            Number(data.call_id),
+          );
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Failed to dispatch notification for event ${parsedEvent.eventType}`,
+        err,
+      );
+      // Non-fatal — don't rethrow
     }
-
-    return settings;
   }
 
-  async updatePlatformSettings(
-    paramName: string,
-    newValue: number,
-    txHash: string,
-    ledger: number,
-  ): Promise<PlatformSettings> {
-    const settings = await this.getPlatformSettings();
-
-    if (paramName === 'fee_percent' || paramName === 'feePercent') {
-      settings.feePercent = newValue;
+  /**
+   * Get the latest ledger from the network
+   */
+  @Retryable(3, 1000)
+  private async getLatestLedger(): Promise<number> {
+    try {
+      const ledger = await this.server.getLatestLedger();
+      return ledger.sequence;
+    } catch (error) {
+      this.logger.error('Failed to get latest ledger', error);
+      throw error;
     }
-
-    settings.lastUpdatedByTxHash = txHash;
-    settings.lastUpdatedAtLedger = ledger;
-
-    return await this.platformSettingsRepository.save(settings);
   }
 
-  // ─── Fetch Contract Events ────────────────────────────────────────────────
+  /**
+   * Load the last processed ledger from database
+   */
+  private async loadLastProcessedLedger() {
+    try {
+      const latestEvent = await this.eventLogRepository
+        .createQueryBuilder('event')
+        .select('MAX(event.ledger)', 'maxLedger')
+        .getRawOne();
 
-  async fetchContractEvents(
+      this.lastProcessedLedger = latestEvent?.maxLedger
+        ? Number(latestEvent.maxLedger)
+        : null;
+    } catch (error) {
+      this.logger.warn(
+        'Failed to load last processed ledger, starting from latest',
+        error,
+      );
+      this.lastProcessedLedger = null;
+    }
+  }
+
+  /**
+   * Save checkpoint to database
+   */
+  private async saveCheckpoint(ledger: number) {
+    // We store the checkpoint implicitly by tracking the max ledger in event_logs
+    // In a production system, you might want a separate checkpoints table
+    this.logger.debug(`Checkpoint saved at ledger ${ledger}`);
+  }
+
+  /**
+   * Get events by type for a specific ledger range
+   */
+  async getEventsByType(
+    eventType: EventType,
+    startLedger?: number,
+    endLedger?: number,
+    limit = 100,
+  ): Promise<EventLog[]> {
+    const query = this.eventLogRepository
+      .createQueryBuilder('event')
+      .where('event.eventType = :eventType', { eventType })
+      .orderBy('event.ledger', 'DESC')
+      .addOrderBy('event.txOrder', 'DESC')
+      .take(limit);
+
+    if (startLedger) {
+      query.andWhere('event.ledger >= :startLedger', { startLedger });
+    }
+
+    if (endLedger) {
+      query.andWhere('event.ledger <= :endLedger', { endLedger });
+    }
+
+    return await query.getMany();
+  }
+
+  /**
+   * Get all events for a specific contract
+   */
+  async getEventsByContract(
     contractId: string,
-    startLedger: number,
-  ): Promise<SorobanRpc.Api.GetEventsResponse> {
-    return retryWithBackoff(
-      () =>
-        this.rpcServer.getEvents({
-          startLedger,
-          filters: [{ type: 'contract', contractIds: [contractId] }],
-        }),
-      4,
-      1000,
-      `fetchContractEvents(${contractId})`,
-    );
+    limit = 100,
+  ): Promise<EventLog[]> {
+    return await this.eventLogRepository
+      .createQueryBuilder('event')
+      .where('event.contractId = :contractId', { contractId })
+      .orderBy('event.ledger', 'DESC')
+      .addOrderBy('event.txOrder', 'DESC')
+      .take(limit)
+      .getMany();
   }
 
-  // ─── Read Contract State ──────────────────────────────────────────────────
+  /**
+   * Get indexer status
+   */
+  async getStatus() {
+    const eventCount = await this.eventLogRepository.count();
+    const latestEvent = await this.eventLogRepository
+      .createQueryBuilder('event')
+      .orderBy('event.ledger', 'DESC')
+      .addOrderBy('event.txOrder', 'DESC')
+      .getOne();
 
-  async readContractData(
-    contractId: string,
-    key: xdr.LedgerKey,
-  ): Promise<SorobanRpc.Api.GetLedgerEntriesResponse> {
-    return retryWithBackoff(
-      () => this.rpcServer.getLedgerEntries(key),
-      4,
-      1000,
-      `readContractData(${contractId})`,
-    );
+    return {
+      isRunning: true,
+      lastProcessedLedger: this.lastProcessedLedger,
+      totalEventsIndexed: eventCount,
+      latestEventLedger: latestEvent?.ledger || null,
+      latestEventTimestamp: latestEvent?.timestamp || null,
+    };
   }
 
-  // ─── Get Latest Ledger ────────────────────────────────────────────────────
-
-  async getLatestLedger(): Promise<SorobanRpc.Api.GetLatestLedgerResponse> {
-    return retryWithBackoff(
-      () => this.rpcServer.getLatestLedger(),
-      4,
-      1000,
-      'getLatestLedger',
-    );
-  }
-
-  // ─── Submit Transaction ───────────────────────────────────────────────────
-
-  async submitTransaction(
-    tx: Parameters<SorobanRpc.Server['sendTransaction']>[0],
-  ): Promise<SorobanRpc.Api.SendTransactionResponse> {
-    return retryWithBackoff(
-      () => this.rpcServer.sendTransaction(tx),
-      4,
-      1000,
-      'submitTransaction',
-    );
-  }
-
-  // ─── Private Helpers ──────────────────────────────────────────────────────
-
-  private async resolveStartLedger(): Promise<number> {
-    const latestEvent = await this.eventLogRepository.findOne({
-      where: {},
-      order: { ledger: 'DESC' },
-    });
-
-    if (latestEvent?.ledger) {
-      return latestEvent.ledger + 1;
-    }
-
-    const latest = await this.getLatestLedger();
-    return Math.max(latest.sequence - 5, 1);
+  private async startPolling() {
+    setInterval(async () => {
+      if (this.isPolling) return;
+      this.isPolling = true;
+      try {
+        await this.pollEvents();
+      } finally {
+        this.isPolling = false;
+      }
+    }, 5000);
   }
 }
