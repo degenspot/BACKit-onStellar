@@ -1235,29 +1235,11 @@ interface OracleSignature {
 
 ## Appendix C — Environment Variables
 
-```bash
-# .env.example
+Environment variables used across the project are documented in the repository docs. See the consolidated reference:
 
-# Stellar Network
-STELLAR_NETWORK=testnet  # or 'mainnet'
-SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
-HORIZON_URL=https://horizon-testnet.stellar.org
+- [Environment variables reference catalog](docs/environment-variables.md#environment-variables)
 
-# Contract Addresses (set after deployment)
-CALL_REGISTRY_CONTRACT_ID=CXXXXXX...
-OUTCOME_MANAGER_CONTRACT_ID=CXXXXXX...
-USDC_SAC_CONTRACT_ID=CXXXXXX...
-
-# Oracle (use KMS in production)
-ORACLE_SECRET_KEY=SXXXXXX...
-
-# IPFS
-PINATA_API_KEY=xxx
-PINATA_SECRET_KEY=xxx
-
-# Database
-DATABASE_URL=postgresql://user:pass@localhost:5432/backit
-
+The repository also keeps a lightweight `.env.example` in the root for quick copy-and-edit; the authoritative, descriptive catalog is in the docs linked above.
 # Redis
 REDIS_URL=redis://localhost:6379
 
