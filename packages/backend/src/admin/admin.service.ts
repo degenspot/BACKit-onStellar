@@ -96,6 +96,63 @@ export class AdminService {
     return { activeUsersToday, pendingReports, pausedCalls };
   }
 
+  async listReports(page = 1, limit = 20) {
+    const [reports, total] = await this.reportRepo.findAndCount({
+      relations: ['call'],
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    const grouped = new Map<
+      string,
+      { call: Call; reportCount: number; reports: CallReport[] }
+    >();
+    for (const report of reports) {
+      const existing = grouped.get(report.callId);
+      if (existing) {
+        existing.reportCount += 1;
+        existing.reports.push(report);
+      } else {
+        grouped.set(report.callId, {
+          call: report.call,
+          reportCount: 1,
+          reports: [report],
+        });
+      }
+    }
+
+    return {
+      data: Array.from(grouped.values()),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  async dismissReports(callId: string) {
+    const call = await this.findCallOrThrow(callId);
+    await this.reportRepo.delete({ callId });
+    call.reportCount = 0;
+    return this.callRepo.save(call);
+  }
+
+  async takeReportAction(callId: string, banCreator = false) {
+    const call = await this.findCallOrThrow(callId);
+    call.isHidden = true;
+    await this.callRepo.save(call);
+
+    if (banCreator) {
+      await this.banUser(call.creatorAddress);
+    }
+
+    return {
+      callId,
+      isHidden: true,
+      creatorBanned: banCreator,
+    };
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private async findCallOrThrow(id: string): Promise<Call> {

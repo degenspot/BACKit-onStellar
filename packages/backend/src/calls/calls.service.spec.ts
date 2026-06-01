@@ -1,20 +1,31 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import {
+  ConflictException,
+  NotFoundException,
+  HttpStatus,
+} from '@nestjs/common';
 import { CallsService } from './calls.service';
 import { CallsRepository } from './calls.repository';
 import { CallReport } from './entities/call-report.entity';
-import { OracleService } from '../oracle/oracle.service';
 import { IpfsService } from '../storage/ipfs.service';
+import { Call, CallStatus } from './entities/call.entity';
 
 describe('CallsService', () => {
   let service: CallsService;
 
   const callsRepository = {
     findFeedByFollowing: jest.fn(),
+    findOne: jest.fn(),
+    save: jest.fn(),
   };
 
-  const callReportRepository = {};
-  const oracleService = {};
+  const callReportRepository = {
+    findOne: jest.fn(),
+    count: jest.fn(),
+    save: jest.fn(),
+    create: jest.fn(),
+  };
   const ipfsService = {};
 
   beforeEach(async () => {
@@ -27,7 +38,6 @@ describe('CallsService', () => {
           provide: getRepositoryToken(CallReport),
           useValue: callReportRepository,
         },
-        { provide: OracleService, useValue: oracleService },
         { provide: IpfsService, useValue: ipfsService },
       ],
     }).compile();
@@ -65,5 +75,41 @@ describe('CallsService', () => {
     expect(result.total).toBe(0);
     expect(result.page).toBe(1);
     expect(result.limit).toBe(20);
+  });
+
+  it('throws if reporting a non-existing call', async () => {
+    callsRepository.findOne.mockResolvedValue(null);
+    await expect(
+      service.reportCall('call-id', 'GA_USER', { reason: undefined }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('throws if user already reported same call', async () => {
+    callsRepository.findOne.mockResolvedValue({
+      id: 'call-id',
+      reportCount: 0,
+      isHidden: false,
+      status: CallStatus.OPEN,
+    } as Call);
+    callReportRepository.findOne.mockResolvedValue({ id: 'r1' });
+
+    await expect(
+      service.reportCall('call-id', 'GA_USER', { reason: undefined }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('enforces max 10 reports per hour per reporter', async () => {
+    callsRepository.findOne.mockResolvedValue({
+      id: 'call-id',
+      reportCount: 0,
+      isHidden: false,
+      status: CallStatus.OPEN,
+    } as Call);
+    callReportRepository.findOne.mockResolvedValue(null);
+    callReportRepository.count.mockResolvedValue(10);
+
+    await expect(
+      service.reportCall('call-id', 'GA_USER', { reason: undefined }),
+    ).rejects.toHaveProperty('status', HttpStatus.TOO_MANY_REQUESTS);
   });
 });

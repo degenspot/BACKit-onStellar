@@ -8,6 +8,7 @@ import {
   Unique,
 } from 'typeorm';
 import { Call } from './call.entity';
+import { ReportReason } from '../dto/report-call.dto';
 
 @Entity('call_reports')
 @Unique(['callId', 'reporterAddress'])
@@ -21,8 +22,8 @@ export class CallReport {
   @Column({ type: 'varchar', length: 42 })
   reporterAddress: string;
 
-  @Column({ type: 'varchar', length: 100, nullable: true })
-  reason: string;
+  @Column({ type: 'enum', enum: ReportReason, nullable: true })
+  reason: ReportReason | null;
 
   @ManyToOne(() => Call, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'callId' })

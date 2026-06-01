@@ -2,9 +2,11 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThan, Repository } from 'typeorm';
 import { CallsRepository } from './calls.repository';
 import { CallReport } from './entities/call-report.entity';
 import { ReportCallDto } from './dto/report-call.dto';
@@ -103,6 +105,20 @@ export class CallsService {
     });
     if (alreadyReported)
       throw new ConflictException('You have already reported this call');
+
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const reportCountLastHour = await this.callReportRepository.count({
+      where: {
+        reporterAddress,
+        createdAt: MoreThan(oneHourAgo),
+      },
+    });
+    if (reportCountLastHour >= 10) {
+      throw new HttpException(
+        'Report rate limit reached (max 10 reports per hour)',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
 
     await this.callReportRepository.save(
       this.callReportRepository.create({

@@ -1,8 +1,15 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsOptional } from 'class-validator';
+
+export enum ReportReason {
+  SPAM = 'SPAM',
+  MISLEADING = 'MISLEADING',
+  OFFENSIVE = 'OFFENSIVE',
+  MARKET_MANIPULATION = 'MARKET_MANIPULATION',
+  OTHER = 'OTHER',
+}
 
 export class ReportCallDto {
   @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  reason?: string;
+  @IsEnum(ReportReason)
+  reason?: ReportReason;
 }

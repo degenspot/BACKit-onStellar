@@ -6,6 +6,11 @@ import {
   Query,
   UseGuards,
   ParseUUIDPipe,
+  Body,
+  DefaultValuePipe,
+  ParseIntPipe,
+  ValidationPipe,
+  UsePipes,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -15,14 +20,16 @@ import {
   ApiOkResponse,
 } from '@nestjs/swagger';
 import { AdminGuard } from '../auth/guards/admin.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminService } from './admin.service';
 import { QueryAdminCallsDto } from './dto/query-admin-calls.dto';
 import { Audited } from '../audit/decorators/audited.decorator';
 import { AuditActionType } from '../audit/audit-log.entity';
+import { ReportActionDto } from './dto/report-action.dto';
 
 @ApiTags('admin')
 @ApiBearerAuth('JWT-auth')
-@UseGuards(AdminGuard)
+@UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin')
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
@@ -105,5 +112,30 @@ export class AdminController {
   })
   getStats() {
     return this.adminService.getStats();
+  }
+
+  @Get('reports')
+  @ApiOperation({ summary: 'Paginated moderation report queue' })
+  listReports(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+  ) {
+    return this.adminService.listReports(page, limit);
+  }
+
+  @Post('reports/:id/dismiss')
+  @ApiOperation({ summary: 'Dismiss reports for a call without hiding it' })
+  dismissReports(@Param('id', ParseUUIDPipe) callId: string) {
+    return this.adminService.dismissReports(callId);
+  }
+
+  @Post('reports/:id/action')
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @ApiOperation({ summary: 'Take moderation action on a reported call' })
+  takeReportAction(
+    @Param('id', ParseUUIDPipe) callId: string,
+    @Body() dto: ReportActionDto,
+  ) {
+    return this.adminService.takeReportAction(callId, dto.banCreator ?? false);
   }
 }

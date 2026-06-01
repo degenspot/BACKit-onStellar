@@ -13,6 +13,7 @@ const makeCall = (overrides: Partial<Call> = {}): Call =>
   ({
     id: 'call-uuid-1',
     title: 'Test Call',
+    creatorAddress: '0xCREATOR',
     status: CallStatus.OPEN,
     isHidden: false,
     reportCount: 0,
@@ -43,6 +44,8 @@ const mockCallRepo = () => ({
 
 const mockReportRepo = () => ({
   createQueryBuilder: jest.fn(),
+  findAndCount: jest.fn(),
+  delete: jest.fn(),
 });
 
 const mockUsersRepo = () => ({
@@ -231,6 +234,56 @@ describe('AdminService', () => {
         pendingReports: 5,
         pausedCalls: 3,
       });
+    });
+  });
+
+  describe('moderation reports', () => {
+    it('lists paginated reports grouped by call', async () => {
+      const call = makeCall({ id: 'call-uuid-1' });
+      const reports = [
+        {
+          id: 'r1',
+          callId: 'call-uuid-1',
+          reporterAddress: 'A',
+          call,
+        } as CallReport,
+        {
+          id: 'r2',
+          callId: 'call-uuid-1',
+          reporterAddress: 'B',
+          call,
+        } as CallReport,
+      ];
+      reportRepo.findAndCount.mockResolvedValue([reports, 2]);
+
+      const result = await service.listReports(1, 20);
+      expect(result.total).toBe(2);
+      expect(result.data[0].reportCount).toBe(2);
+      expect(result.data[0].reports).toHaveLength(2);
+    });
+
+    it('dismisses reports and resets call reportCount', async () => {
+      const call = makeCall({ reportCount: 3, isHidden: false });
+      callRepo.findOneBy.mockResolvedValue(call);
+      callRepo.save.mockImplementation(async (value: Call) => value);
+
+      const result = await service.dismissReports(call.id);
+      expect(reportRepo.delete).toHaveBeenCalledWith({ callId: call.id });
+      expect(result.reportCount).toBe(0);
+    });
+
+    it('hides call and optionally bans creator on action', async () => {
+      const call = makeCall({ creatorAddress: '0xCREATOR' } as Call);
+      callRepo.findOneBy.mockResolvedValue(call);
+      callRepo.save.mockImplementation(async (value: Call) => value);
+      usersRepo.findOneBy.mockResolvedValue(
+        makeUser({ walletAddress: '0xCREATOR' }),
+      );
+      usersRepo.save.mockImplementation(async (value: Users) => value);
+
+      const result = await service.takeReportAction(call.id, true);
+      expect(result.isHidden).toBe(true);
+      expect(usersRepo.save).toHaveBeenCalled();
     });
   });
 });
