@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { LeaderboardModule } from './leaderboard.module';
@@ -9,7 +9,7 @@ import {
   LeaderboardSnapshot,
   CallStatus,
   CallOutcome,
-} from './entities/leaderboard.entity';
+} from './leaderboard.entity';
 
 // ── seed helpers ──────────────────────────────────────────────────────────────
 

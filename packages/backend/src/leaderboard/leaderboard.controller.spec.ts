@@ -7,7 +7,7 @@ import {
   UserLeaderboardStatsDto,
   LeaderboardSort,
   LeaderboardTimeframe,
-} from './dto/leaderboard.dto';
+} from './leaderboard.dto';
 
 const mockLeaderboardResponse: LeaderboardResponseDto = {
   data: [

@@ -7,12 +7,12 @@ import {
   LeaderboardSnapshot,
   CallStatus,
   CallOutcome,
-} from './entities/leaderboard.entity';
+} from './leaderboard.entity';
 import {
   LeaderboardQueryDto,
   LeaderboardSort,
   LeaderboardTimeframe,
-} from './dto/leaderboard.dto';
+} from './leaderboard.dto';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 

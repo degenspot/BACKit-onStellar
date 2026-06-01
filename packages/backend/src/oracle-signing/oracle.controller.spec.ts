@@ -1,11 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { OracleController } from '../oracle.controller';
-import { OracleSigningService } from '../services/oracle-signing.service';
-import { SignPriceDto } from '../dto/sign-price.dto';
+import { OracleController } from './oracle.controller';
+import { OracleSigningService } from './oracle-signing.service';
+import { SignPriceDto } from './sign-price.dto';
 import {
   SignedPriceData,
   OraclePublicKeyResponse,
-} from '../interfaces/oracle.interfaces';
+} from './oracle.interfaces';
 
 const MOCK_PUBLIC_KEY = 'a'.repeat(64);
 

@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import * as crypto from 'crypto';
 import { ConfigModule } from '@nestjs/config';
-import { OracleModule } from '../oracle.module';
+import { OracleModule } from './oracle.module';
 
 // Generate a deterministic test key
 const { privateKey: _testPrivateKey } = crypto.generateKeyPairSync('ed25519');

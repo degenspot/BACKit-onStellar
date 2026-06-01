@@ -32,10 +32,10 @@ export class PredictionCall {
   @Index()
   userId: string;
 
-  @Column({ type: 'enum', enum: CallStatus, default: CallStatus.PENDING })
+  @Column({ type: 'simple-enum', enum: CallStatus, default: CallStatus.PENDING })
   status: CallStatus;
 
-  @Column({ type: 'enum', enum: CallOutcome, nullable: true })
+  @Column({ type: 'simple-enum', enum: CallOutcome, nullable: true })
   outcome: CallOutcome | null;
 
   @Column({ type: 'decimal', precision: 18, scale: 6, default: 0 })
@@ -44,7 +44,7 @@ export class PredictionCall {
   @Column({ type: 'decimal', precision: 18, scale: 6, default: 0 })
   stakeUsdc: number;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'datetime', nullable: true })
   settledAt: Date | null;
 
   @CreateDateColumn()

@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { AnalyticsService } from './analytics.service';
 import { Stake } from './entities/stake.entity';
+import { Call } from './entities/call.entity';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
 const mockQb = {
   innerJoin: jest.fn().mockReturnThis(),
@@ -28,8 +31,27 @@ describe('AnalyticsService – getTotalValueLocked', () => {
       providers: [
         AnalyticsService,
         {
+          provide: getRepositoryToken(Call),
+          useValue: {
+            createQueryBuilder: jest.fn().mockReturnThis(),
+          },
+        },
+        {
           provide: getRepositoryToken(Stake),
           useValue: mockStakeLedgerRepository,
+        },
+        {
+          provide: DataSource,
+          useValue: {
+            query: jest.fn(),
+          },
+        },
+        {
+          provide: CACHE_MANAGER,
+          useValue: {
+            get: jest.fn().mockResolvedValue(undefined),
+            set: jest.fn(),
+          },
         },
       ],
     }).compile();

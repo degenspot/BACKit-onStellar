@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
-import { OracleSigningService } from '../services/oracle-signing.service';
-import { PricePayload } from '../interfaces/oracle.interfaces';
+import { OracleSigningService } from './oracle-signing.service';
+import { PricePayload } from './oracle.interfaces';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
