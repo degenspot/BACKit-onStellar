@@ -25,11 +25,15 @@
     "ui:dev": "cd packages/frontend && pnpm run dev"
   },
   "devDependencies": {
-    "turbo": "^1.13.0",
     "prettier": "^3.2.5",
+    "turbo": "^1.13.0",
     "typescript": "^5.3.3"
   },
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "dependencies": {
+    "cache-manager-redis-store": "^2.0.0",
+    "ioredis": "^5.11.0"
+  }
 }
