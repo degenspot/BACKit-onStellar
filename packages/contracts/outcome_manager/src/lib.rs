@@ -51,6 +51,31 @@ fn registry_mark_settled(env: &Env, registry: &Address, call_id: u64) {
     let args = (call_id,).into_val(env);
     env.invoke_contract::<()>(registry, &Symbol::new(env, "mark_settled"), args);
 }
+/// Call `get_call(call_id)` on the CallRegistry and return the Call.
+fn registry_get_call(env: &Env, registry: &Address, call_id: u64) -> backit_shared::types::Call {
+    let args = (call_id,).into_val(env);
+    env.invoke_contract::<backit_shared::types::Call>(
+        registry,
+        &Symbol::new(env, "get_call"),
+        args,
+    )
+}
+
+/// Call `get_staker_stake(call_id, staker, position)` on the CallRegistry.
+fn registry_get_staker_stake(
+    env: &Env,
+    registry: &Address,
+    call_id: u64,
+    staker: &Address,
+    position: u32,
+) -> i128 {
+    let args = (call_id, staker.clone(), position).into_val(env);
+    env.invoke_contract::<i128>(
+        registry,
+        &Symbol::new(env, "get_staker_stake"),
+        args,
+    )
+}
 
 // ─── Contract ─────────────────────────────────────────────────────────────────
 
@@ -282,27 +307,147 @@ impl OutcomeManager {
     }
 
     // ── Payout Claim ───────────────────────────────────────────────────────────
-
     /// Claim a pro-rata payout for a winning staker.
-    ///
-    /// **Payout formula** (with protocol fee):
-    /// ```text
-    /// fee        = total_losing_stake * fee_bps / 10000
-    /// net_losing = total_losing_stake - fee
-    /// payout     = staker_winning_stake
-    ///            + floor(staker_winning_stake * net_losing / total_winning_stake)
-    /// ```
-    ///
-    /// # Security
-    /// The `Claimed` flag is written **before** the external `release_escrow`
-    /// call, preventing reentrancy attacks.
-    ///
-    /// # Panics
-    /// - `call not settled`       – quorum not yet reached
-    /// - `already claimed`        – staker already claimed
-    /// - `nothing to claim`       – staker_winning_stake ≤ 0
-    /// - `invalid total winning`  – total_winning_stake ≤ 0
-    pub fn claim_payout(
+///
+///
+/// Stake amounts and pool totals are read directly from the CallRegistry
+/// via cross-contract calls — callers cannot spoof these values.
+///
+/// **Payout formula** (with protocol fee):
+/// ```text
+/// winning_position = outcome of the finalized call (1=UP, 2=DOWN)
+/// staker_stake     = CallRegistry.get_staker_stake(call_id, staker, winning_position)
+/// total_winning    = call.total_up_stake  (if outcome=UP)
+///                  | call.total_down_stake (if outcome=DOWN)
+/// total_losing     = the other pool
+///
+/// fee        = total_losing * fee_bps / 10000
+/// net_losing = total_losing - fee
+/// payout     = staker_stake
+///            + floor(staker_stake * net_losing / total_winning)
+/// ```
+///
+/// # Security
+/// The `Claimed` flag is written **before** the external `release_escrow`
+/// call, preventing reentrancy attacks. Stake values are read from the
+/// registry — not supplied by the caller — preventing spoofing.
+///
+/// # Panics
+/// - `call not settled`       – quorum not yet reached
+/// - `already claimed`        – staker already claimed
+/// - `nothing to claim`       – staker has no stake on the winning side
+/// - `invalid total winning`  – winning pool is empty (no one staked winning side)
+pub fn claim_payout(
+    env: Env,
+    registry: Address,
+    call_id: u64,
+    staker: Address,
+) {
+    // 0. Pause guard
+    if is_paused(&env) {
+        panic!("contract is paused");
+    }
+
+    // 1. Require staker's authorization
+    staker.require_auth();
+
+    // 2. Verify the call is settled
+    let outcome: Outcome = env
+        .storage()
+        .instance()
+        .get(&InstanceKey::FinalOutcome(call_id))
+        .expect("call not settled");
+
+    // 3. Prevent double-claim
+    let claimed_key = InstanceKey::Claimed(call_id, staker.clone());
+    if env.storage().instance().has(&claimed_key) {
+        panic!("already claimed");
+    }
+
+    // 4. Read call data from CallRegistry to get pool totals
+    let call = registry_get_call(&env, &registry, call_id);
+
+    // 5. Determine winning/losing pools from stored outcome
+    let winning_position: u32 = outcome.outcome; // 1=UP, 2=DOWN
+    let losing_position: u32 = if winning_position == 1 { 2 } else { 1 };
+
+    let total_winning_stake = if winning_position == 1 {
+        call.total_up_stake
+    } else {
+        call.total_down_stake
+    };
+
+    let total_losing_stake = if losing_position == 1 {
+        call.total_up_stake
+    } else {
+        call.total_down_stake
+    };
+
+    // 6. Read staker's winning stake from CallRegistry
+    let staker_winning_stake =
+        registry_get_staker_stake(&env, &registry, call_id, &staker, winning_position);
+
+    // 7. Validate
+    if staker_winning_stake <= 0 {
+        panic!("nothing to claim");
+    }
+    if total_winning_stake <= 0 {
+        panic!("invalid total winning stake");
+    }
+
+    // 8. Compute protocol fee
+    let fee_bps: u32 = env
+        .storage()
+        .instance()
+        .get(&InstanceKey::FeeBps)
+        .unwrap_or(0);
+    let fee_collector: Address = env
+        .storage()
+        .instance()
+        .get(&InstanceKey::FeeCollector)
+        .expect("fee collector not set");
+
+    let total_fee = (total_losing_stake as i128)
+        .checked_mul(fee_bps as i128)
+        .expect("overflow in fee calculation")
+        .checked_div(10000)
+        .expect("division by zero");
+
+    let staker_fee_share = staker_winning_stake
+        .checked_mul(total_fee)
+        .expect("overflow in staker fee share")
+        .checked_div(total_winning_stake)
+        .expect("division by zero");
+
+    // 9. Net losing pool and pro-rata payout
+    let net_losing = total_losing_stake
+        .checked_sub(total_fee)
+        .expect("underflow in net losing");
+
+    let prize_share = staker_winning_stake
+        .checked_mul(net_losing)
+        .expect("overflow in prize calculation")
+        .checked_div(total_winning_stake)
+        .expect("division by zero");
+
+    let payout = staker_winning_stake
+        .checked_add(prize_share)
+        .expect("overflow in payout sum");
+
+    // 10. Mark claimed BEFORE external calls (reentrancy guard)
+    env.storage().instance().set(&claimed_key, &true);
+
+    // 11. Transfer fee to fee_collector
+    if staker_fee_share > 0 {
+        registry_release_escrow(&env, &registry, call_id, &fee_collector, staker_fee_share);
+        emit_fee_collected(&env, call_id, staker_fee_share, &fee_collector);
+    }
+
+    // 12. Release net payout to staker
+    registry_release_escrow(&env, &registry, call_id, &staker, payout);
+
+    emit_payout_claimed(&env, call_id, &staker, payout);
+}
         env: Env,
         registry: Address,
         call_id: u64,
