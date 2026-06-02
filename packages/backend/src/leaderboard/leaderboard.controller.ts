@@ -1,3 +1,5 @@
+import { UseInterceptors } from '@nestjs/common';
+import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import {
   Controller,
   Get,
@@ -26,6 +28,9 @@ export class LeaderboardController {
   constructor(private readonly leaderboardService: LeaderboardService) {}
 
   @Get()
+@UseInterceptors(CacheInterceptor)
+@CacheKey('leaderboard_cache')
+@CacheTTL(120000)
   @ApiOperation({
     summary: 'Get leaderboard',
     description:

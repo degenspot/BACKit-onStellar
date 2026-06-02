@@ -1,8 +1,9 @@
-import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
+﻿import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import * as redisStore from 'cache-manager-redis-store';
 import { CallsModule } from './calls/calls.module';
 import { HealthModule } from './health/health.module';
 import { OracleModule } from './oracle/oracle.module';
@@ -18,18 +19,17 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
-    CacheModule.register({ isGlobal: true }),
+    CacheModule.register({
+      isGlobal: true,
+      store: process.env.REDIS_URL ? redisStore : undefined,
+      url: process.env.REDIS_URL,
+    }),
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DB_HOST || process.env.POSTGRES_HOST || 'localhost',
-      port: parseInt(
-        process.env.DB_PORT || process.env.POSTGRES_PORT || '5432',
-        10,
-      ),
-      username:
-        process.env.DB_USERNAME || process.env.POSTGRES_USER || 'postgres',
-      password:
-        process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD || 'postgres',
+      port: parseInt(process.env.DB_PORT || process.env.POSTGRES_PORT || '5432', 10),
+      username: process.env.DB_USERNAME || process.env.POSTGRES_USER || 'postgres',
+      password: process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD || 'postgres',
       database: process.env.DB_NAME || process.env.POSTGRES_DB || 'backit',
       autoLoadEntities: true,
       synchronize: process.env.NODE_ENV !== 'production',

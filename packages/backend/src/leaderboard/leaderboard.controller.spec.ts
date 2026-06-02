@@ -51,6 +51,10 @@ describe('LeaderboardController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [LeaderboardController],
       providers: [
+          {
+            provide: 'CACHE_MANAGER',
+            useValue: { get: jest.fn(), set: jest.fn(), del: jest.fn() },
+          },
         {
           provide: LeaderboardService,
           useValue: {

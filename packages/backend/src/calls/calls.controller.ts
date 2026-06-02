@@ -30,6 +30,9 @@ export class CallsController {
   constructor(private readonly callsService: CallsService) {}
 
   @Get('feed')
+@UseInterceptors(CacheInterceptor)
+@CacheKey('feed_cache')
+@CacheTTL(30000)
   @ApiOperation({ summary: 'Get paginated feed of visible calls' })
   @ApiResponse({ status: 200, description: 'Feed returned successfully' })
   getFeed(@Query() query: QueryCallsDto) {

@@ -88,6 +88,9 @@ export class UsersController {
   // ─── NEW: profile with badges ─────────────────────────────────────────────
 
   @Get(':address')
+@UseInterceptors(CacheInterceptor)
+@CacheKey('user_profile_cache')
+@CacheTTL(300000)
   @ApiOperation({ summary: 'Get user profile with badges' })
   @ApiParam({ name: 'address', description: 'Stellar wallet address' })
   @ApiResponse({
