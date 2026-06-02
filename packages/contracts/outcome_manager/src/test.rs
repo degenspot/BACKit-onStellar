@@ -94,7 +94,7 @@ fn setup_single_oracle(
     Address,
     BytesN<32>,
     BytesN<32>,
-    OutcomeManagerClient,
+    OutcomeManagerClient<'_>,
 ) {
     env.mock_all_auths();
     let admin = Address::generate(env);
@@ -440,7 +440,7 @@ fn test_get_outcome_unsettled_panics() {
 // ─── Fee Deduction Tests ───────────────────────────────────────────────────────
 
 /// Helper: set up a contract with a specific fee_bps and settle call_id=1.
-fn setup_with_fee(env: &Env, fee_bps: u32) -> (Address, Address, OutcomeManagerClient) {
+fn setup_with_fee(env: &Env, fee_bps: u32) -> (Address, Address, OutcomeManagerClient<'_>) {
     env.mock_all_auths();
     let admin = Address::generate(env);
     let fee_collector = Address::generate(env);
@@ -456,6 +456,70 @@ fn setup_with_fee(env: &Env, fee_bps: u32) -> (Address, Address, OutcomeManagerC
     let registry_id = env.register_contract(None, MockRegistry);
 
     // Settle call_id=1
+    let call_id = 1u64;
+    let sig = sign_outcome(env, &oracle_secret, call_id, 1, 100, 9000);
+    client.submit_outcome(
+        &registry_id,
+        &SignedOutcome {
+            call_id,
+            outcome: 1,
+            price: 100,
+            timestamp: 9000,
+            oracle_pubkey,
+            signature: sig,
+        },
+    );
+
+    (fee_collector, registry_id, client)
+}
+
+fn setup_with_zero_stake(env: &Env, fee_bps: u32) -> (Address, Address, OutcomeManagerClient<'_>) {
+    env.mock_all_auths();
+    let admin = Address::generate(env);
+    let fee_collector = Address::generate(env);
+    let (oracle_secret, oracle_pubkey) = gen_keypair(env);
+
+    let contract_id = env.register_contract(None, OutcomeManager);
+    let client = OutcomeManagerClient::new(env, &contract_id);
+
+    let mut oracles = Vec::new(env);
+    oracles.push_back(oracle_pubkey.clone());
+    client.initialize(&admin, &oracles, &1u32, &fee_collector, &fee_bps, &0u64);
+
+    let registry_id = env.register_contract(None, MockRegistryZeroStake);
+
+    let call_id = 1u64;
+    let sig = sign_outcome(env, &oracle_secret, call_id, 1, 100, 9000);
+    client.submit_outcome(
+        &registry_id,
+        &SignedOutcome {
+            call_id,
+            outcome: 1,
+            price: 100,
+            timestamp: 9000,
+            oracle_pubkey,
+            signature: sig,
+        },
+    );
+
+    (fee_collector, registry_id, client)
+}
+
+fn setup_with_zero_total_winning(env: &Env, fee_bps: u32) -> (Address, Address, OutcomeManagerClient<'_>) {
+    env.mock_all_auths();
+    let admin = Address::generate(env);
+    let fee_collector = Address::generate(env);
+    let (oracle_secret, oracle_pubkey) = gen_keypair(env);
+
+    let contract_id = env.register_contract(None, OutcomeManager);
+    let client = OutcomeManagerClient::new(env, &contract_id);
+
+    let mut oracles = Vec::new(env);
+    oracles.push_back(oracle_pubkey.clone());
+    client.initialize(&admin, &oracles, &1u32, &fee_collector, &fee_bps, &0u64);
+
+    let registry_id = env.register_contract(None, MockRegistryZeroTotalWinning);
+
     let call_id = 1u64;
     let sig = sign_outcome(env, &oracle_secret, call_id, 1, 100, 9000);
     client.submit_outcome(
@@ -578,8 +642,7 @@ fn test_batch_claim_payouts_three_stakers() {
     stakes.push_back(20_i128);
 
     // Should not panic — all three processed in one tx
-    client.claim_payout(&registry_id, &1u64, &staker);
-
+    client.batch_claim_payouts(&registry_id, &1u64, &stakers, &stakes, &100_i128, &100_i128);
 
     assert!(client.has_claimed(&1u64, &staker1));
     assert!(client.has_claimed(&1u64, &staker2));
@@ -600,11 +663,10 @@ fn test_batch_claim_panics_on_duplicate_staker() {
     let mut stakes = Vec::new(&env);
     stakes.push_back(50_i128);
 
-    client.claim_payout(&registry_id, &1u64, &staker);
-
+    client.batch_claim_payouts(&registry_id, &1u64, &stakers, &stakes, &100_i128, &100_i128);
 
     // Second batch with same staker — must panic
-    client.claim_payout(&registry_id, &1u64, &staker);
+    client.batch_claim_payouts(&registry_id, &1u64, &stakers, &stakes, &100_i128, &100_i128);
 
 }
 
@@ -617,7 +679,7 @@ fn test_batch_claim_panics_on_empty_batch() {
     let stakers: Vec<Address> = Vec::new(&env);
     let stakes: Vec<i128> = Vec::new(&env);
 
-    client.claim_payout(&registry_id, &1u64, &staker);
+    client.batch_claim_payouts(&registry_id, &1u64, &stakers, &stakes, &100_i128, &100_i128);
 
 }
 
@@ -634,7 +696,7 @@ fn test_batch_claim_panics_on_length_mismatch() {
     let mut stakes = Vec::new(&env);
     stakes.push_back(50_i128); // one fewer than stakers
 
-    client.claim_payout(&registry_id, &1u64, &staker);
+    client.batch_claim_payouts(&registry_id, &1u64, &stakers, &stakes, &100_i128, &100_i128);
 
 }
 
@@ -650,7 +712,7 @@ fn test_batch_claim_panics_on_unsettled_call() {
     stakes.push_back(50_i128);
 
     // call_id=999 was never finalized
-    client.claim_payout(&registry_id, &1u64, &staker);
+    client.batch_claim_payouts(&registry_id, &999u64, &stakers, &stakes, &100_i128, &100_i128);
 
 }
 
@@ -672,8 +734,7 @@ fn test_batch_claim_with_fee_deducted() {
     stakes.push_back(40_i128);
 
     // Should process without panic; fee math mirrors claim_payout
-    client.claim_payout(&registry_id, &1u64, &staker);
-
+    client.batch_claim_payouts(&registry_id, &1u64, &stakers, &stakes, &100_i128, &100_i128);
 
     assert!(client.has_claimed(&1u64, &staker1));
     assert!(client.has_claimed(&1u64, &staker2));
@@ -764,9 +825,15 @@ fn test_om_upgrade_requires_admin_auth() {
 
 /// Create a fresh settled env and run claim_payout with the given inputs.
 /// Panics if any arithmetic overflows or the claim is not recorded.
-fn fuzz_claim_setup(fee_bps: u32) {
+fn fuzz_claim_setup(staker_winning: i128, total_winning: i128, total_losing: i128, fee_bps: u32) {
     let env = Env::default();
-    let (_, registry_id, client) = setup_with_fee(&env, fee_bps);
+    let (_, registry_id, client) = if staker_winning == 0 {
+        setup_with_zero_stake(&env, fee_bps)
+    } else if total_winning == 0 {
+        setup_with_zero_total_winning(&env, fee_bps)
+    } else {
+        setup_with_fee(&env, fee_bps)
+    };
     let staker = Address::generate(&env);
     client.claim_payout(&registry_id, &1u64, &staker);
     assert!(client.has_claimed(&1u64, &staker));
@@ -806,8 +873,7 @@ fn test_fuzz_100_winners_batch_all_claimed() {
         stakes.push_back(1_i128);
     }
 
-  client.claim_payout(&registry_id, &1u64, &staker);
-;
+    client.batch_claim_payouts(&registry_id, &1u64, &stakers, &stakes, &100_i128, &100_i128);
 
     for i in 0..100u32 {
         assert!(client.has_claimed(&1u64, &stakers.get(i).unwrap()));
@@ -820,8 +886,7 @@ fn test_fuzz_1_winner_takes_all() {
     let env = Env::default();
     let (_, registry_id, client) = setup_with_fee(&env, 0);
     let staker = Address::generate(&env);
-   client.claim_payout(&registry_id, &1u64, &staker);
-;
+    client.claim_payout(&registry_id, &1u64, &staker);
     assert!(client.has_claimed(&1u64, &staker));
 }
 
@@ -875,6 +940,38 @@ impl MockRegistryCustomStake {
     }
 }
 
+#[contract]
+pub struct MockRegistryZeroStake;
+
+#[contractimpl]
+impl MockRegistryZeroStake {
+    pub fn resolve_call(_env: Env, _call_id: u64, _outcome: u32, _end_price: i128) {}
+    pub fn release_escrow(_env: Env, _call_id: u64, _to: Address, _amount: i128) {}
+    pub fn mark_settled(_env: Env, _call_id: u64) {}
+    pub fn get_call(env: Env, _call_id: u64) -> MockCall {
+        MockCall { total_up_stake: 100, total_down_stake: 100, outcome: 1 }
+    }
+    pub fn get_staker_stake(_env: Env, _call_id: u64, _staker: Address, _position: u32) -> i128 {
+        0_i128 // staker has no stake on winning side
+    }
+}
+
+#[contract]
+pub struct MockRegistryZeroTotalWinning;
+
+#[contractimpl]
+impl MockRegistryZeroTotalWinning {
+    pub fn resolve_call(_env: Env, _call_id: u64, _outcome: u32, _end_price: i128) {}
+    pub fn release_escrow(_env: Env, _call_id: u64, _to: Address, _amount: i128) {}
+    pub fn mark_settled(_env: Env, _call_id: u64) {}
+    pub fn get_call(env: Env, _call_id: u64) -> MockCall {
+        MockCall { total_up_stake: 0, total_down_stake: 100, outcome: 1 }
+    }
+    pub fn get_staker_stake(_env: Env, _call_id: u64, _staker: Address, _position: u32) -> i128 {
+        50_i128
+    }
+}
+
 #[test]
 fn test_claim_payout_reads_stakes_from_registry() {
     // MockRegistryCustomStake returns: total_up=60, total_down=40, staker_up=30
@@ -918,22 +1015,6 @@ fn test_claim_payout_reads_stakes_from_registry() {
 #[test]
 #[should_panic(expected = "nothing to claim")]
 fn test_claim_payout_rejects_zero_stake_from_registry() {
-    // MockRegistry returns 50 by default but we need 0 — use a zero-stake mock
-    #[contract]
-    pub struct MockRegistryZeroStake;
-    #[contractimpl]
-    impl MockRegistryZeroStake {
-        pub fn resolve_call(_env: Env, _call_id: u64, _outcome: u32, _end_price: i128) {}
-        pub fn release_escrow(_env: Env, _call_id: u64, _to: Address, _amount: i128) {}
-        pub fn mark_settled(_env: Env, _call_id: u64) {}
-        pub fn get_call(env: Env, _call_id: u64) -> MockCall {
-            MockCall { total_up_stake: 100, total_down_stake: 100, outcome: 1 }
-        }
-        pub fn get_staker_stake(_env: Env, _call_id: u64, _staker: Address, _position: u32) -> i128 {
-            0_i128 // staker has no stake on winning side
-        }
-    }
-
     let env = Env::default();
     env.mock_all_auths();
     let admin = Address::generate(&env);

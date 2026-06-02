@@ -6,7 +6,7 @@ mod storage;
 mod test;
 mod verification;
 
-use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, IntoVal, Map, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, contracttype, Address, Bytes, BytesN, Env, IntoVal, Map, Symbol, Vec};
 
 use auth::require_admin;
 use backit_shared::{is_valid_fee_bps, is_valid_outcome};
@@ -17,6 +17,14 @@ use events::{
 };
 use storage::{set_dispute_window, InstanceKey, Outcome, PriceObservation, SignedOutcome, TempKey, is_paused, set_paused};
 use verification::{build_message, verify_signature};
+
+#[contracttype]
+#[derive(Clone)]
+pub struct Call {
+    pub total_up_stake: i128,
+    pub total_down_stake: i128,
+    pub outcome: u32,
+}
 
 pub const CONTRACT_VERSION: u32 = 1;
 
@@ -52,13 +60,9 @@ fn registry_mark_settled(env: &Env, registry: &Address, call_id: u64) {
     env.invoke_contract::<()>(registry, &Symbol::new(env, "mark_settled"), args);
 }
 /// Call `get_call(call_id)` on the CallRegistry and return the Call.
-fn registry_get_call(env: &Env, registry: &Address, call_id: u64) -> backit_shared::types::Call {
+fn registry_get_call(env: &Env, registry: &Address, call_id: u64) -> Call {
     let args = (call_id,).into_val(env);
-    env.invoke_contract::<backit_shared::types::Call>(
-        registry,
-        &Symbol::new(env, "get_call"),
-        args,
-    )
+    env.invoke_contract::<Call>(registry, &Symbol::new(env, "get_call"), args)
 }
 
 /// Call `get_staker_stake(call_id, staker, position)` on the CallRegistry.
@@ -448,101 +452,6 @@ pub fn claim_payout(
 
     emit_payout_claimed(&env, call_id, &staker, payout);
 }
-        env: Env,
-        registry: Address,
-        call_id: u64,
-        staker: Address,
-        staker_winning_stake: i128,
-        total_winning_stake: i128,
-        total_losing_stake: i128,
-    ) {
-        // 0. Check if contract is paused (emergency guard)
-        if is_paused(&env) {
-            panic!("contract is paused");
-        }
-
-        // 1. Require staker's authorization
-        staker.require_auth();
-
-        // 2. Verify the call is settled
-        if !env
-            .storage()
-            .instance()
-            .has(&InstanceKey::FinalOutcome(call_id))
-        {
-            panic!("call not settled");
-        }
-
-        // 3. Prevent double-claim
-        let claimed_key = InstanceKey::Claimed(call_id, staker.clone());
-        if env.storage().instance().has(&claimed_key) {
-            panic!("already claimed");
-        }
-
-        // 4. Validate inputs
-        if staker_winning_stake <= 0 {
-            panic!("nothing to claim");
-        }
-        if total_winning_stake <= 0 {
-            panic!("invalid total winning stake");
-        }
-
-        // 5. Compute protocol fee from losing pool (only on first claim; fee is
-        //    proportional so each claimant effectively pays their share)
-        let fee_bps: u32 = env
-            .storage()
-            .instance()
-            .get(&InstanceKey::FeeBps)
-            .unwrap_or(0);
-        let fee_collector: Address = env
-            .storage()
-            .instance()
-            .get(&InstanceKey::FeeCollector)
-            .expect("fee collector not set");
-
-        // Staker's proportional share of the total fee
-        let total_fee = (total_losing_stake as i128)
-            .checked_mul(fee_bps as i128)
-            .expect("overflow in fee calculation")
-            .checked_div(10000)
-            .expect("division by zero");
-
-        let staker_fee_share = staker_winning_stake
-            .checked_mul(total_fee)
-            .expect("overflow in staker fee share")
-            .checked_div(total_winning_stake)
-            .expect("division by zero");
-
-        // 6. Net losing pool available to winners
-        let net_losing = total_losing_stake
-            .checked_sub(total_fee)
-            .expect("underflow in net losing");
-
-        // 7. Pro-rata payout from net losing pool
-        let prize_share = staker_winning_stake
-            .checked_mul(net_losing)
-            .expect("overflow in prize calculation")
-            .checked_div(total_winning_stake)
-            .expect("division by zero");
-
-        let payout = staker_winning_stake
-            .checked_add(prize_share)
-            .expect("overflow in payout sum");
-
-        // 8. Mark as claimed BEFORE external calls (reentrancy guard)
-        env.storage().instance().set(&claimed_key, &true);
-
-        // 9. Transfer fee to fee_collector (if non-zero)
-        if staker_fee_share > 0 {
-            registry_release_escrow(&env, &registry, call_id, &fee_collector, staker_fee_share);
-            emit_fee_collected(&env, call_id, staker_fee_share, &fee_collector);
-        }
-
-        // 10. Release net payout to staker
-        registry_release_escrow(&env, &registry, call_id, &staker, payout);
-
-        emit_payout_claimed(&env, call_id, &staker, payout);
-    }
 
     pub fn finalize_outcome(env: Env, call_id: u64) {
         let pending: Outcome = env
