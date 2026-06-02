@@ -1,4 +1,5 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -25,6 +26,8 @@ import { StorageModule } from './storage/storage.module';
 import { TreasuryModule } from './treasury/treasury.module';
 import { AuthModule } from './auth/auth.module';
 import { LoggerModule } from './common/logger/logger.module';
+import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 @Module({
   imports: [
@@ -87,7 +90,7 @@ import { LoggerModule } from './common/logger/logger.module';
     CommentsModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [{ provide: APP_INTERCEPTOR, useClass: LoggingInterceptor }],
 })
 export class AppModule implements NestModule {
   /**
@@ -96,6 +99,11 @@ export class AppModule implements NestModule {
    * Add more exclusions via .exclude() chaining if needed.
    */
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(FirewallMiddleware).exclude('/health').forRoutes('*');
+    consumer
+      .apply(FirewallMiddleware)
+      .exclude('/health')
+      .forRoutes('*')
+      .apply(CorrelationIdMiddleware)
+      .forRoutes('*');
   }
 }
