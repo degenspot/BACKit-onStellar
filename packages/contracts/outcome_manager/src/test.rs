@@ -17,6 +17,9 @@ pub struct MockCall {
     pub total_down_stake: i128,
     pub outcome: u32,
 }
+use crate::storage::{OracleVote, PriceObservation, SignedOutcome};
+use crate::{OutcomeManager, OutcomeManagerClient, MAX_ORACLES};
+
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
 #[contract]
@@ -308,6 +311,7 @@ fn test_quorum_reached_with_two_oracles() {
             oracle_pubkey: p1.clone(),
             signature: sig1,
         },
+        &0u64,
     );
 
     // Second oracle vote
@@ -322,10 +326,33 @@ fn test_quorum_reached_with_two_oracles() {
             oracle_pubkey: p2.clone(),
             signature: sig2,
         },
+        &0u64,
     );
 
     let final_outcome = client.get_outcome(&call_id);
     assert_eq!(final_outcome.outcome, outcome_val);
+
+    let stored_votes = client.get_votes(&call_id);
+    assert_eq!(stored_votes.len(), 2);
+    assert_eq!(client.get_vote_count(&call_id), 2);
+    assert_eq!(
+        stored_votes.get(0).unwrap(),
+        OracleVote {
+            oracle: p1,
+            outcome: outcome_val,
+            price,
+            timestamp: ts,
+        }
+    );
+    assert_eq!(
+        stored_votes.get(1).unwrap(),
+        OracleVote {
+            oracle: p2,
+            outcome: outcome_val,
+            price,
+            timestamp: ts,
+        }
+    );
 }
 
 #[test]
@@ -349,6 +376,7 @@ fn test_submit_unauthorized_oracle_fails() {
             oracle_pubkey: pubkey2,
             signature: sig,
         },
+        &0u64,
     );
 }
 
@@ -365,6 +393,50 @@ fn test_add_remove_oracle() {
 
     client.remove_oracle(&new_pubkey);
     assert!(!client.is_oracle(&new_pubkey));
+}
+
+#[test]
+fn test_get_oracles_tracks_add_remove() {
+    let env = Env::default();
+    let (_, _, _, original_pubkey, client) = setup_single_oracle(&env);
+    let (_, second_pubkey) = gen_keypair(&env);
+
+    let initial = client.get_oracles();
+    assert_eq!(initial.len(), 1);
+    assert_eq!(initial.get(0).unwrap(), original_pubkey.clone());
+    assert_eq!(client.get_oracle_count(), 1);
+
+    client.add_oracle(&second_pubkey);
+    let with_second = client.get_oracles();
+    assert_eq!(with_second.len(), 2);
+    assert_eq!(with_second.get(0).unwrap(), original_pubkey);
+    assert_eq!(with_second.get(1).unwrap(), second_pubkey.clone());
+    assert_eq!(client.get_oracle_count(), 2);
+
+    client.remove_oracle(&second_pubkey);
+    assert_eq!(client.get_oracles().len(), 1);
+    assert_eq!(client.get_oracle_count(), 1);
+}
+
+#[test]
+#[should_panic(expected = "max oracles reached")]
+fn test_add_oracle_enforces_max_limit() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let fee_collector = Address::generate(&env);
+    let contract_id = env.register_contract(None, OutcomeManager);
+    let client = OutcomeManagerClient::new(&env, &contract_id);
+
+    let mut oracles = Vec::new(&env);
+    for _ in 0..MAX_ORACLES {
+        let (_, pubkey) = gen_keypair(&env);
+        oracles.push_back(pubkey);
+    }
+
+    client.initialize(&admin, &oracles, &1u32, &fee_collector, &0u32, &0u64);
+    let (_, extra_pubkey) = gen_keypair(&env);
+    client.add_oracle(&extra_pubkey);
 }
 
 #[test]
@@ -468,6 +540,7 @@ fn setup_with_fee(env: &Env, fee_bps: u32) -> (Address, Address, OutcomeManagerC
             oracle_pubkey,
             signature: sig,
         },
+        &0u64,
     );
 
     (fee_collector, registry_id, client)
@@ -741,15 +814,6 @@ fn test_batch_claim_with_fee_deducted() {
     let _ = fee_collector;
 }
 
-// ─── Pause Mechanism Tests ─────────────────────────────────────────────────────
-
-#[test]
-fn test_pause_and_unpause() {
-    let env = Env::default();
-    let (admin, _registry_id, _oracle_secret, _oracle_pubkey, client) = setup_single_oracle(&env);
-
-    // Initially not paused
-    assert!(!client.is_paused_view());
 
     // Admin can pause
     env.mock_all_auths();
@@ -1037,3 +1101,127 @@ fn test_claim_payout_rejects_zero_stake_from_registry() {
     let staker = Address::generate(&env);
     client.claim_payout(&registry_id, &1u64, &staker);
 }
+// ─── Pause Mechanism Tests ─────────────────────────────────────────────────────
+
+#[test]
+fn test_pause_and_unpause() {
+    let env = Env::default();
+    let (_admin, _registry_id, _oracle_secret, _oracle_pubkey, client) = setup_single_oracle(&env);
+
+    assert!(!client.is_paused_view());
+
+    env.mock_all_auths();
+    client.pause();
+    assert!(client.is_paused_view());
+
+    client.unpause();
+    assert!(!client.is_paused_view());
+}
+
+#[test]
+#[should_panic(expected = "contract is paused")]
+fn test_submit_outcome_fails_when_paused() {
+    let env = Env::default();
+    let (_admin, registry_id, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
+
+    env.mock_all_auths();
+    client.pause();
+
+    let signed = SignedOutcome {
+        call_id: 1,
+        outcome: 1,
+        price: 100,
+        timestamp: 1000,
+        oracle_pubkey: oracle_pubkey.clone(),
+        signature: sign_outcome(&env, &oracle_secret, 1, 1, 100, 1000),
+    };
+
+    client.submit_outcome(&registry_id, &signed, &0u64);
+}
+
+#[test]
+#[should_panic(expected = "contract is paused")]
+fn test_claim_payout_fails_when_paused() {
+    let env = Env::default();
+    let (_admin, registry_id, _oracle_secret, _oracle_pubkey, client) = setup_single_oracle(&env);
+    let staker = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.pause();
+
+    client.claim_payout(
+        &registry_id,
+        &1u64,
+        &staker,
+        &100_i128,
+        &100_i128,
+        &100_i128,
+    );
+}
+
+// ─── Oracle Submission Deadline Tests ─────────────────────────────────────────
+
+#[test]
+fn test_submission_within_window_succeeds() {
+    let env = Env::default();
+    let (_admin, registry_id, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
+
+    let call_id = 10u64;
+    let call_end_ts = 1000u64;
+    // timestamp 1500 is well within default 86400s window
+    let sig = sign_outcome(&env, &oracle_secret, call_id, 1, 100, 1500);
+    client.submit_outcome(
+        &registry_id,
+        &SignedOutcome {
+            call_id,
+            outcome: 1,
+            price: 100,
+            timestamp: 1500,
+            oracle_pubkey,
+            signature: sig,
+        },
+        &call_end_ts,
+    );
+
+    let outcome = client.get_outcome(&call_id);
+    assert_eq!(outcome.outcome, 1u32);
+}
+
+#[test]
+#[should_panic(expected = "submission outside allowed window")]
+fn test_submission_outside_window_fails() {
+    let env = Env::default();
+    let (_admin, registry_id, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
+
+    // Tighten the window to 50 seconds
+    client.set_max_submission_delay(&50u64);
+
+    let call_id = 11u64;
+    let call_end_ts = 1000u64;
+    // timestamp 1200 > call_end_ts(1000) + max_delay(50) = 1050
+    let sig = sign_outcome(&env, &oracle_secret, call_id, 1, 100, 1200);
+    client.submit_outcome(
+        &registry_id,
+        &SignedOutcome {
+            call_id,
+            outcome: 1,
+            price: 100,
+            timestamp: 1200,
+            oracle_pubkey,
+            signature: sig,
+        },
+        &call_end_ts,
+    );
+}
+
+#[test]
+fn test_admin_can_update_max_submission_delay() {
+    let env = Env::default();
+    let (_admin, _registry_id, _secret, _pubkey, client) = setup_single_oracle(&env);
+
+    assert_eq!(client.get_max_submission_delay(), 86400u64);
+
+    client.set_max_submission_delay(&3600u64);
+    assert_eq!(client.get_max_submission_delay(), 3600u64);
+}
+

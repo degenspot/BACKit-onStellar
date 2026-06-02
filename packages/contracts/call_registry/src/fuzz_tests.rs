@@ -19,6 +19,7 @@ impl MockToken {
 }
 
 const TEST_MIN_STAKE: i128 = 1_000_000;
+const TEST_START_PRICE: i128 = 100_000_000;
 
 fn setup_fuzz_env() -> (Env, CallRegistryClient<'static>, Address, Address, Address) {
     let env = Env::default();
@@ -52,11 +53,13 @@ fn create_test_call(
         creator,
         stake_token,
         &100_000_000_i128,
+        &TEST_START_PRICE,
         &end_ts,
         &token_address,
         &pair_id,
         &ipfs_cid,
         &ConditionType::TargetAbove(100_000_000_i128),
+        &2,
     );
 
     call.id
@@ -102,9 +105,9 @@ fn test_fuzz_stake_random_amounts_no_overflow() {
 
         let updated_call = client.get_call(&call_id);
         if position == 1 {
-            assert!(updated_call.total_up_stake > 0);
+            assert!(updated_call.outcome_stakes.get(1).unwrap_or(0) > 0);
         } else {
-            assert!(updated_call.total_down_stake > 0);
+            assert!(updated_call.outcome_stakes.get(2).unwrap_or(0) > 0);
         }
     }
 }
@@ -147,12 +150,12 @@ fn test_fuzz_invariant_total_stake_equals_sum() {
 
     let call = client.get_call(&call_id);
     assert_eq!(
-        call.total_up_stake, expected_up,
-        "total_up_stake should equal sum of all up stakes"
+        call.outcome_stakes.get(1).unwrap_or(0), expected_up,
+        "outcome 1 (up) should equal sum of all up stakes"
     );
     assert_eq!(
-        call.total_down_stake, expected_down,
-        "total_down_stake should equal sum of all down stakes"
+        call.outcome_stakes.get(2).unwrap_or(0), expected_down,
+        "outcome 2 (down) should equal sum of all down stakes"
     );
 
     let mut verified_up = 0i128;
@@ -167,8 +170,8 @@ fn test_fuzz_invariant_total_stake_equals_sum() {
         }
     }
 
-    assert_eq!(verified_up, call.total_up_stake);
-    assert_eq!(verified_down, call.total_down_stake);
+    assert_eq!(verified_up, call.outcome_stakes.get(1).unwrap_or(0));
+    assert_eq!(verified_down, call.outcome_stakes.get(2).unwrap_or(0));
 }
 
 #[test]
@@ -198,10 +201,10 @@ fn test_fuzz_multiple_concurrent_stakers() {
     }
 
     let call = client.get_call(&call_id);
-    assert_eq!(call.total_up_stake, total_up);
-    assert_eq!(call.total_down_stake, total_down);
+    assert_eq!(call.outcome_stakes.get(1).unwrap_or(0), total_up);
+    assert_eq!(call.outcome_stakes.get(2).unwrap_or(0), total_down);
     assert_eq!(
-        call.total_up_stake + call.total_down_stake,
+        call.outcome_stakes.get(1).unwrap_or(0) + call.outcome_stakes.get(2).unwrap_or(0),
         total_up + total_down,
         "sum of totals should equal sum of all stakes"
     );
@@ -229,14 +232,14 @@ fn test_fuzz_multiple_calls_independent_accounting() {
     let call2 = client.get_call(&call_id_2);
     let call3 = client.get_call(&call_id_3);
 
-    assert_eq!(call1.total_up_stake, 100_000_000);
-    assert_eq!(call1.total_down_stake, 150_000_000);
+    assert_eq!(call1.outcome_stakes.get(1).unwrap_or(0), 100_000_000);
+    assert_eq!(call1.outcome_stakes.get(2).unwrap_or(0), 150_000_000);
 
-    assert_eq!(call2.total_up_stake, 0);
-    assert_eq!(call2.total_down_stake, 200_000_000);
+    assert_eq!(call2.outcome_stakes.get(1).unwrap_or(0), 0);
+    assert_eq!(call2.outcome_stakes.get(2).unwrap_or(0), 200_000_000);
 
-    assert_eq!(call3.total_up_stake, 300_000_000);
-    assert_eq!(call3.total_down_stake, 0);
+    assert_eq!(call3.outcome_stakes.get(1).unwrap_or(0), 300_000_000);
+    assert_eq!(call3.outcome_stakes.get(2).unwrap_or(0), 0);
 }
 
 #[test]
@@ -260,7 +263,7 @@ fn test_fuzz_same_staker_multiple_stakes_accumulate() {
     }
 
     let call = client.get_call(&call_id);
-    assert_eq!(call.total_up_stake, accumulated);
+    assert_eq!(call.outcome_stakes.get(1).unwrap_or(0), accumulated);
 }
 
 #[test]
@@ -290,8 +293,8 @@ fn test_fuzz_large_number_of_iterations() {
     }
 
     let call = client.get_call(&call_id);
-    assert_eq!(call.total_up_stake, total_up);
-    assert_eq!(call.total_down_stake, total_down);
+    assert_eq!(call.outcome_stakes.get(1).unwrap_or(0), total_up);
+    assert_eq!(call.outcome_stakes.get(2).unwrap_or(0), total_down);
 }
 
 #[test]
@@ -316,11 +319,13 @@ fn test_fuzz_extreme_timestamp_near_max() {
             &creator,
             &stake_token,
             &100_000_000,
+            &TEST_START_PRICE,
             &end_ts,
             &token_address,
             &pair_id,
             &ipfs_cid,
             &ConditionType::TargetAbove(100_000_000),
+            &2,
         );
 
         let staker = Address::generate(&env);
@@ -328,7 +333,7 @@ fn test_fuzz_extreme_timestamp_near_max() {
 
         let retrieved = client.get_call(&call.id);
         assert_eq!(retrieved.end_ts, end_ts);
-        assert_eq!(retrieved.total_up_stake, 50_000_000);
+        assert_eq!(retrieved.outcome_stakes.get(1).unwrap_or(0), 50_000_000);
     }
 }
 
@@ -348,8 +353,8 @@ fn test_fuzz_invariant_no_negative_stakes() {
         client.stake_on_call(&staker, &call_id, &amount, &position);
 
         let call = client.get_call(&call_id);
-        assert!(call.total_up_stake >= 0, "total_up_stake must never be negative");
-        assert!(call.total_down_stake >= 0, "total_down_stake must never be negative");
+        assert!(call.outcome_stakes.get(1).unwrap_or(0) >= 0, "up stakes must never be negative");
+        assert!(call.outcome_stakes.get(2).unwrap_or(0) >= 0, "down stakes must never be negative");
 
         let stake = client.get_staker_stake(&call_id, &staker, &position);
         assert!(stake >= 0, "individual stake must never be negative");
@@ -407,8 +412,8 @@ fn test_fuzz_mixed_positions_independent() {
     assert_eq!(down_stake, 200_000_000);
 
     let call = client.get_call(&call_id);
-    assert_eq!(call.total_up_stake, 100_000_000);
-    assert_eq!(call.total_down_stake, 200_000_000);
+    assert_eq!(call.outcome_stakes.get(1).unwrap_or(0), 100_000_000);
+    assert_eq!(call.outcome_stakes.get(2).unwrap_or(0), 200_000_000);
 }
 
 #[test]
@@ -456,8 +461,8 @@ fn test_fuzz_stats_consistency() {
     }
 
     let stats = client.get_call_stats(&call_id);
-    assert_eq!(stats.up_stake_count, up_stakers);
-    assert_eq!(stats.down_stake_count, down_stakers);
+    assert_eq!(stats.outcome_stake_counts.get(1).unwrap_or(0), up_stakers);
+    assert_eq!(stats.outcome_stake_counts.get(2).unwrap_or(0), down_stakers);
     assert_eq!(stats.total_stakes, up_stakers + down_stakers);
 }
 

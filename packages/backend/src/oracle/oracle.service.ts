@@ -14,6 +14,7 @@ import { REPORT_THRESHOLD } from '../calls/constants/moderation.constants';
 import { OracleHealthService } from './oracle-health.service';
 import { OracleOperationType } from './entities/oracle-health-log.entity';
 import { SigningService } from './signing.service';
+import { IpfsService } from '../storage/ipfs.service';
 
 /**
  * High-level lifecycle status for a market/call, used by analytics and UI.
@@ -42,6 +43,7 @@ export class OracleService {
     private readonly oracleOutcomeRepository: Repository<OracleOutcome>,
     private readonly oracleHealthService: OracleHealthService,
     private readonly signingService: SigningService,
+    private readonly ipfsService: IpfsService,
   ) {}
 
   // ─── Core CRUD ────────────────────────────────────────────────────────────
@@ -266,6 +268,21 @@ export class OracleService {
       pairAddress: call.pairAddress,
     });
 
+    // Pin resolution evidence to IPFS (non-blocking — never stops resolution)
+    let evidenceCid: string | undefined;
+    try {
+      evidenceCid = await this.ipfsService.pinEvidencePayload({
+        callId,
+        source: 'oracle',
+        apiUrl: `soroban-rpc:${call.pairAddress}`,
+        rawResponse: { pairAddress: call.pairAddress, observedPrice },
+        fetchedAt: new Date().toISOString(),
+        priceUsed: Number(observedPrice),
+      });
+    } catch {
+      this.logger.warn(`IPFS evidence pinning failed for call ${callId}, continuing`);
+    }
+
     await this.oracleOutcomeRepository.save(
       this.oracleOutcomeRepository.create({
         call,
@@ -273,6 +290,7 @@ export class OracleService {
         outcome: outcome === OracleCallStatus.RESOLVED_YES ? 'YES' : 'NO',
         signature,
         transactionHash: undefined,
+        ...(evidenceCid ? { evidence_cid: evidenceCid } : {}),
       } as any),
     );
 

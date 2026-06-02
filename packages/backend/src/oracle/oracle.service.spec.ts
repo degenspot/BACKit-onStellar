@@ -24,6 +24,7 @@ import { OracleCall, OracleCallStatus } from './entities/oracle-call.entity';
 import { OracleOutcome } from './entities/oracle-outcome.entity';
 import { OracleHealthService } from './oracle-health.service';
 import { SigningService } from './signing.service';
+import { IpfsService } from '../storage/ipfs.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 describe('OracleService', () => {
@@ -63,6 +64,7 @@ describe('OracleService', () => {
         },
         { provide: OracleHealthService, useValue: oracleHealth },
         { provide: SigningService, useValue: signingService },
+        { provide: IpfsService, useValue: { pinEvidencePayload: jest.fn().mockResolvedValue('cid123') } },
       ],
     }).compile();
 
@@ -176,6 +178,31 @@ describe('OracleService', () => {
         operation: expect.any(String),
         success: true,
       }),
+    );
+  });
+
+  it('resolveMarket stores outcome even when IPFS pinning fails', async () => {
+    const call: Partial<OracleCall> = {
+      id: 2,
+      pairAddress: 'PAIR2',
+      strikePrice: 100,
+      status: OracleCallStatus.OPEN,
+      reportCount: 0,
+      isHidden: false,
+    };
+    oracleCallRepo.findOne.mockResolvedValue(call);
+
+    // Make IPFS pinning throw — resolution should still succeed
+    const ipfsMock = { pinEvidencePayload: jest.fn().mockRejectedValue(new Error('IPFS down')) };
+    (service as any).ipfsService = ipfsMock;
+
+    await service.resolveMarket(2, '90');
+
+    expect(oracleOutcomeRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'NO', signature: 'sig' }),
+    );
+    expect(oracleCallRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ status: OracleCallStatus.RESOLVED_NO }),
     );
   });
 

@@ -16,6 +16,7 @@ import { OraclePriceEntity } from './entities/storedOraclePrice.entity';
 import { OracleHealthLog } from './entities/oracle-health-log.entity';
 import { OracleHealthService } from './oracle-health.service';
 import { OracleHealthController } from './oracle-health.controller';
+import { IpfsService } from '../storage/ipfs.service';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { OracleHealthController } from './oracle-health.controller';
     OracleService,
     PriceFetcherService,
     SigningService,
+    IpfsService,
     OracleHealthService,
     CoinGeckoService,
     PriceDeviationService,

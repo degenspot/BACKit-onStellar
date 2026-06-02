@@ -623,4 +623,96 @@ export class AnalyticsService {
       breakdown,
     };
   }
+
+  // ─── Platform Analytics (#195) ───────────────────────────────────────────
+
+  private readonly platformCache = new Map<string, { data: any; expiresAt: number }>();
+
+  async getPlatformAnalytics(): Promise<any> {
+    const key = 'platform_analytics';
+    const hit = this.getCache(key);
+    if (hit) return hit;
+
+    const [callStats, stakeStats, userStats, tokenPairs] = await Promise.all([
+      this.dataSource.query(`
+        SELECT COUNT(*) AS total_calls_created,
+               COUNT(CASE WHEN outcome IN ('YES','NO') THEN 1 END) AS total_calls_resolved,
+               AVG(EXTRACT(EPOCH FROM (COALESCE("resolvedAt",NOW())-"createdAt"))/3600) AS avg_call_duration_hours
+        FROM calls`),
+      this.dataSource.query(
+        `SELECT COALESCE(SUM(amount),0) AS total_stake_volume FROM stakes`),
+      this.dataSource.query(
+        `SELECT COUNT(DISTINCT "userAddress") AS total_unique_users FROM stakes`),
+      this.dataSource.query(`
+        SELECT "contractAddress" AS token_pair, COUNT(*) AS cnt
+        FROM calls WHERE "contractAddress" IS NOT NULL
+        GROUP BY "contractAddress" ORDER BY cnt DESC LIMIT 5`),
+    ]);
+
+    const result = {
+      totalCallsCreated: parseInt(callStats[0]?.total_calls_created ?? 0),
+      totalCallsResolved: parseInt(callStats[0]?.total_calls_resolved ?? 0),
+      totalStakeVolume: parseFloat(stakeStats[0]?.total_stake_volume ?? 0),
+      totalUniqueUsers: parseInt(userStats[0]?.total_unique_users ?? 0),
+      averageCallDurationHours: parseFloat(callStats[0]?.avg_call_duration_hours ?? 0),
+      mostPopularTokenPairs: (tokenPairs as any[]).map((r) => ({
+        tokenPair: r.token_pair,
+        count: parseInt(r.cnt),
+      })),
+    };
+
+    this.setCache(key, result, 300);
+    return result;
+  }
+
+  async getPlatformTrends(period: string): Promise<any> {
+    const key = `platform_trends_${period}`;
+    const hit = this.getCache(key);
+    if (hit) return hit;
+
+    const days = period === '30d' ? 30 : period === '14d' ? 14 : 7;
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const [callTrends, userTrends, stakeTrends] = await Promise.all([
+      this.dataSource.query(
+        `SELECT DATE_TRUNC('day',"createdAt") AS day, COUNT(*) AS new_calls
+         FROM calls WHERE "createdAt">=$1 GROUP BY 1 ORDER BY 1`, [since]),
+      this.dataSource.query(
+        `SELECT DATE_TRUNC('day',"createdAt") AS day, COUNT(DISTINCT "userAddress") AS new_users
+         FROM stakes WHERE "createdAt">=$1 GROUP BY 1 ORDER BY 1`, [since]),
+      this.dataSource.query(
+        `SELECT DATE_TRUNC('day',"createdAt") AS day, COALESCE(SUM(amount),0) AS stake_volume
+         FROM stakes WHERE "createdAt">=$1 GROUP BY 1 ORDER BY 1`, [since]),
+    ]);
+
+    const result = {
+      period,
+      dataPoints: (callTrends as any[]).map((row) => {
+        const d = new Date(row.day).toISOString().split('T')[0];
+        const u = (userTrends as any[]).find((r) => new Date(r.day).toISOString().split('T')[0] === d);
+        const s = (stakeTrends as any[]).find((r) => new Date(r.day).toISOString().split('T')[0] === d);
+        return {
+          date: d,
+          newCalls: parseInt(row.new_calls ?? 0),
+          newUsers: parseInt(u?.new_users ?? 0),
+          stakeVolume: parseFloat(s?.stake_volume ?? 0),
+        };
+      }),
+    };
+
+    this.setCache(key, result, 300);
+    return result;
+  }
+
+  private getCache(key: string): any | null {
+    const e = this.platformCache.get(key);
+    if (e && Date.now() < e.expiresAt) return e.data;
+    this.platformCache.delete(key);
+    return null;
+  }
+
+  private setCache(key: string, data: any, ttlSeconds: number): void {
+    this.platformCache.set(key, { data, expiresAt: Date.now() + ttlSeconds * 1000 });
+  }
 }

@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -11,8 +12,14 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // URI-based API versioning: /api/v1/...
-  app.enableVersioning({ type: VersioningType.URI });
+  // URI-based API versioning: /api/v1/... (defaultVersion covers all unversioned routes)
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+
+  // Global exception filter — standardised { statusCode, error, message, timestamp, path }
+  app.useGlobalFilters(new GlobalExceptionFilter());
+
+  // Global exception filter — standardised { statusCode, error, message, timestamp, path }
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Global validation pipe
   app.useGlobalPipes(
@@ -94,6 +101,7 @@ async function bootstrap() {
 }
 
 bootstrap().catch((error) => {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   Logger.error(`Failed to start: ${error.message}`, error.stack, 'Bootstrap');
   process.exit(1);
 });

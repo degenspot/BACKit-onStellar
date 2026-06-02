@@ -5,15 +5,16 @@ import {
   ValidatorConstraintInterface,
 } from 'class-validator';
 
-@ValidatorConstraint({ name: 'isStellarAddress', async: false })
+@ValidatorConstraint({ name: 'IsStellarAddress', async: false })
 export class IsStellarAddressConstraint implements ValidatorConstraintInterface {
-  validate(address: string) {
-    // Stellar addresses start with 'G' and are 56 characters long (base32)
-    return /^G[A-Z2-7]{55}$/.test(address);
+  validate(value: any): boolean {
+    if (typeof value !== 'string') return false;
+    // Stellar public keys are 56 characters starting with 'G'
+    return /^G[A-Z2-7]{55}$/.test(value);
   }
 
-  defaultMessage() {
-    return 'Invalid Stellar address format';
+  defaultMessage(): string {
+    return 'address must be a valid Stellar public key (56 characters starting with G)';
   }
 }
 
@@ -21,7 +22,7 @@ export function IsStellarAddress(validationOptions?: ValidationOptions) {
   return function (object: object, propertyName: string) {
     registerDecorator({
       target: object.constructor,
-      propertyName: propertyName,
+      propertyName,
       options: validationOptions,
       constraints: [],
       validator: IsStellarAddressConstraint,

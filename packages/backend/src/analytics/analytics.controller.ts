@@ -140,3 +140,24 @@ export class AnalyticsController {
     return this.analyticsService.getTotalValueLocked(userAddress);
   }
 }
+
+@ApiTags('Analytics')
+@Controller('analytics')
+export class PlatformAnalyticsController {
+  constructor(private readonly analyticsService: AnalyticsService) {}
+
+  @Get('platform')
+  @ApiOperation({ summary: 'Platform-wide aggregate metrics (5 min cache)' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Platform metrics returned' })
+  getPlatformAnalytics() {
+    return this.analyticsService.getPlatformAnalytics();
+  }
+
+  @Get('platform/trends')
+  @ApiOperation({ summary: 'Daily trend datapoints for calls, users, stake volume' })
+  @ApiQuery({ name: 'period', enum: ['7d', '14d', '30d'], required: false })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Trend data returned' })
+  getPlatformTrends(@Query('period') period = '7d') {
+    return this.analyticsService.getPlatformTrends(period);
+  }
+}
