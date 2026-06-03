@@ -25,12 +25,12 @@ fn setup_fuzz_env() -> (Env, CallRegistryClient<'static>, Address, Address, Addr
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, CallRegistry);
+    let contract_id = env.register(CallRegistry, ());
     let client = CallRegistryClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     let outcome_manager = Address::generate(&env);
-    let stake_token = env.register_contract(None, MockToken);
+    let stake_token = env.register(MockToken, ());
 
     client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
     client.whitelist_token(&stake_token);

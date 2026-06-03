@@ -103,7 +103,7 @@ fn setup_single_oracle(
     let admin = Address::generate(env);
     let (oracle_secret, oracle_pubkey) = gen_keypair(env);
 
-    let contract_id = env.register_contract(None, OutcomeManager);
+    let contract_id = env.register(OutcomeManager, ());
     let client = OutcomeManagerClient::new(env, &contract_id);
 
     let mut oracles = Vec::new(env);
@@ -113,7 +113,7 @@ fn setup_single_oracle(
     client.initialize(&admin, &oracles, &1u32, &fee_collector, &0u32, &0u64);
 
     // Register a mock registry contract
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
 
     (admin, registry_id, oracle_secret, oracle_pubkey, client)
 }
@@ -231,7 +231,7 @@ fn test_initialize_success() {
     let admin = Address::generate(&env);
     let (_, pubkey) = gen_keypair(&env);
 
-    let contract_id = env.register_contract(None, OutcomeManager);
+    let contract_id = env.register(OutcomeManager, ());
     let client = OutcomeManagerClient::new(&env, &contract_id);
 
     let mut oracles = Vec::new(&env);
@@ -264,7 +264,7 @@ fn test_initialize_quorum_zero_fails() {
     let admin = Address::generate(&env);
     let (_, pubkey) = gen_keypair(&env);
 
-    let contract_id = env.register_contract(None, OutcomeManager);
+    let contract_id = env.register(OutcomeManager, ());
     let client = OutcomeManagerClient::new(&env, &contract_id);
 
     let fee_collector = Address::generate(&env);
@@ -284,7 +284,7 @@ fn test_quorum_reached_with_two_oracles() {
     let (s1, p1) = gen_keypair(&env);
     let (s2, p2) = gen_keypair(&env);
 
-    let contract_id = env.register_contract(None, OutcomeManager);
+    let contract_id = env.register(OutcomeManager, ());
     let client = OutcomeManagerClient::new(&env, &contract_id);
 
     let mut oracles = Vec::new(&env);
@@ -293,7 +293,7 @@ fn test_quorum_reached_with_two_oracles() {
     let fee_collector = Address::generate(&env);
     client.initialize(&admin, &oracles, &2u32, &fee_collector, &0u32, &0u64);
 
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
     let call_id = 42u64;
     let outcome_val = 1u32;
     let price = 150_000_000i128;
@@ -518,14 +518,14 @@ fn setup_with_fee(env: &Env, fee_bps: u32) -> (Address, Address, OutcomeManagerC
     let fee_collector = Address::generate(env);
     let (oracle_secret, oracle_pubkey) = gen_keypair(env);
 
-    let contract_id = env.register_contract(None, OutcomeManager);
+    let contract_id = env.register(OutcomeManager, ());
     let client = OutcomeManagerClient::new(env, &contract_id);
 
     let mut oracles = Vec::new(env);
     oracles.push_back(oracle_pubkey.clone());
     client.initialize(&admin, &oracles, &1u32, &fee_collector, &fee_bps, &0u64);
 
-    let registry_id = env.register_contract(None, MockRegistry);
+    let registry_id = env.register(MockRegistry, ());
 
     // Settle call_id=1
     let call_id = 1u64;
@@ -552,14 +552,14 @@ fn setup_with_zero_stake(env: &Env, fee_bps: u32) -> (Address, Address, OutcomeM
     let fee_collector = Address::generate(env);
     let (oracle_secret, oracle_pubkey) = gen_keypair(env);
 
-    let contract_id = env.register_contract(None, OutcomeManager);
+    let contract_id = env.register(OutcomeManager, ());
     let client = OutcomeManagerClient::new(env, &contract_id);
 
     let mut oracles = Vec::new(env);
     oracles.push_back(oracle_pubkey.clone());
     client.initialize(&admin, &oracles, &1u32, &fee_collector, &fee_bps, &0u64);
 
-    let registry_id = env.register_contract(None, MockRegistryZeroStake);
+    let registry_id = env.register(MockRegistryZeroStake, ());
 
     let call_id = 1u64;
     let sig = sign_outcome(env, &oracle_secret, call_id, 1, 100, 9000);
@@ -584,14 +584,14 @@ fn setup_with_zero_total_winning(env: &Env, fee_bps: u32) -> (Address, Address, 
     let fee_collector = Address::generate(env);
     let (oracle_secret, oracle_pubkey) = gen_keypair(env);
 
-    let contract_id = env.register_contract(None, OutcomeManager);
+    let contract_id = env.register(OutcomeManager, ());
     let client = OutcomeManagerClient::new(env, &contract_id);
 
     let mut oracles = Vec::new(env);
     oracles.push_back(oracle_pubkey.clone());
     client.initialize(&admin, &oracles, &1u32, &fee_collector, &fee_bps, &0u64);
 
-    let registry_id = env.register_contract(None, MockRegistryZeroTotalWinning);
+    let registry_id = env.register(MockRegistryZeroTotalWinning, ());
 
     let call_id = 1u64;
     let sig = sign_outcome(env, &oracle_secret, call_id, 1, 100, 9000);
@@ -685,7 +685,7 @@ fn test_invalid_fee_bps_panics() {
     let fee_collector = Address::generate(&env);
     let (_, pubkey) = gen_keypair(&env);
 
-    let contract_id = env.register_contract(None, OutcomeManager);
+    let contract_id = env.register(OutcomeManager, ());
     let client = OutcomeManagerClient::new(&env, &contract_id);
 
     let mut oracles = Vec::new(&env);
@@ -879,7 +879,7 @@ fn test_om_upgrade_requires_admin_auth() {
     // the admin guard is in place before any WASM update can occur.
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, OutcomeManager);
+    let contract_id = env.register(OutcomeManager, ());
     let client = OutcomeManagerClient::new(&env, &contract_id);
     let fake_hash = BytesN::<32>::from_array(&env, &[0u8; 32]);
     client.upgrade(&fake_hash); // panics: "not initialized"
@@ -1048,14 +1048,14 @@ fn test_claim_payout_reads_stakes_from_registry() {
     let fee_collector = Address::generate(&env);
     let (oracle_secret, oracle_pubkey) = gen_keypair(&env);
 
-    let contract_id = env.register_contract(None, OutcomeManager);
+    let contract_id = env.register(OutcomeManager, ());
     let client = OutcomeManagerClient::new(&env, &contract_id);
 
     let mut oracles = Vec::new(&env);
     oracles.push_back(oracle_pubkey.clone());
     client.initialize(&admin, &oracles, &1u32, &fee_collector, &0u32, &0u64);
 
-    let registry_id = env.register_contract(None, MockRegistryCustomStake);
+    let registry_id = env.register(MockRegistryCustomStake, ());
 
     // Settle call_id=1
     let sig = sign_outcome(&env, &oracle_secret, 1u64, 1u32, 100, 9000);
@@ -1085,13 +1085,13 @@ fn test_claim_payout_rejects_zero_stake_from_registry() {
     let fee_collector = Address::generate(&env);
     let (oracle_secret, oracle_pubkey) = gen_keypair(&env);
 
-    let contract_id = env.register_contract(None, OutcomeManager);
+    let contract_id = env.register(OutcomeManager, ());
     let client = OutcomeManagerClient::new(&env, &contract_id);
     let mut oracles = Vec::new(&env);
     oracles.push_back(oracle_pubkey.clone());
     client.initialize(&admin, &oracles, &1u32, &fee_collector, &0u32, &0u64);
 
-    let registry_id = env.register_contract(None, MockRegistryZeroStake);
+    let registry_id = env.register(MockRegistryZeroStake, ());
     let sig = sign_outcome(&env, &oracle_secret, 1u64, 1u32, 100, 9000);
     client.submit_outcome(&registry_id, &SignedOutcome {
         call_id: 1, outcome: 1, price: 100, timestamp: 9000,
