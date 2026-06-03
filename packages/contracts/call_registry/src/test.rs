@@ -37,7 +37,7 @@ mod call_registry {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
@@ -119,7 +119,7 @@ mod call_registry {
     #[test]
     fn test_initialize() {
         let (env, admin, outcome_manager, _) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -133,7 +133,7 @@ mod call_registry {
     #[test]
     fn test_initialize_twice_fails() {
         let (env, admin, outcome_manager, _) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -189,7 +189,7 @@ mod call_registry {
     fn test_set_admin() {
         let (env, admin, outcome_manager, _) = create_test_env();
         let new_admin = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -232,7 +232,7 @@ mod call_registry {
     fn test_set_outcome_manager() {
         let (env, admin, outcome_manager, _) = create_test_env();
         let new_manager = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -296,13 +296,13 @@ mod call_registry {
     #[test]
     fn test_extend_call_ttl_succeeds_for_existing_call() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -327,7 +327,7 @@ mod call_registry {
     #[test]
     fn test_extend_call_ttl_missing_call_returns_error() {
         let (env, admin, outcome_manager, _) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -345,13 +345,13 @@ mod call_registry {
     #[test]
     fn test_set_call_uses_persistent_storage() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -377,13 +377,13 @@ mod call_registry {
     fn test_staker_calls_ttl_extended_on_stake() {
         let (env, admin, outcome_manager, creator) = create_test_env();
         let staker = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -401,7 +401,7 @@ mod call_registry {
             &2,
         );
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_unlimited();
         client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
 
         let staker_calls = client.get_staker_calls(&staker);
@@ -414,13 +414,13 @@ mod call_registry {
         let (env, admin, outcome_manager, creator) = create_test_env();
         let staker1 = Address::generate(&env);
         let staker2 = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -459,7 +459,7 @@ mod call_registry {
         let creator = Address::generate(&env);
         let staker1 = Address::generate(&env);
         let staker2 = Address::generate(&env);
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -496,7 +496,7 @@ mod call_registry {
         let stats = client.get_global_stats();
         assert_eq!(stats.total_calls, 2);
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_unlimited();
         client.stake_on_call(&staker1, &call1.id, &50_000_000_i128, &1);
         client.stake_on_call(&staker1, &call1.id, &20_000_000_i128, &1);
         client.stake_on_call(&staker2, &call2.id, &30_000_000_i128, &2);
@@ -511,13 +511,13 @@ mod call_registry {
     #[test]
     fn test_create_call_success() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -550,13 +550,13 @@ mod call_registry {
     #[test]
     fn test_create_call_zero_start_price_returns_error() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -581,13 +581,13 @@ mod call_registry {
     #[test]
     fn test_set_start_price_updates_call() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -616,13 +616,13 @@ mod call_registry {
     #[test]
     fn test_create_call_invalid_stake_returns_error() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -651,13 +651,13 @@ mod call_registry {
     #[test]
     fn test_create_call_past_timestamp_returns_error() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -689,13 +689,13 @@ mod call_registry {
     fn test_stake_on_call_up() {
         let (env, admin, outcome_manager, creator) = create_test_env();
         let staker = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -713,7 +713,7 @@ mod call_registry {
             &2,
         );
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_unlimited();
 
         let updated_call = client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
 
@@ -725,13 +725,13 @@ mod call_registry {
     fn test_stake_on_call_down() {
         let (env, admin, outcome_manager, creator) = create_test_env();
         let staker = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -759,13 +759,13 @@ mod call_registry {
     fn test_stake_on_ended_call_returns_error() {
         let (env, admin, outcome_manager, creator) = create_test_env();
         let staker = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -797,13 +797,13 @@ mod call_registry {
     fn test_stake_invalid_position_returns_error() {
         let (env, admin, outcome_manager, creator) = create_test_env();
         let staker = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -834,13 +834,13 @@ mod call_registry {
     #[test]
     fn test_get_call() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -868,7 +868,7 @@ mod call_registry {
     #[test]
     fn test_get_nonexistent_call_returns_error() {
         let (env, admin, outcome_manager, _) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -888,13 +888,13 @@ mod call_registry {
         let (env, admin, outcome_manager, creator) = create_test_env();
         let staker1 = Address::generate(&env);
         let staker2 = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -928,13 +928,13 @@ mod call_registry {
     #[test]
     fn test_resolve_call() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -963,13 +963,13 @@ mod call_registry {
     #[test]
     fn test_resolve_call_before_end_returns_error() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -1002,7 +1002,7 @@ mod call_registry {
     fn test_get_call_count() {
         let (env, admin, outcome_manager, creator) = create_test_env();
 
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -1046,7 +1046,7 @@ mod call_registry {
     #[test]
     fn test_get_calls_paginated_respects_limit_and_start_id() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -1102,7 +1102,7 @@ mod call_registry {
     #[test]
     fn test_get_calls_paginated_respects_maximum_limit() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -1137,7 +1137,7 @@ mod call_registry {
     fn test_get_calls_by_creator_paginated_returns_creator_specific_results() {
         let (env, admin, outcome_manager, creator1) = create_test_env();
         let creator2 = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -1195,7 +1195,7 @@ mod call_registry {
     fn test_get_calls_by_creator_paginated_handles_gaps_and_max_limit() {
         let (env, admin, outcome_manager, creator1) = create_test_env();
         let creator2 = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -1252,7 +1252,7 @@ mod call_registry {
     // ── void_call / claim_void_refund ─────────────────────────────────────────
 
     fn make_call(env: &Env, client: &CallRegistryClient<'_>, creator: &Address) -> (crate::types::Call, Address) {
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(env);
         let pair_id = Bytes::from_slice(env, b"USDC/XLM");
@@ -1323,13 +1323,13 @@ mod call_registry {
     #[test]
     fn test_create_3_outcome_call_success() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -1359,13 +1359,13 @@ mod call_registry {
     fn test_stake_on_3_outcome_call() {
         let (env, admin, outcome_manager, creator) = create_test_env();
         let staker = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -1384,7 +1384,7 @@ mod call_registry {
             &3,
         );
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_unlimited();
 
         client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
         client.stake_on_call(&staker, &call.id, &30_000_000_i128, &2);
@@ -1399,13 +1399,13 @@ mod call_registry {
     #[test]
     fn test_resolve_3_outcome_call() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -1435,13 +1435,13 @@ mod call_registry {
     #[test]
     fn test_resolve_3_outcome_call_invalid_outcome_returns_error() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -1474,13 +1474,13 @@ mod call_registry {
     fn test_stake_invalid_position_on_3_outcome_call_returns_error() {
         let (env, admin, outcome_manager, creator) = create_test_env();
         let staker = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -1511,13 +1511,13 @@ mod call_registry {
     fn test_get_outcome_stakes() {
         let (env, admin, outcome_manager, creator) = create_test_env();
         let staker = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -1536,7 +1536,7 @@ mod call_registry {
             &3,
         );
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_unlimited();
 
         client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
         client.stake_on_call(&staker, &call.id, &30_000_000_i128, &2);
@@ -1552,13 +1552,13 @@ mod call_registry {
     fn test_get_staker_stake_multi_outcome() {
         let (env, admin, outcome_manager, creator) = create_test_env();
         let staker = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -1577,7 +1577,7 @@ mod call_registry {
             &3,
         );
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_unlimited();
 
         client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
         client.stake_on_call(&staker, &call.id, &30_000_000_i128, &2);
@@ -1600,13 +1600,13 @@ mod call_registry {
         let (env, admin, outcome_manager, creator) = create_test_env();
         let staker1 = Address::generate(&env);
         let staker2 = Address::generate(&env);
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -1625,7 +1625,7 @@ mod call_registry {
             &3,
         );
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_unlimited();
 
         client.stake_on_call(&staker1, &call.id, &50_000_000_i128, &1);
         client.stake_on_call(&staker2, &call.id, &30_000_000_i128, &1);
@@ -1648,13 +1648,13 @@ mod call_registry {
     #[test]
     fn test_creator_stats_increment_on_create() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
@@ -1706,13 +1706,13 @@ mod call_registry {
     #[test]
     fn test_creator_stats_resolved_and_correct_on_win() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
@@ -1748,13 +1748,13 @@ mod call_registry {
     #[test]
     fn test_creator_stats_resolved_but_not_correct_on_loss() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
@@ -1790,13 +1790,13 @@ mod call_registry {
     #[test]
     fn test_creator_stats_multiple_calls_mixed_outcomes() {
         let (env, admin, outcome_manager, creator) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
         env.ledger().set_timestamp(1000);
 
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
@@ -1887,7 +1887,7 @@ mod call_registry {
         env.ledger().set_timestamp(1000);
 
         let creator = Address::generate(&env);
-        let stake_token = env.register_contract(None, MockToken);
+        let stake_token = env.register(MockToken, ());
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
