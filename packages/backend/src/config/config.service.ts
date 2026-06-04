@@ -87,7 +87,9 @@ export class ConfigService implements OnApplicationBootstrap {
     return saved;
   }
 
-  async updateOffChainSettings(dto: UpdateConfigDto): Promise<PlatformSettings> {
+  async updateOffChainSettings(
+    dto: UpdateConfigDto,
+  ): Promise<PlatformSettings> {
     const settings = await this.getSettings();
     if (dto.feePercent !== undefined) settings.feePercent = dto.feePercent;
     if (dto.minStake !== undefined) settings.minStake = dto.minStake;

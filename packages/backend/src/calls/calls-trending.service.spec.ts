@@ -52,9 +52,11 @@ describe('CallsTrendingService', () => {
   describe('recomputeAll', () => {
     it('stores a score row per visible call using 24h stake aggregates', async () => {
       const dataSource = {
-        query: jest.fn().mockResolvedValue([
-          { callId: 'c1', stakeVolume24h: '50', stakerCount24h: '4' },
-        ]),
+        query: jest
+          .fn()
+          .mockResolvedValue([
+            { callId: 'c1', stakeVolume24h: '50', stakerCount24h: '4' },
+          ]),
       };
       const callRepository = {
         find: jest.fn().mockResolvedValue([
@@ -80,11 +82,10 @@ describe('CallsTrendingService', () => {
       expect(dataSource.query).toHaveBeenCalledTimes(1);
       expect(trendingRepository.save).toHaveBeenCalledTimes(1);
 
-      const savedRows = (trendingRepository.save as jest.Mock).mock.calls[0][0];
+      const savedRows = trendingRepository.save.mock.calls[0][0];
       expect(savedRows).toHaveLength(2);
       expect(savedRows[0].callId).toBe('c1');
       expect(savedRows[1].callId).toBe('c2');
     });
   });
 });
-

@@ -67,7 +67,9 @@ describe('RelayService', () => {
 
   it('rejects non-invokeHostFunction operations', async () => {
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       {} as any,
     );
 
@@ -75,9 +77,9 @@ describe('RelayService', () => {
       operations: [{ type: 'payment' }],
     };
 
-    await expect((service as any).validateTransaction(tx)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      (service as any).validateTransaction(tx),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects transactions directed at non-CallRegistry contracts', async () => {
@@ -85,7 +87,9 @@ describe('RelayService', () => {
     (StrKey.encodeContract as any).mockReturnValueOnce('NOT_ALLOWED');
 
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       {} as any,
     );
 
@@ -106,14 +110,16 @@ describe('RelayService', () => {
       ],
     };
 
-    await expect((service as any).validateTransaction(tx)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      (service as any).validateTransaction(tx),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('sponsorAndSubmit rejects when relay is not configured', async () => {
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       { sendTransaction: jest.fn() } as any,
     );
 
@@ -130,7 +136,9 @@ describe('RelayService', () => {
     });
 
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       { sendTransaction: jest.fn() } as any,
     );
 
@@ -149,7 +157,9 @@ describe('RelayService', () => {
     });
 
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       { sendTransaction: jest.fn() } as any,
     );
 
@@ -174,7 +184,9 @@ describe('RelayService', () => {
     });
 
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       { sendTransaction: jest.fn() } as any,
     );
     jest
@@ -197,17 +209,23 @@ describe('RelayService', () => {
     });
 
     const rpcServer = {
-      sendTransaction: jest.fn().mockResolvedValue({ status: 'SUCCESS', hash: 'h' }),
+      sendTransaction: jest
+        .fn()
+        .mockResolvedValue({ status: 'SUCCESS', hash: 'h' }),
     };
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       rpcServer as any,
     );
     jest
       .spyOn(service as any, 'validateTransaction')
       .mockResolvedValueOnce(undefined);
 
-    await expect(service.sponsorAndSubmit('xdr')).resolves.toEqual({ hash: 'h' });
+    await expect(service.sponsorAndSubmit('xdr')).resolves.toEqual({
+      hash: 'h',
+    });
     expect(rpcServer.sendTransaction).toHaveBeenCalled();
   });
 
@@ -223,7 +241,9 @@ describe('RelayService', () => {
     });
 
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       { sendTransaction: jest.fn() } as any,
     );
     jest
@@ -238,15 +258,20 @@ describe('RelayService', () => {
 
   it('sponsorAndSubmit rejects fee-bump with mismatched sponsor', async () => {
     process.env.RELAY_HOT_WALLET_SECRET = 'S';
-    const { FeeBumpTransaction, TransactionBuilder } = await import(
-      '@stellar/stellar-sdk'
-    );
-    const inner: any = { operations: [], signatures: [Buffer.from('sig')], fee: '1' };
+    const { FeeBumpTransaction, TransactionBuilder } =
+      await import('@stellar/stellar-sdk');
+    const inner: any = {
+      operations: [],
+      signatures: [Buffer.from('sig')],
+      fee: '1',
+    };
     const feeBump: any = new (FeeBumpTransaction as any)(inner, 'NOT_SPONSOR');
     (TransactionBuilder.fromXDR as any).mockReturnValueOnce(feeBump);
 
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       { sendTransaction: jest.fn() } as any,
     );
     jest
@@ -260,10 +285,13 @@ describe('RelayService', () => {
 
   it('sponsorAndSubmit surfaces rpc ERROR responses', async () => {
     process.env.RELAY_HOT_WALLET_SECRET = 'S';
-    const { FeeBumpTransaction, TransactionBuilder } = await import(
-      '@stellar/stellar-sdk'
-    );
-    const inner: any = { operations: [], signatures: [Buffer.from('sig')], fee: '1' };
+    const { FeeBumpTransaction, TransactionBuilder } =
+      await import('@stellar/stellar-sdk');
+    const inner: any = {
+      operations: [],
+      signatures: [Buffer.from('sig')],
+      fee: '1',
+    };
     const feeBump: any = new (FeeBumpTransaction as any)(inner, 'SPONSOR');
     (TransactionBuilder.fromXDR as any).mockReturnValueOnce(feeBump);
 
@@ -274,7 +302,9 @@ describe('RelayService', () => {
       }),
     };
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       rpcServer as any,
     );
     jest
@@ -292,40 +322,48 @@ describe('RelayService', () => {
       {} as any,
     );
     const tx: any = { operations: [{ type: 'invokeHostFunction' }] };
-    await expect((service as any).validateTransaction(tx)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      (service as any).validateTransaction(tx),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('validateTransaction rejects transactions with no operations', async () => {
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       {} as any,
     );
     const tx: any = { operations: [] };
-    await expect((service as any).validateTransaction(tx)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      (service as any).validateTransaction(tx),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('validateTransaction rejects malformed host function operations', async () => {
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       {} as any,
     );
     const tx: any = { operations: [{ type: 'invokeHostFunction' }] };
-    await expect((service as any).validateTransaction(tx)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      (service as any).validateTransaction(tx),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('validateTransaction rejects non-invokeContract host functions', async () => {
     const { xdr } = await import('@stellar/stellar-sdk');
-    (xdr.HostFunctionType.hostFunctionTypeInvokeContract as any).mockReturnValueOnce({
+    (
+      xdr.HostFunctionType.hostFunctionTypeInvokeContract as any
+    ).mockReturnValueOnce({
       value: 999,
     });
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       {} as any,
     );
     const tx: any = {
@@ -338,9 +376,9 @@ describe('RelayService', () => {
         },
       ],
     };
-    await expect((service as any).validateTransaction(tx)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      (service as any).validateTransaction(tx),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('validateTransaction rejects non-contract address types', async () => {
@@ -349,7 +387,9 @@ describe('RelayService', () => {
       value: 999,
     });
     const service = new RelayService(
-      { getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }) } as any,
+      {
+        getSettings: jest.fn().mockResolvedValue({ contractId: 'ALLOWED' }),
+      } as any,
       {} as any,
     );
     const tx: any = {
@@ -367,8 +407,8 @@ describe('RelayService', () => {
         },
       ],
     };
-    await expect((service as any).validateTransaction(tx)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      (service as any).validateTransaction(tx),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

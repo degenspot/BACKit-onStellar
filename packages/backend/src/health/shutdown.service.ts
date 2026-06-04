@@ -36,7 +36,9 @@ export class ShutdownService implements OnApplicationShutdown {
   async saveIndexerCheckpoint(): Promise<void> {
     try {
       if (!this.dataSource.isInitialized) {
-        this.logger.warn('DataSource not initialised — skipping checkpoint save');
+        this.logger.warn(
+          'DataSource not initialised — skipping checkpoint save',
+        );
         return;
       }
 
@@ -57,6 +59,8 @@ export class ShutdownService implements OnApplicationShutdown {
 
   /** NestJS lifecycle hook — invoked when app.close() is called. */
   async onApplicationShutdown(signal?: string): Promise<void> {
-    this.logger.log(`onApplicationShutdown triggered (signal: ${signal ?? 'none'})`);
+    this.logger.log(
+      `onApplicationShutdown triggered (signal: ${signal ?? 'none'})`,
+    );
   }
 }

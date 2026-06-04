@@ -55,4 +55,3 @@ describe('NotificationsQueueProcessor', () => {
     expect(deadLetter.moveToDeadLetter).not.toHaveBeenCalled();
   });
 });
-

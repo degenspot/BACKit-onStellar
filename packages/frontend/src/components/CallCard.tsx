@@ -1,22 +1,13 @@
 "use client";
 
-import StakeDistributionBar from "./StakeDistributionBar";
-import { useState, useEffect } from "react";
+import StakeBar from "./StakeBar";
+import ShareButton from "./ShareButton";
 
 interface CallCardProps {
   call: any;
 }
 
 export default function CallCard({ call }: CallCardProps) {
-  const [odds, setOdds] = useState<{ yes: number; no: number } | null>(null);
-
-  useEffect(() => {
-    fetch(`/api/calls/${call.id}/odds`)
-      .then((res) => res.json())
-      .then((data) => setOdds(data))
-      .catch(() => setOdds({ yes: 2.0, no: 2.0 }));
-  }, [call.id]);
-
   // Calculate time remaining
   const calculateTimeRemaining = () => {
     if (!call.endTime) return "Unknown";
@@ -44,56 +35,38 @@ export default function CallCard({ call }: CallCardProps) {
   };
 
   return (
-    <div className="border rounded-2xl p-5 bg-white shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+    <div className="border rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
       {/* Header with token and time */}
-      <div className="flex justify-between items-start mb-4">
-        <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl p-2.5 shadow-sm">
-            <span className="font-bold text-lg text-white mb-0 leading-none">{call.token ? call.token[0] : '?'}</span>
+      <div className="flex justify-between items-start mb-3">
+        <div className="flex items-center gap-2">
+          <div className="bg-gray-100 rounded-full p-2">
+            <span className="font-bold text-lg">{call.token}</span>
           </div>
-          <div>
-            <div className="font-bold text-gray-900 leading-tight">{call.token || 'Unknown'}</div>
-            <span className={`inline-block mt-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
-              getStatus() === "Open" ? "bg-green-100 text-green-700" :
-              getStatus() === "Ended" ? "bg-gray-100 text-gray-600" :
-              "bg-blue-100 text-blue-700"
+          <div className="flex items-center gap-2 ml-2">
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+              getStatus() === "Open" ? "bg-green-100 text-green-800" :
+              getStatus() === "Ended" ? "bg-gray-100 text-gray-800" :
+              "bg-blue-100 text-blue-800"
             }`}>
               {getStatus()}
             </span>
           </div>
         </div>
         <div className="text-right">
-          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Ends In</div>
-          <div className="text-sm font-mono font-medium text-orange-500 bg-orange-50 px-2 py-1 rounded-lg border border-orange-100 italic">{calculateTimeRemaining()}</div>
+          <div className="text-sm text-gray-500">Time Remaining</div>
+          <div className="text-sm font-medium text-orange-500">{calculateTimeRemaining()}</div>
         </div>
       </div>
 
       {/* Condition */}
-      <div className="mb-5">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Market Condition</p>
-        <p className="font-semibold text-gray-800 text-lg leading-snug line-clamp-2">{call.condition}</p>
+      <div className="mb-3">
+        <p className="text-sm text-gray-600">Condition:</p>
+        <p className="font-medium">{call.condition}</p>
       </div>
 
-      {/* Multipliers - NEW SECTION */}
-      <div className="grid grid-cols-2 gap-3 mb-5">
-        <div className="bg-green-50 rounded-xl p-3 border border-green-100 text-center group cursor-pointer hover:bg-green-100 transition-colors">
-          <div className="text-[10px] font-bold text-green-600 uppercase mb-1">YES Payout</div>
-          <div className="text-xl font-black text-green-700">{odds?.yes || '2.00'}x</div>
-        </div>
-        <div className="bg-red-50 rounded-xl p-3 border border-red-100 text-center group cursor-pointer hover:bg-red-100 transition-colors">
-          <div className="text-[10px] font-bold text-red-600 uppercase mb-1">NO Payout</div>
-          <div className="text-xl font-black text-red-700">{odds?.no || '2.00'}x</div>
-        </div>
-      </div>
-
-      {/* Animated Pool Distribution */}
-      <div className="mb-5">
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Pool Distribution</p>
-        <StakeDistributionBar
-          yes={call.stakes?.yes || 0}
-          no={call.stakes?.no || 0}
-          variant="sm"
-        />
+      {/* Progress bar */}
+      <div className="mb-3">
+        <StakeBar yes={call.stakes?.yes || 0} no={call.stakes?.no || 0} />
       </div>
 
       {/* Creator info */}
@@ -105,17 +78,32 @@ export default function CallCard({ call }: CallCardProps) {
                 {call.creatorAddress?.substring(0, 2)?.toUpperCase()}
               </span>
             </div>
+            {/* Reputation badge */}
+            <div className="absolute -bottom-1 -right-1 bg-yellow-400 rounded-full p-1 border border-white">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 text-yellow-700">
+                <path fillRule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z" clipRule="evenodd" />
+              </svg>
+            </div>
           </div>
           <div>
-            <div className="text-[10px] font-bold text-gray-400 uppercase">Creator</div>
-            <div className="text-xs font-medium text-gray-600 truncate max-w-[100px]">
+            <div className="text-sm font-medium">Creator</div>
+            <div className="text-xs text-gray-500 truncate max-w-[120px]">
               {call.creatorAddress?.substring(0, 6)}...{call.creatorAddress?.substring(call.creatorAddress.length - 4)}
             </div>
           </div>
         </div>
-        <div className="text-right">
-          <div className="text-[10px] font-bold text-gray-400 uppercase">Participants</div>
-          <div className="text-sm font-bold text-gray-700">{call.participants || 0}</div>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <div className="text-xs text-gray-500">Participants</div>
+            <div className="text-sm font-medium">{call.participants || 0}</div>
+          </div>
+          <ShareButton
+            marketTitle={call.condition || call.title || "Market"}
+            marketId={call.id}
+            oddsUp={call.stakes?.yes}
+            oddsDown={call.stakes?.no}
+            tokenPair={call.token}
+          />
         </div>
       </div>
     </div>

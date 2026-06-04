@@ -25,7 +25,7 @@ export class FirewallMiddleware implements NestMiddleware {
   async use(req: Request, res: Response, next: NextFunction): Promise<void> {
     const ip = extractClientIp({
       ip: req.ip,
-      headers: req.headers as Record<string, string | string[] | undefined>,
+      headers: req.headers,
       socket: req.socket,
     });
 

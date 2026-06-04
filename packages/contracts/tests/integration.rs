@@ -93,6 +93,7 @@ fn test_full_lifecycle_create_stake_submit_claim() {
         &creator,
         &token_id,
         &10_000_000_i128, // stake_amount
+        &100_000_000_i128, // start_price
         &5000u64,         // end_ts (4000 seconds in future)
         &token_address,
         &pair_id,
@@ -186,6 +187,7 @@ fn test_cross_contract_authorization_only_outcome_manager_can_resolve() {
         &admin,
         &token_id,
         &10_000_000_i128,
+        &100_000_000_i128,
         &5000u64,
         &token_address,
         &pair_id,
@@ -255,6 +257,7 @@ fn test_error_paths_double_claiming() {
         &creator,
         &token_id,
         &10_000_000_i128,
+        &100_000_000_i128,
         &5000u64,
         &token_address,
         &pair_id,
@@ -386,6 +389,7 @@ fn test_creator_reputation_accumulates_across_calls() {
             &creator,
             &token_id,
             &10_000_000_i128,
+            &100_000_000_i128,
             &(5000 + i * 1000),
             &token_address,
             &pair_id,

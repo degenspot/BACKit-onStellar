@@ -41,7 +41,8 @@ export class AdminController {
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @Audited(
     AuditActionType.CALL_HIDDEN,
-    (ctx) => `call:${ctx.switchToHttp().getRequest<{ params: { id: string } }>().params.id}`,
+    (ctx) =>
+      `call:${ctx.switchToHttp().getRequest<{ params: { id: string } }>().params.id}`,
   )
   hideCall(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.hideCall(id);
@@ -52,7 +53,8 @@ export class AdminController {
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @Audited(
     AuditActionType.CALL_UNHIDDEN,
-    (ctx) => `call:${ctx.switchToHttp().getRequest<{ params: { id: string } }>().params.id}`,
+    (ctx) =>
+      `call:${ctx.switchToHttp().getRequest<{ params: { id: string } }>().params.id}`,
   )
   unhideCall(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminService.unhideCall(id);
@@ -65,7 +67,8 @@ export class AdminController {
   @ApiParam({ name: 'address', type: String })
   @Audited(
     AuditActionType.USER_BANNED,
-    (ctx) => `user:${ctx.switchToHttp().getRequest<{ params: { address: string } }>().params.address}`,
+    (ctx) =>
+      `user:${ctx.switchToHttp().getRequest<{ params: { address: string } }>().params.address}`,
   )
   banUser(@Param('address') address: string) {
     return this.adminService.banUser(address);
@@ -76,7 +79,8 @@ export class AdminController {
   @ApiParam({ name: 'address', type: String })
   @Audited(
     AuditActionType.USER_UNBANNED,
-    (ctx) => `user:${ctx.switchToHttp().getRequest<{ params: { address: string } }>().params.address}`,
+    (ctx) =>
+      `user:${ctx.switchToHttp().getRequest<{ params: { address: string } }>().params.address}`,
   )
   unbanUser(@Param('address') address: string) {
     return this.adminService.unbanUser(address);
@@ -85,7 +89,10 @@ export class AdminController {
   // ─── Stats ────────────────────────────────────────────────────────────────
 
   @Get('stats')
-  @ApiOperation({ summary: 'System metrics: active users today, pending reports, paused calls' })
+  @ApiOperation({
+    summary:
+      'System metrics: active users today, pending reports, paused calls',
+  })
   @ApiOkResponse({
     description: 'System stats',
     schema: {

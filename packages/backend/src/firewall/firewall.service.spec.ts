@@ -78,9 +78,11 @@ describe('FirewallService', () => {
   });
 
   it('addRule saves and refreshes cache', async () => {
-    ruleRepo.find.mockResolvedValueOnce([]).mockResolvedValueOnce([
-      { cidr: '9.9.9.9/32', type: IpRuleType.BLACKLIST },
-    ]);
+    ruleRepo.find
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { cidr: '9.9.9.9/32', type: IpRuleType.BLACKLIST },
+      ]);
     const service = new FirewallService(ruleRepo as any, blockedRepo as any);
     await service.onModuleInit();
 
@@ -104,9 +106,11 @@ describe('FirewallService', () => {
   });
 
   it('addRule supports null createdBy (system)', async () => {
-    ruleRepo.find.mockResolvedValueOnce([]).mockResolvedValueOnce([
-      { cidr: '9.9.9.9/32', type: IpRuleType.BLACKLIST },
-    ]);
+    ruleRepo.find
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { cidr: '9.9.9.9/32', type: IpRuleType.BLACKLIST },
+      ]);
     const service = new FirewallService(ruleRepo as any, blockedRepo as any);
     await service.onModuleInit();
 
@@ -158,7 +162,7 @@ describe('FirewallService', () => {
       method: 'POST',
       path: '/login',
       userAgent: 'Mozilla',
-      headers: { accept: 'x', authorization: 'secret', referer: 'r' } as any,
+      headers: { accept: 'x', authorization: 'secret', referer: 'r' },
     });
 
     expect(verdict.allowed).toBe(false);
@@ -218,7 +222,12 @@ describe('FirewallService', () => {
     blockedRepo.createQueryBuilder.mockReturnValueOnce(qb);
     const service = new FirewallService(ruleRepo as any, blockedRepo as any);
 
-    const res = await service.getBlockedRequests(2, 10, '1.1.1.1', BlockReason.BOT_FINGERPRINT);
+    const res = await service.getBlockedRequests(
+      2,
+      10,
+      '1.1.1.1',
+      BlockReason.BOT_FINGERPRINT,
+    );
     expect(res.total).toBe(1);
     expect(qb.andWhere).toHaveBeenCalledTimes(2);
   });
@@ -271,9 +280,11 @@ describe('FirewallService', () => {
   });
 
   it('refreshes rule cache when TTL expires', async () => {
-    ruleRepo.find.mockResolvedValueOnce([]).mockResolvedValueOnce([
-      { cidr: '5.6.7.8/32', type: IpRuleType.BLACKLIST },
-    ]);
+    ruleRepo.find
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { cidr: '5.6.7.8/32', type: IpRuleType.BLACKLIST },
+      ]);
     const service = new FirewallService(ruleRepo as any, blockedRepo as any);
     await service.onModuleInit();
 
@@ -307,7 +318,9 @@ describe('FirewallService', () => {
   });
 
   it('covers persist error path when blocked-request save fails', async () => {
-    ruleRepo.find.mockResolvedValue([{ cidr: '5.6.7.8/32', type: IpRuleType.BLACKLIST }]);
+    ruleRepo.find.mockResolvedValue([
+      { cidr: '5.6.7.8/32', type: IpRuleType.BLACKLIST },
+    ]);
     blockedRepo.save.mockRejectedValueOnce(new Error('db down'));
     const service = new FirewallService(ruleRepo as any, blockedRepo as any);
     await service.onModuleInit();

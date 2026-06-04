@@ -1,4 +1,4 @@
-import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException, VERSION_NEUTRAL } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -11,7 +11,7 @@ import {
 import { ShutdownService } from './shutdown.service';
 
 @ApiTags('health')
-@Controller('health')
+@Controller({ path: 'health', version: VERSION_NEUTRAL })
 export class HealthController {
   private readonly rpcUrl: string;
 
@@ -56,6 +56,7 @@ export class HealthController {
     },
   })
   async check() {
+    // eslint-disable-next-line @typescript-eslint/await-thenable
     const [database, stellar_rpc, memory_heap_mb] = await Promise.all([
       this.checkDatabase(),
       this.checkStellarRpc(),
@@ -67,6 +68,8 @@ export class HealthController {
 
     const payload = {
       status,
+      version: process.env.npm_package_version ?? '1.0.0',
+      apiVersion: 'v1',
       database,
       stellar_rpc,
       memory_heap_mb,

@@ -20,7 +20,9 @@ describe('CommentsController (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     commentsService = moduleFixture.get<CommentsService>(CommentsService);
-    callRepository = moduleFixture.get<Repository<Call>>(getRepositoryToken(Call));
+    callRepository = moduleFixture.get<Repository<Call>>(
+      getRepositoryToken(Call),
+    );
     await app.init();
 
     // Create a test call to use in comment tests
@@ -80,11 +82,10 @@ describe('CommentsController (e2e)', () => {
       );
 
       // Create a reply comment
-      await commentsService.createComment(
-        testCallId,
-        'another-address',
-        { content: 'Reply', parentId: parent.id },
-      );
+      await commentsService.createComment(testCallId, 'another-address', {
+        content: 'Reply',
+        parentId: parent.id,
+      });
 
       return request(app.getHttpServer())
         .get(`/calls/${testCallId}/comments?page=1&limit=10`)

@@ -34,4 +34,3 @@ export class CallTrendingScore {
   @UpdateDateColumn()
   updatedAt: Date;
 }
-

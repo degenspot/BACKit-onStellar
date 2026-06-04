@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { Users } from './entities/users.entity';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,9 +14,12 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { Inject } from '@nestjs/common';
 import { Follow } from './entities/follow.entity';
+import { NotificationPreferencesService } from '../notifications/notification-preferences.service';
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     @InjectRepository(Users)
     private readonly usersRepo: Repository<Users>,
@@ -23,6 +27,7 @@ export class UsersService {
     private readonly followsRepo: Repository<Follow>,
     private readonly analyticsService: AnalyticsService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    private readonly preferenceService: NotificationPreferencesService,
   ) {}
 
   private generateReferralCode(): string {
@@ -37,6 +42,14 @@ export class UsersService {
         referralCode: this.generateReferralCode(),
       });
       user = await this.usersRepo.save(user);
+      // Default notification preferences on user creation
+      await this.preferenceService
+        .initializePreferences(walletAddress)
+        .catch((err) => {
+          this.logger.error(
+            `Failed to initialize notification preferences for ${walletAddress}: ${err.message}`,
+          );
+        });
     }
     return user;
   }
@@ -133,7 +146,16 @@ export class UsersService {
 
     if (referrer) newUser.referredBy = referrer;
 
-    return this.usersRepo.save(newUser);
+    const savedUser = await this.usersRepo.save(newUser);
+    // Default notification preferences on user creation
+    await this.preferenceService
+      .initializePreferences(walletAddress)
+      .catch((err) => {
+        this.logger.error(
+          `Failed to initialize notification preferences for ${walletAddress}: ${err.message}`,
+        );
+      });
+    return savedUser;
   }
 
   async getUserProfile(userId: string) {

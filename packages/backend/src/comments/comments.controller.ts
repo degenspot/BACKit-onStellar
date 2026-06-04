@@ -36,7 +36,11 @@ export class CommentsController {
     description:
       'Creates a comment. Maximum 100 comments per call, and maximum 20 comments per user per call.',
   })
-  @ApiParam({ name: 'id', description: 'Call UUID', example: 'a6b8e8f8-dcd6-4e5a-93ef-fc1533fb85a6' })
+  @ApiParam({
+    name: 'id',
+    description: 'Call UUID',
+    example: 'a6b8e8f8-dcd6-4e5a-93ef-fc1533fb85a6',
+  })
   @ApiResponse({
     status: HttpStatus.CREATED,
     description: 'Comment created successfully',
@@ -63,7 +67,11 @@ export class CommentsController {
     description:
       'Returns a list of comments, grouping replies chronologically under their parent comments.',
   })
-  @ApiParam({ name: 'id', description: 'Call UUID', example: 'a6b8e8f8-dcd6-4e5a-93ef-fc1533fb85a6' })
+  @ApiParam({
+    name: 'id',
+    description: 'Call UUID',
+    example: 'a6b8e8f8-dcd6-4e5a-93ef-fc1533fb85a6',
+  })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
   @ApiResponse({
@@ -85,10 +93,19 @@ export class CommentsController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary: 'Delete a comment',
-    description: 'Deletes a comment. Only the author or an admin can delete a comment.',
+    description:
+      'Deletes a comment. Only the author or an admin can delete a comment.',
   })
-  @ApiParam({ name: 'id', description: 'Call UUID', example: 'a6b8e8f8-dcd6-4e5a-93ef-fc1533fb85a6' })
-  @ApiParam({ name: 'commentId', description: 'Comment UUID', example: 'f8c7e8d6-a4c6-4e3a-82ef-fb1533fb22c1' })
+  @ApiParam({
+    name: 'id',
+    description: 'Call UUID',
+    example: 'a6b8e8f8-dcd6-4e5a-93ef-fc1533fb85a6',
+  })
+  @ApiParam({
+    name: 'commentId',
+    description: 'Comment UUID',
+    example: 'f8c7e8d6-a4c6-4e3a-82ef-fb1533fb22c1',
+  })
   @ApiResponse({
     status: HttpStatus.OK,
     description: 'Comment deleted successfully',

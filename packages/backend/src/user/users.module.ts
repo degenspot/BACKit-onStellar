@@ -6,9 +6,14 @@ import { Follow } from './entities/follow.entity';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { AnalyticsModule } from '../analytics/analytics.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Users, Badge, Follow]), AnalyticsModule],
+  imports: [
+    TypeOrmModule.forFeature([Users, Badge, Follow]),
+    AnalyticsModule,
+    NotificationsModule,
+  ],
   controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService],

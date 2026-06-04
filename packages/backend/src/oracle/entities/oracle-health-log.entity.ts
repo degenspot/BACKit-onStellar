@@ -19,7 +19,7 @@ export class OracleHealthLog {
   @Column()
   oracleKey: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   callId: string | null;
 
   @Column({

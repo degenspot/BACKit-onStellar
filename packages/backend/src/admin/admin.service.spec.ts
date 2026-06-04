@@ -127,12 +127,16 @@ describe('AdminService', () => {
 
     it('throws NotFoundException for unknown call', async () => {
       callRepo.findOneBy.mockResolvedValue(null);
-      await expect(service.hideCall('bad-id')).rejects.toThrow(NotFoundException);
+      await expect(service.hideCall('bad-id')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('throws BadRequestException when already hidden', async () => {
       callRepo.findOneBy.mockResolvedValue(makeCall({ isHidden: true }));
-      await expect(service.hideCall('call-uuid-1')).rejects.toThrow(BadRequestException);
+      await expect(service.hideCall('call-uuid-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -151,7 +155,9 @@ describe('AdminService', () => {
 
     it('throws BadRequestException when not hidden', async () => {
       callRepo.findOneBy.mockResolvedValue(makeCall({ isHidden: false }));
-      await expect(service.unhideCall('call-uuid-1')).rejects.toThrow(BadRequestException);
+      await expect(service.unhideCall('call-uuid-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -170,12 +176,16 @@ describe('AdminService', () => {
 
     it('throws NotFoundException for unknown user', async () => {
       usersRepo.findOneBy.mockResolvedValue(null);
-      await expect(service.banUser('0xUNKNOWN')).rejects.toThrow(NotFoundException);
+      await expect(service.banUser('0xUNKNOWN')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('throws BadRequestException when already banned', async () => {
       usersRepo.findOneBy.mockResolvedValue(makeUser({ banned: true }));
-      await expect(service.banUser('0xABCDEF')).rejects.toThrow(BadRequestException);
+      await expect(service.banUser('0xABCDEF')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -194,7 +204,9 @@ describe('AdminService', () => {
 
     it('throws BadRequestException when not banned', async () => {
       usersRepo.findOneBy.mockResolvedValue(makeUser({ banned: false }));
-      await expect(service.unbanUser('0xABCDEF')).rejects.toThrow(BadRequestException);
+      await expect(service.unbanUser('0xABCDEF')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 

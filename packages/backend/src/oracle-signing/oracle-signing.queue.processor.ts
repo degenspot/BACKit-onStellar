@@ -33,4 +33,3 @@ export class OracleSigningQueueProcessor extends WorkerHost {
     this.logger.error(`Oracle signing job permanently failed`, err.stack);
   }
 }
-

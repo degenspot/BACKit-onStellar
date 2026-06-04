@@ -28,4 +28,3 @@ export class TreasuryEntry {
   @CreateDateColumn()
   createdAt: Date;
 }
-

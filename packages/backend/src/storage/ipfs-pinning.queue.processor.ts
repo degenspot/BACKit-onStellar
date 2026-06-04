@@ -38,4 +38,3 @@ export class IpfsPinningQueueProcessor extends WorkerHost {
     this.logger.error(`IPFS pinning job permanently failed`, err.stack);
   }
 }
-

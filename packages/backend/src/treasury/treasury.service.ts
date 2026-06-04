@@ -58,12 +58,19 @@ export class TreasuryService {
     return fee.toFixed(7);
   }
 
-  async getSummary(from?: Date, to?: Date): Promise<{
+  async getSummary(
+    from?: Date,
+    to?: Date,
+  ): Promise<{
     totalFees: string;
     byToken: Array<{ tokenAddress: string; totalFees: string }>;
   }> {
     const where =
-      from && to ? { collectedAt: Between(from, to) } : from ? { collectedAt: Between(from, new Date()) } : {};
+      from && to
+        ? { collectedAt: Between(from, to) }
+        : from
+          ? { collectedAt: Between(from, new Date()) }
+          : {};
 
     const rows: Array<{ tokenAddress: string; totalFees: string }> =
       await this.treasuryRepository
@@ -79,7 +86,13 @@ export class TreasuryService {
       .reduce((acc, r) => acc + Number(r.totalFees ?? 0), 0)
       .toFixed(7);
 
-    return { totalFees, byToken: rows.map((r) => ({ tokenAddress: r.tokenAddress, totalFees: Number(r.totalFees ?? 0).toFixed(7) })) };
+    return {
+      totalFees,
+      byToken: rows.map((r) => ({
+        tokenAddress: r.tokenAddress,
+        totalFees: Number(r.totalFees ?? 0).toFixed(7),
+      })),
+    };
   }
 
   async getHistory(params: {
@@ -88,7 +101,12 @@ export class TreasuryService {
     from?: Date;
     to?: Date;
     tokenAddress?: string;
-  }): Promise<{ data: TreasuryEntry[]; total: number; page: number; limit: number }> {
+  }): Promise<{
+    data: TreasuryEntry[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     const qb = this.treasuryRepository
       .createQueryBuilder('t')
       .orderBy('t.collectedAt', 'DESC')
@@ -100,11 +118,11 @@ export class TreasuryService {
         tokenAddress: params.tokenAddress,
       });
     }
-    if (params.from) qb.andWhere('t.collectedAt >= :from', { from: params.from });
+    if (params.from)
+      qb.andWhere('t.collectedAt >= :from', { from: params.from });
     if (params.to) qb.andWhere('t.collectedAt <= :to', { to: params.to });
 
     const [data, total] = await qb.getManyAndCount();
     return { data, total, page: params.page, limit: params.limit };
   }
 }
-

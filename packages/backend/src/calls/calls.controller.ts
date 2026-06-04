@@ -10,49 +10,68 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
-  UseInterceptors,
 } from '@nestjs/common';
-import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { CallsService } from './calls.service';
 import { ReportCallDto } from './dto/report-call.dto';
 import { QueryCallsDto } from './dto/query-calls.dto';
+import { PrepareCallDto } from './dto/prepare-call.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
+@ApiTags('calls')
 @Controller('calls')
 export class CallsController {
   constructor(private readonly callsService: CallsService) {}
 
   @Get('feed')
-  @UseInterceptors(CacheInterceptor)
-  @CacheKey('trending_feed')
-  @CacheTTL(30) // 30 seconds
+  @ApiOperation({ summary: 'Get paginated feed of visible calls' })
+  @ApiResponse({ status: 200, description: 'Feed returned successfully' })
   getFeed(@Query() query: QueryCallsDto) {
     return this.callsService.getFeed(query);
   }
 
-  @Get('feed/following')
-  getFollowingFeed(
-    @Query('address') address: string,
-    @Query() query: QueryCallsDto,
-  ) {
-    return this.callsService.getFollowingFeed(address, query);
-  }
-
   @Get('search')
+  @ApiOperation({ summary: 'Search calls by title or description' })
+  @ApiResponse({ status: 200, description: 'Search results returned' })
   search(@Query() query: QueryCallsDto) {
     return this.callsService.search(query);
   }
 
-  @Get(':id/odds')
-  @UseInterceptors(CacheInterceptor)
-  @CacheTTL(30) // Cache odds for 30s
-  getOdds(@Param('id', ParseUUIDPipe) id: string) {
-    return this.callsService.getOdds(id);
+  @Post('prepare')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Pin call content to IPFS and return CID for on-chain creation',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Content pinned',
+    schema: {
+      example: {
+        cid: 'bafybeig...',
+        ipfsUrl: 'https://ipfs.io/ipfs/bafybeig...',
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Validation error' })
+  prepareCall(@Body() dto: PrepareCallDto) {
+    return this.callsService.prepareCall(dto);
   }
 
   @Post(':id/report')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Report a call for moderation' })
+  @ApiParam({ name: 'id', description: 'Call UUID' })
+  @ApiResponse({ status: 200, description: 'Report submitted' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 409, description: 'Already reported' })
   reportCall(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReportCallDto,

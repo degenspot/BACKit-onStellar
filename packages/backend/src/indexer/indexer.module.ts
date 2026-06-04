@@ -11,6 +11,7 @@ import { PlatformSettingsService } from './platform-settings.service';
 import { PlatformConfigModule } from '../config/config.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PayoutsModule } from '../payouts/payouts.module';
+import { TreasuryModule } from '../treasury/treasury.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { PayoutsModule } from '../payouts/payouts.module';
     PlatformConfigModule,
     NotificationsModule,
     PayoutsModule,
+    TreasuryModule,
   ],
   controllers: [IndexerController],
   providers: [

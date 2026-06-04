@@ -6,6 +6,7 @@ import { UsersService } from './users.service';
 import { Users } from './entities/users.entity';
 import { Follow } from './entities/follow.entity';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { NotificationPreferencesService } from '../notifications/notification-preferences.service';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -42,6 +43,10 @@ describe('UsersService', () => {
         { provide: getRepositoryToken(Follow), useValue: followsRepo },
         { provide: AnalyticsService, useValue: analyticsService },
         { provide: CACHE_MANAGER, useValue: cacheManager },
+        {
+          provide: NotificationPreferencesService,
+          useValue: { initializePreferences: jest.fn().mockResolvedValue([]) },
+        },
       ],
     }).compile();
 

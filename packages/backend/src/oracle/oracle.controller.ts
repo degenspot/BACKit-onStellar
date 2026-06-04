@@ -1,79 +1,93 @@
 import {
   Controller,
+  Get,
   Post,
-  Param,
   Body,
-  ParseIntPipe,
-  HttpCode,
+  Param,
   HttpStatus,
-  Patch,
-  UseGuards,
+  HttpCode,
+  Logger,
+  NotFoundException,
+  ParseIntPipe,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { OracleService } from './oracle.service';
-import { AdminResolveDto } from './dto/admin-resolve.dto';
 import { OracleCall } from './entities/oracle-call.entity';
-import { Audited } from '../audit/decorators/audited.decorator';
-import { AuditActionType } from '../audit/audit-log.entity';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { AdminGuard } from '../auth/guards/admin.guard';
+import { OracleOutcome } from './entities/oracle-outcome.entity';
+import { IpfsService } from '../storage/ipfs.service';
 
-@UseGuards(JwtAuthGuard, AdminGuard)
-@Controller('admin/markets')
+export class CreateOracleCallDto {
+  pairAddress: string;
+  baseToken: string;
+  quoteToken: string;
+  strikePrice: number;
+  callTime: Date;
+}
+
+@ApiTags('oracle')
+@Controller('api/oracle')
 export class OracleController {
-  constructor(private readonly oracleService: OracleService) {}
+  private readonly logger = new Logger(OracleController.name);
 
-  @Audited(AuditActionType.MARKET_MANUALLY_RESOLVED, (ctx) => {
-    const id = ctx.switchToHttp().getRequest().params.id;
-    return `market:${id}`;
-  })
-  @Post(':id/unpause')
-  @HttpCode(HttpStatus.OK)
-  unpause(@Param('id', ParseIntPipe) id: number): Promise<OracleCall> {
-    return this.oracleService.unpauseCall(id);
+  constructor(
+    private readonly oracleService: OracleService,
+    private readonly ipfsService: IpfsService,
+  ) {}
+
+  @Post('calls')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create a new oracle call' })
+  async createCall(@Body() dto: CreateOracleCallDto): Promise<OracleCall> {
+    return this.oracleService.createOracleCall(
+      dto.pairAddress,
+      dto.baseToken,
+      dto.quoteToken,
+      dto.strikePrice,
+      new Date(dto.callTime),
+    );
   }
 
-  @Audited(AuditActionType.MARKET_MANUALLY_RESOLVED, (ctx) => {
-    const id = ctx.switchToHttp().getRequest().params.id;
-    return `market:${id}`;
-  })
-  @Post(':id/resolve')
-  @HttpCode(HttpStatus.OK)
-  resolve(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: AdminResolveDto,
-  ): Promise<OracleCall> {
-    return this.oracleService.adminResolveCall(
-      id,
-      dto.resolution,
-      dto.finalPrice,
-    ); // ✅ types now match
+  @Get('calls/pending')
+  @ApiOperation({ summary: 'Get all pending oracle calls' })
+  async getPendingCalls(): Promise<OracleCall[]> {
+    return this.oracleService.getPendingCalls();
   }
 
-  // ─── Oracle Parameters & Quorums ──────────────────────────────────────────
-
-  @Audited(AuditActionType.ORACLE_PARAMS_UPDATED, (ctx) => {
-    const feedId = ctx.switchToHttp().getRequest().params.feedId;
-    return `oracle:feed:${feedId}`;
-  })
-  @Patch('feeds/:feedId/params')
-  @HttpCode(HttpStatus.OK)
-  updateOracleParams(
-    @Param('feedId') feedId: string,
-    @Body() dto: { minResponses: number; heartbeatSeconds: number },
-  ) {
-    return this.oracleService.updateParams(feedId, dto);
+  @Get('calls/:callId/outcomes')
+  @ApiOperation({ summary: 'Get outcomes for a specific oracle call' })
+  @ApiParam({ name: 'callId', description: 'Oracle call ID' })
+  async getOutcomesForCall(@Param('callId', ParseIntPipe) callId: number): Promise<OracleOutcome[]> {
+    const outcomes = await this.oracleService.getOutcomesForCall(callId);
+    if (!outcomes || outcomes.length === 0) {
+      throw new NotFoundException(`No outcomes found for call ${callId}`);
+    }
+    return outcomes;
   }
 
-  @Audited(AuditActionType.ORACLE_QUORUM_SET, (ctx) => {
-    const roundId = ctx.switchToHttp().getRequest().params.roundId;
-    return `oracle:round:${roundId}`;
-  })
-  @Patch('rounds/:roundId/quorum')
+  @Get('calls/:callId/evidence')
+  @ApiOperation({ summary: 'Get IPFS evidence CID and gateway link for a resolved call' })
+  @ApiParam({ name: 'callId', description: 'Oracle call ID' })
+  @ApiResponse({ status: 200, description: 'Evidence CID and IPFS gateway URL' })
+  @ApiResponse({ status: 404, description: 'No evidence found' })
+  async getEvidence(@Param('callId', ParseIntPipe) callId: number) {
+    const outcomes = await this.oracleService.getOutcomesForCall(callId);
+    const withEvidence = outcomes?.filter((o) => o.evidence_cid);
+    if (!withEvidence || withEvidence.length === 0) {
+      throw new NotFoundException(`No IPFS evidence found for call ${callId}`);
+    }
+    const latest = withEvidence[withEvidence.length - 1];
+    return {
+      callId,
+      evidenceCid: latest.evidence_cid,
+      ipfsUrl: this.ipfsService.getGatewayUrl(latest.evidence_cid),
+      resolvedAt: latest.createdAt,
+    };
+  }
+
+  @Get('health')
   @HttpCode(HttpStatus.OK)
-  setQuorum(
-    @Param('roundId') roundId: string,
-    @Body() dto: { quorum: number },
-  ) {
-    return this.oracleService.setQuorum(roundId, dto.quorum);
+  @ApiOperation({ summary: 'Oracle module health check' })
+  getHealth() {
+    return { status: 'healthy', timestamp: new Date().toISOString(), module: 'oracle-worker' };
   }
 }

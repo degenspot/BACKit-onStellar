@@ -53,13 +53,14 @@ describe('CommentsService', () => {
   describe('createComment', () => {
     it('should successfully create a top-level comment', async () => {
       const callId = 'call-uuid';
-      const authorAddress = 'GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ';
+      const authorAddress =
+        'GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ';
       const dto = { content: 'Nice trade!' };
 
       callsService.getCallOrThrow.mockResolvedValue(true);
       commentRepository.count.mockResolvedValueOnce(0); // total count
       commentRepository.count.mockResolvedValueOnce(0); // user count
-      
+
       const createdComment = {
         id: 'comment-uuid',
         callId,
@@ -86,14 +87,15 @@ describe('CommentsService', () => {
 
     it('should successfully create a nested reply comment', async () => {
       const callId = 'call-uuid';
-      const authorAddress = 'GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ';
+      const authorAddress =
+        'GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ';
       const parentId = 'parent-comment-uuid';
       const dto = { content: 'I agree!', parentId };
 
       callsService.getCallOrThrow.mockResolvedValue(true);
       commentRepository.count.mockResolvedValueOnce(5); // total count
       commentRepository.count.mockResolvedValueOnce(1); // user count
-      
+
       const parentComment = {
         id: parentId,
         callId,
@@ -114,13 +116,16 @@ describe('CommentsService', () => {
 
       const result = await service.createComment(callId, authorAddress, dto);
 
-      expect(commentRepository.findOne).toHaveBeenCalledWith({ where: { id: parentId } });
+      expect(commentRepository.findOne).toHaveBeenCalledWith({
+        where: { id: parentId },
+      });
       expect(result).toEqual(replyComment);
     });
 
     it('should throw BadRequestException if call is full (limit 100 comments)', async () => {
       const callId = 'call-uuid';
-      const authorAddress = 'GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ';
+      const authorAddress =
+        'GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ';
       const dto = { content: 'Too late comment' };
 
       callsService.getCallOrThrow.mockResolvedValue(true);
@@ -133,7 +138,8 @@ describe('CommentsService', () => {
 
     it('should throw BadRequestException if user limit reached (limit 20 comments)', async () => {
       const callId = 'call-uuid';
-      const authorAddress = 'GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ';
+      const authorAddress =
+        'GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ';
       const dto = { content: 'Spamming comment' };
 
       callsService.getCallOrThrow.mockResolvedValue(true);
@@ -147,7 +153,8 @@ describe('CommentsService', () => {
 
     it('should throw BadRequestException if parent comment belongs to a different call', async () => {
       const callId = 'call-uuid';
-      const authorAddress = 'GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ';
+      const authorAddress =
+        'GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ';
       const parentId = 'parent-comment-uuid';
       const dto = { content: 'Reply content', parentId };
 
@@ -173,17 +180,35 @@ describe('CommentsService', () => {
     it('should paginate top-level comments and group replies', async () => {
       const callId = 'call-uuid';
       callsService.getCallOrThrow.mockResolvedValue(true);
-      
+
       commentRepository.count.mockResolvedValue(2);
 
       const parents = [
-        { id: 'parent-1', callId, content: 'Comment 1', parentId: null, createdAt: new Date() },
-        { id: 'parent-2', callId, content: 'Comment 2', parentId: null, createdAt: new Date() },
+        {
+          id: 'parent-1',
+          callId,
+          content: 'Comment 1',
+          parentId: null,
+          createdAt: new Date(),
+        },
+        {
+          id: 'parent-2',
+          callId,
+          content: 'Comment 2',
+          parentId: null,
+          createdAt: new Date(),
+        },
       ];
       commentRepository.find.mockResolvedValueOnce(parents); // First find is for parents
 
       const replies = [
-        { id: 'reply-1', callId, content: 'Reply to 1', parentId: 'parent-1', createdAt: new Date() },
+        {
+          id: 'reply-1',
+          callId,
+          content: 'Reply to 1',
+          parentId: 'parent-1',
+          createdAt: new Date(),
+        },
       ];
       commentRepository.find.mockResolvedValueOnce(replies); // Second find is for replies
 
@@ -218,7 +243,9 @@ describe('CommentsService', () => {
 
       const result = await service.deleteComment(callId, commentId, user);
 
-      expect(commentRepository.findOne).toHaveBeenCalledWith({ where: { id: commentId } });
+      expect(commentRepository.findOne).toHaveBeenCalledWith({
+        where: { id: commentId },
+      });
       expect(commentRepository.remove).toHaveBeenCalledWith(comment);
       expect(result.message).toContain('deleted successfully');
     });

@@ -1,4 +1,10 @@
-import { Controller, Get, Query, UseGuards, ValidationPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  UseGuards,
+  ValidationPipe,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
@@ -15,7 +21,8 @@ export class TreasuryController {
   @Get()
   @ApiOperation({ summary: 'Treasury totals broken down by token' })
   getSummary(
-    @Query(new ValidationPipe({ transform: true })) query: TreasurySummaryQueryDto,
+    @Query(new ValidationPipe({ transform: true }))
+    query: TreasurySummaryQueryDto,
   ) {
     const from = query.from ? new Date(query.from) : undefined;
     const to = query.to ? new Date(query.to) : undefined;
@@ -25,7 +32,8 @@ export class TreasuryController {
   @Get('history')
   @ApiOperation({ summary: 'Treasury fee entry history (paginated)' })
   getHistory(
-    @Query(new ValidationPipe({ transform: true })) query: TreasuryHistoryQueryDto,
+    @Query(new ValidationPipe({ transform: true }))
+    query: TreasuryHistoryQueryDto,
   ) {
     const from = query.from ? new Date(query.from) : undefined;
     const to = query.to ? new Date(query.to) : undefined;
@@ -38,4 +46,3 @@ export class TreasuryController {
     });
   }
 }
-

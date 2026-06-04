@@ -113,7 +113,10 @@ export class CallsRepository extends Repository<Call> {
       .getManyAndCount();
   }
 
-  async findTrendingFeed(page: number, limit: number): Promise<[Call[], number]> {
+  async findTrendingFeed(
+    page: number,
+    limit: number,
+  ): Promise<[Call[], number]> {
     return this.visibleQuery()
       .leftJoin('call_trending_scores', 'trend', 'trend."callId" = call.id')
       .orderBy('COALESCE(trend.score, 0)', 'DESC')

@@ -29,10 +29,20 @@ pub struct SignedOutcome {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleVote {
+    pub oracle: BytesN<32>,
+    pub outcome: u32,
+    pub price: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
 #[derive(Clone)]
 pub enum InstanceKey {
     Admin,
     Oracles,
+    OracleList,
     Quorum,
     FinalOutcome(u64),
     Claimed(u64, Address),
@@ -45,6 +55,13 @@ pub enum InstanceKey {
     DisputeWindowStart(u64), // ledger timestamp when quorum was reached
     Paused,                  // Emergency pause flag for rogue oracle detection
     Version,
+    MaxSubmissionDelay,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub enum PersistentKey {
+    Votes(u64),
 }
 
 
@@ -91,15 +108,15 @@ pub fn get_dispute_window(env: &Env) -> u64 {
         .unwrap_or(3600)
 }
 
-pub fn is_paused(env: &Env) -> bool {
+pub fn set_max_submission_delay(env: &Env, delay: u64) {
     env.storage()
         .instance()
-        .get(&InstanceKey::Paused)
-        .unwrap_or(false)
+        .set(&InstanceKey::MaxSubmissionDelay, &delay);
 }
 
-pub fn set_paused(env: &Env, paused: bool) {
+pub fn get_max_submission_delay(env: &Env) -> u64 {
     env.storage()
         .instance()
-        .set(&InstanceKey::Paused, &paused);
+        .get(&InstanceKey::MaxSubmissionDelay)
+        .unwrap_or(86400)
 }

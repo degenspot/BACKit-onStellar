@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TreasuryController } from './treasury.controller';
 import { TreasuryService } from './treasury.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 describe('TreasuryController', () => {
   let controller: TreasuryController;
@@ -13,7 +14,10 @@ describe('TreasuryController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TreasuryController],
       providers: [{ provide: TreasuryService, useValue: service }],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get(TreasuryController);
     jest.clearAllMocks();
@@ -21,8 +25,7 @@ describe('TreasuryController', () => {
 
   it('delegates summary', async () => {
     service.getSummary.mockResolvedValue({ totalFees: '0', byToken: [] });
-    await controller.getSummary({} as any);
+    await controller.getSummary({});
     expect(service.getSummary).toHaveBeenCalled();
   });
 });
-

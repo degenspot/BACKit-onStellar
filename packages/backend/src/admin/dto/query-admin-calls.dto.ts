@@ -4,7 +4,10 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { CallStatus } from '../../calls/entities/call.entity';
 
 export class QueryAdminCallsDto {
-  @ApiPropertyOptional({ enum: CallStatus, description: 'Filter by call status' })
+  @ApiPropertyOptional({
+    enum: CallStatus,
+    description: 'Filter by call status',
+  })
   @IsOptional()
   @IsEnum(CallStatus)
   status?: CallStatus;

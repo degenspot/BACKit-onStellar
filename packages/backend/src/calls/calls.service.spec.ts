@@ -4,6 +4,7 @@ import { CallsService } from './calls.service';
 import { CallsRepository } from './calls.repository';
 import { CallReport } from './entities/call-report.entity';
 import { OracleService } from '../oracle/oracle.service';
+import { IpfsService } from '../storage/ipfs.service';
 
 describe('CallsService', () => {
   let service: CallsService;
@@ -14,6 +15,7 @@ describe('CallsService', () => {
 
   const callReportRepository = {};
   const oracleService = {};
+  const ipfsService = {};
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -21,8 +23,12 @@ describe('CallsService', () => {
       providers: [
         CallsService,
         { provide: CallsRepository, useValue: callsRepository },
-        { provide: getRepositoryToken(CallReport), useValue: callReportRepository },
+        {
+          provide: getRepositoryToken(CallReport),
+          useValue: callReportRepository,
+        },
         { provide: OracleService, useValue: oracleService },
+        { provide: IpfsService, useValue: ipfsService },
       ],
     }).compile();
 
@@ -32,7 +38,10 @@ describe('CallsService', () => {
   it('returns following feed with pagination', async () => {
     callsRepository.findFeedByFollowing.mockResolvedValue([[{ id: 'c1' }], 1]);
 
-    const result = await service.getFollowingFeed('GA123', { page: 2, limit: 5 });
+    const result = await service.getFollowingFeed('GA123', {
+      page: 2,
+      limit: 5,
+    });
 
     expect(callsRepository.findFeedByFollowing).toHaveBeenCalledWith(
       'GA123',

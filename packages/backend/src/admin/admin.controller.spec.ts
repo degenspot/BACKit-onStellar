@@ -70,11 +70,18 @@ describe('AdminController', () => {
     });
 
     it('passes status filter to service', async () => {
-      const result = { data: [makeCall({ status: CallStatus.PAUSED })], total: 1, page: 1, limit: 20 };
+      const result = {
+        data: [makeCall({ status: CallStatus.PAUSED })],
+        total: 1,
+        page: 1,
+        limit: 20,
+      };
       mockAdminService.listCalls.mockResolvedValue(result);
 
       await controller.listCalls({ status: CallStatus.PAUSED });
-      expect(mockAdminService.listCalls).toHaveBeenCalledWith({ status: CallStatus.PAUSED });
+      expect(mockAdminService.listCalls).toHaveBeenCalledWith({
+        status: CallStatus.PAUSED,
+      });
     });
   });
 
@@ -94,14 +101,18 @@ describe('AdminController', () => {
       mockAdminService.hideCall.mockRejectedValue(
         new BadRequestException('Call is already hidden'),
       );
-      await expect(controller.hideCall('call-uuid-1')).rejects.toThrow(BadRequestException);
+      await expect(controller.hideCall('call-uuid-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('propagates NotFoundException for unknown call', async () => {
       mockAdminService.hideCall.mockRejectedValue(
         new NotFoundException('Call not-found not found'),
       );
-      await expect(controller.hideCall('not-found')).rejects.toThrow(NotFoundException);
+      await expect(controller.hideCall('not-found')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -121,7 +132,9 @@ describe('AdminController', () => {
       mockAdminService.unhideCall.mockRejectedValue(
         new BadRequestException('Call is not hidden'),
       );
-      await expect(controller.unhideCall('call-uuid-1')).rejects.toThrow(BadRequestException);
+      await expect(controller.unhideCall('call-uuid-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -141,14 +154,18 @@ describe('AdminController', () => {
       mockAdminService.banUser.mockRejectedValue(
         new BadRequestException('User is already banned'),
       );
-      await expect(controller.banUser('0xABCDEF')).rejects.toThrow(BadRequestException);
+      await expect(controller.banUser('0xABCDEF')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('propagates NotFoundException for unknown user', async () => {
       mockAdminService.banUser.mockRejectedValue(
         new NotFoundException('User 0xUNKNOWN not found'),
       );
-      await expect(controller.banUser('0xUNKNOWN')).rejects.toThrow(NotFoundException);
+      await expect(controller.banUser('0xUNKNOWN')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -168,7 +185,9 @@ describe('AdminController', () => {
       mockAdminService.unbanUser.mockRejectedValue(
         new BadRequestException('User is not banned'),
       );
-      await expect(controller.unbanUser('0xABCDEF')).rejects.toThrow(BadRequestException);
+      await expect(controller.unbanUser('0xABCDEF')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 

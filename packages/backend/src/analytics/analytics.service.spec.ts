@@ -104,7 +104,7 @@ describe('AnalyticsService – getTotalValueLocked', () => {
           stakeToken: 'USDC-ADDR',
           totalYesStake: '200',
           totalNoStake: '100',
-        }
+        },
       },
       {
         amount: '50',
@@ -114,8 +114,8 @@ describe('AnalyticsService – getTotalValueLocked', () => {
           stakeToken: 'XLM-ADDR',
           totalYesStake: '50',
           totalNoStake: '50',
-        }
-      }
+        },
+      },
     ]);
 
     mockTokensService.getAll.mockResolvedValue([

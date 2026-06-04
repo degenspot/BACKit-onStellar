@@ -34,6 +34,10 @@ export class NotificationEntity {
   @Index()
   isDispatched: boolean;
 
+  @Column({ type: 'boolean', default: true })
+  @Index()
+  inApp: boolean;
+
   @Column({
     type: 'enum',
     enum: DispatchType,

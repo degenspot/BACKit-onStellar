@@ -2,18 +2,16 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
-  BadRequestException,
-  Inject,
-  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CallsRepository } from './calls.repository';
 import { CallReport } from './entities/call-report.entity';
-import { Call, CallStatus } from './entities/call.entity';
 import { ReportCallDto } from './dto/report-call.dto';
 import { QueryCallsDto } from './dto/query-calls.dto';
-import { OracleService } from '../oracle/oracle.service';
+import { PrepareCallDto } from './dto/prepare-call.dto';
+import { REPORT_THRESHOLD } from './constants/moderation.constants';
+import { IpfsService } from '../storage/ipfs.service';
 
 @Injectable()
 export class CallsService {
@@ -21,15 +19,23 @@ export class CallsService {
     private readonly callsRepository: CallsRepository,
     @InjectRepository(CallReport)
     private readonly callReportRepository: Repository<CallReport>,
-    @Inject(forwardRef(() => OracleService))
-    private readonly oracleService: OracleService,
+    private readonly ipfsService: IpfsService,
   ) {}
-
-  // ─── Feed & Search ────────────────────────────────────────────────────────
 
   async getFeed(query: QueryCallsDto) {
     const { page = 1, limit = 20 } = query;
     const [data, total] = await this.callsRepository.findFeed(page, limit, query);
+    const [data, total] = await this.callsRepository.findFeed(page, limit);
+    return { data, total, page, limit };
+  }
+
+  async getFollowingFeed(address: string, query: QueryCallsDto) {
+    const { page = 1, limit = 20 } = query;
+    const [data, total] = await this.callsRepository.findFeedByFollowing(
+      address,
+      page,
+      limit,
+    );
     return { data, total, page, limit };
   }
 
@@ -39,51 +45,66 @@ export class CallsService {
       search,
       page,
       limit,
-    );
-    return { data, total, page, limit };
-  }
-
-  async getFollowingFeed(
-    address: string,
-    query: QueryCallsDto,
-  ): Promise<{ data: Call[]; total: number; page: number; limit: number }> {
-    const { page = 1, limit = 20 } = query;
-    const [data, total] = await this.callsRepository.findFeedByFollowing(
-      address,
-      page,
-      limit,
       query,
     );
     return { data, total, page, limit };
   }
 
-  // ─── Single Call Lookup ───────────────────────────────────────────────────
+  async prepareCall(
+    dto: PrepareCallDto,
+  ): Promise<{ cid: string; ipfsUrl: string }> {
+    const content = {
+      version: 1,
+      title: dto.title,
+      thesis: dto.thesis,
+      condition: dto.condition,
+      tokenPair: dto.tokenPair,
+      createdAt: new Date().toISOString(),
+    };
 
-  async getCallOrThrow(id: string): Promise<Call> {
+    let cid: string;
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts) {
+      try {
+        cid = await this.ipfsService.pinCallContent({
+          title: content.title,
+          thesis: content.thesis,
+          conditionJson: {
+            condition: content.condition,
+            tokenPair: content.tokenPair,
+          },
+          createdAt: content.createdAt,
+        });
+        break;
+      } catch {
+        attempts++;
+        if (attempts >= maxAttempts)
+          throw new Error('IPFS pinning failed after retries');
+        await new Promise((r) => setTimeout(r, 1000 * attempts));
+      }
+    }
+
+    const ipfsUrl = this.ipfsService.getGatewayUrl(cid!);
+    return { cid: cid!, ipfsUrl };
+  }
+
+  async getCallOrThrow(id: string) {
     const call = await this.callsRepository.findOne({ where: { id } });
-    if (!call) throw new NotFoundException(`Call ${id} not found`);
+    if (!call) throw new NotFoundException('Call not found');
     return call;
   }
 
-  // ─── Reporting & Auto-Pause (circuit breaker) ─────────────────────────────
-
   async reportCall(id: string, reporterAddress: string, dto: ReportCallDto) {
-    const call = await this.getCallOrThrow(id);
-
-    const nonReportable: CallStatus[] = [
-      CallStatus.RESOLVED_YES,
-      CallStatus.RESOLVED_NO,
-    ];
-    if (nonReportable.includes(call.status)) {
-      throw new BadRequestException('Cannot report a resolved market');
-    }
+    const call = await this.callsRepository.findOne({ where: { id } });
+    if (!call) throw new NotFoundException('Call not found');
 
     const alreadyReported = await this.callReportRepository.findOne({
       where: { callId: id, reporterAddress },
     });
-    if (alreadyReported) {
+    if (alreadyReported)
       throw new ConflictException('You have already reported this call');
-    }
 
     await this.callReportRepository.save(
       this.callReportRepository.create({
@@ -93,84 +114,17 @@ export class CallsService {
       }),
     );
 
-    const updated = await this.oracleService.recordReport(Number(id));
+    call.reportCount += 1;
+    if (call.reportCount >= REPORT_THRESHOLD) {
+      call.isHidden = true;
+    }
+
+    await this.callsRepository.save(call);
 
     return {
       message: 'Report submitted successfully',
-      reportCount: updated.reportCount,
-      isHidden: updated.isHidden,
-      status: updated.status,
-    };
-  }
-
-  // ─── Admin: Unpause ───────────────────────────────────────────────────────
-
-  async unpauseCall(id: string): Promise<Call> {
-    const call = await this.getCallOrThrow(id);
-
-    if (call.status !== CallStatus.PAUSED) {
-      throw new BadRequestException(
-        `Call is not paused (current status: ${call.status})`,
-      );
-    }
-
-    call.status = CallStatus.OPEN;
-    return this.callsRepository.save(call);
-  }
-
-  // ─── Admin: Force Resolve ─────────────────────────────────────────────────
-
-  async adminResolveCall(
-    id: string,
-    resolution: CallStatus.RESOLVED_YES | CallStatus.RESOLVED_NO,
-    finalPrice?: string,
-  ): Promise<Call> {
-    const call = await this.getCallOrThrow(id);
-
-    const resolvable: CallStatus[] = [
-      CallStatus.OPEN,
-      CallStatus.PAUSED,
-      CallStatus.SETTLING,
-    ];
-
-    if (!resolvable.includes(call.status)) {
-      throw new BadRequestException(
-        `Cannot resolve a call with status ${call.status}`,
-      );
-    }
-
-    call.status = resolution;
-    call.resolvedAt = new Date();
-    if (finalPrice !== undefined) call.finalPrice = finalPrice;
-
-    return this.callsRepository.save(call);
-  }
-
-  /**
-   * Calculate potential payout ratio (odds) for YES/NO selections.
-   */
-  async getOdds(id: string) {
-    const call = await this.getCallOrThrow(id);
-
-    const yesStake = parseFloat(call.totalYesStake || '0');
-    const noStake = parseFloat(call.totalNoStake || '0');
-    const totalPool = yesStake + noStake;
-
-    if (totalPool === 0) {
-      return {
-        yes: 2.0,
-        no: 2.0,
-        totalPool: 0,
-      };
-    }
-
-    const yesOdds = yesStake > 0 ? totalPool / yesStake : 2.0;
-    const noOdds = noStake > 0 ? totalPool / noStake : 2.0;
-
-    return {
-      yes: Number(yesOdds.toFixed(2)),
-      no: Number(noOdds.toFixed(2)),
-      totalPool: Number(totalPool.toFixed(7)),
+      reportCount: call.reportCount,
+      isHidden: call.isHidden,
     };
   }
 }

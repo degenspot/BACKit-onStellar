@@ -3,6 +3,7 @@ use soroban_sdk::{Address, Bytes, Env, Symbol};
 
 pub const PARAM_MAX_STAKE_PER_USER: &str = "max_stake_per_user";
 pub const PARAM_MIN_STAKE: &str = "min_stake";
+pub const PARAM_STAKING_CUTOFF: &str = "staking_cutoff_secs";
 
 /// Emitted when a new call is created
 pub fn emit_call_created(
@@ -11,10 +12,12 @@ pub fn emit_call_created(
     creator: &Address,
     stake_token: &Address,
     stake_amount: i128,
+    start_price: i128,
     end_ts: u64,
     token_address: &Address,
     pair_id: &Bytes,
     ipfs_cid: &Bytes,
+    outcome_count: u32,
 ) {
     env.events().publish(
         ("call_registry", "call_created"),
@@ -23,10 +26,12 @@ pub fn emit_call_created(
             creator.clone(),
             stake_token.clone(),
             stake_amount,
+            start_price,
             end_ts,
             token_address.clone(),
             pair_id.clone(),
             ipfs_cid.clone(),
+            outcome_count,
         ),
     );
 }
@@ -129,6 +134,24 @@ pub fn emit_admin_params_changed_i128(
         ),
     );
 }
+
+pub fn emit_admin_params_changed_u64(
+    env: &Env,
+    param: &str,
+    changed_by: &Address,
+    old_value: u64,
+    new_value: u64,
+) {
+    env.events().publish(
+        ("call_registry", "admin_params_changed"),
+        (
+            Symbol::new(env, param),
+            changed_by.clone(),
+            old_value,
+            new_value,
+        ),
+    );
+}
 pub fn emit_token_whitelisted(env: &Env, token: &Address) {
     env.events()
         .publish(("call_registry", "token_whitelisted"), token.clone());
@@ -194,5 +217,13 @@ pub fn emit_void_refund_claimed(env: &Env, call_id: u64, staker: &Address, amoun
     env.events().publish(
         ("call_registry", "void_refund_claimed"),
         (call_id, staker.clone(), amount),
+    );
+}
+
+/// Emitted when instance entry count exceeds the warning threshold.
+pub fn emit_storage_warning(env: &Env, entry_count: u32, estimated_bytes: u32) {
+    env.events().publish(
+        ("call_registry", "storage_warning"),
+        (entry_count, estimated_bytes),
     );
 }

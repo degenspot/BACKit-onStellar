@@ -11,14 +11,18 @@ use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, IntoVal, 
 use auth::require_admin;
 use backit_shared::{is_valid_fee_bps, is_valid_outcome};
 use events::{
-    emit_batch_payout_started, emit_contract_upgraded, emit_fee_collected, emit_outcome_disputed,
-    emit_outcome_finalized, emit_outcome_submitted, emit_payout_claimed, emit_contract_paused, emit_contract_unpaused,
-    emit_price_observation_submitted,
+    emit_admin_params_changed, emit_batch_payout_started, emit_contract_upgraded,
+    emit_fee_collected, emit_outcome_disputed, emit_outcome_finalized, emit_outcome_submitted,
+    emit_payout_claimed, emit_price_observation_submitted,
 };
-use storage::{set_dispute_window, InstanceKey, Outcome, PriceObservation, SignedOutcome, TempKey, is_paused, set_paused};
+use storage::{
+    set_dispute_window, set_max_submission_delay, InstanceKey, Outcome, OracleVote,
+    PersistentKey, PriceObservation, SignedOutcome, TempKey,
+};
 use verification::{build_message, verify_signature};
 
 pub const CONTRACT_VERSION: u32 = 1;
+pub const MAX_ORACLES: u32 = 20;
 
 // ─── Cross-contract helpers ────────────────────────────────────────────────────
 
@@ -50,6 +54,15 @@ fn registry_release_escrow(
 fn registry_mark_settled(env: &Env, registry: &Address, call_id: u64) {
     let args = (call_id,).into_val(env);
     env.invoke_contract::<()>(registry, &Symbol::new(env, "mark_settled"), args);
+}
+
+// ─── Pause helper ─────────────────────────────────────────────────────────────
+
+fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&InstanceKey::Paused)
+        .unwrap_or(false)
 }
 
 // ─── Contract ─────────────────────────────────────────────────────────────────
@@ -89,6 +102,9 @@ impl OutcomeManager {
         if quorum == 0 || quorum > oracles.len() as u32 {
             panic!("invalid quorum");
         }
+        if oracles.len() as u32 > MAX_ORACLES {
+            panic!("too many oracles");
+        }
         if !is_valid_fee_bps(fee_bps) {
             panic!("invalid fee_bps");
         }
@@ -102,12 +118,16 @@ impl OutcomeManager {
         env.storage()
             .instance()
             .set(&InstanceKey::Oracles, &oracle_map);
+        env.storage()
+            .instance()
+            .set(&InstanceKey::OracleList, &oracles);
         env.storage().instance().set(&InstanceKey::Quorum, &quorum);
         env.storage()
             .instance()
             .set(&InstanceKey::FeeCollector, &fee_collector);
         env.storage().instance().set(&InstanceKey::FeeBps, &fee_bps);
         set_dispute_window(&env, dispute_window_secs);
+        set_max_submission_delay(&env, 86400);
         env.storage().instance().set(&InstanceKey::Version, &CONTRACT_VERSION);
     }
 
@@ -117,20 +137,51 @@ impl OutcomeManager {
         require_admin(&env);
         let mut oracles: Map<BytesN<32>, bool> =
             env.storage().instance().get(&InstanceKey::Oracles).unwrap();
-        oracles.set(oracle, true);
+        let mut oracle_list: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&InstanceKey::OracleList)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        if oracles.contains_key(oracle.clone()) {
+            return;
+        }
+        if oracle_list.len() as u32 >= MAX_ORACLES {
+            panic!("max oracles reached");
+        }
+        oracles.set(oracle.clone(), true);
+        oracle_list.push_back(oracle);
         env.storage()
             .instance()
             .set(&InstanceKey::Oracles, &oracles);
+        env.storage()
+            .instance()
+            .set(&InstanceKey::OracleList, &oracle_list);
     }
 
     pub fn remove_oracle(env: Env, oracle: BytesN<32>) {
         require_admin(&env);
         let mut oracles: Map<BytesN<32>, bool> =
             env.storage().instance().get(&InstanceKey::Oracles).unwrap();
-        oracles.remove(oracle);
+        let oracle_list: Vec<BytesN<32>> = env
+            .storage()
+            .instance()
+            .get(&InstanceKey::OracleList)
+            .unwrap_or_else(|| Vec::new(&env));
+        let mut filtered = Vec::new(&env);
+
+        oracles.remove(oracle.clone());
+        for existing in oracle_list.iter() {
+            if existing != oracle {
+                filtered.push_back(existing);
+            }
+        }
         env.storage()
             .instance()
             .set(&InstanceKey::Oracles, &oracles);
+        env.storage()
+            .instance()
+            .set(&InstanceKey::OracleList, &filtered);
     }
 
     pub fn set_quorum(env: Env, quorum: u32) {
@@ -150,22 +201,26 @@ impl OutcomeManager {
             .set(&InstanceKey::Admin, &new_admin);
     }
 
-    /// Pause the contract (admin only).
-    /// When paused:
-    /// - submit_outcome() will fail
-    /// - claim_payout() will fail
-    /// - mark_settled() still works (admin needs to finalize outcomes)
-    pub fn pause(env: Env) {
+    pub fn set_max_submission_delay(env: Env, new_delay: u64) {
         require_admin(&env);
-        set_paused(&env, true);
-        emit_contract_paused(&env);
+        set_max_submission_delay(&env, new_delay);
+        emit_admin_params_changed(&env, new_delay);
     }
 
-    /// Unpause the contract (admin only).
+    pub fn get_max_submission_delay(env: Env) -> u64 {
+        storage::get_max_submission_delay(&env)
+    }
+
+    // ── Emergency Pause ────────────────────────────────────────────────────────
+
+    pub fn pause(env: Env) {
+        require_admin(&env);
+        env.storage().instance().set(&InstanceKey::Paused, &true);
+    }
+
     pub fn unpause(env: Env) {
         require_admin(&env);
-        set_paused(&env, false);
-        emit_contract_unpaused(&env);
+        env.storage().instance().set(&InstanceKey::Paused, &false);
     }
 
     pub fn is_paused_view(env: Env) -> bool {
@@ -186,8 +241,7 @@ impl OutcomeManager {
     /// - `duplicate submission`   – this oracle already voted on this call
     /// - `invalid outcome`        – outcome is not 1 (UP) or 2 (DOWN)
     /// - (ed25519_verify panics)  – signature is invalid; tx is reverted
-    pub fn submit_outcome(env: Env, registry: Address, signed: SignedOutcome) {
-        // 0. Check if contract is paused (emergency guard)
+    pub fn submit_outcome(env: Env, registry: Address, signed: SignedOutcome, call_end_ts: u64) {
         if is_paused(&env) {
             panic!("contract is paused");
         }
@@ -219,6 +273,16 @@ impl OutcomeManager {
             panic!("invalid outcome: must be 1 (UP) or 2 (DOWN)");
         }
 
+        // 4b. Enforce submission deadline: oracle timestamp must be within
+        //     call_end_ts + max_submission_delay to reject stale reports
+        let max_delay = storage::get_max_submission_delay(&env);
+        let deadline = call_end_ts
+            .checked_add(max_delay)
+            .expect("overflow in submission deadline");
+        if signed.timestamp > deadline {
+            panic!("submission outside allowed window");
+        }
+
         // 5. Build canonical message and verify ed25519 signature
         let message = build_message(
             &env,
@@ -236,6 +300,20 @@ impl OutcomeManager {
         env.storage()
             .temporary()
             .set(&submission_key, &outcome_hash);
+
+        let vote_key = PersistentKey::Votes(signed.call_id);
+        let mut votes_for_call: Vec<OracleVote> = env
+            .storage()
+            .persistent()
+            .get(&vote_key)
+            .unwrap_or_else(|| Vec::new(&env));
+        votes_for_call.push_back(OracleVote {
+            oracle: signed.oracle_pubkey.clone(),
+            outcome: signed.outcome,
+            price: signed.price,
+            timestamp: signed.timestamp,
+        });
+        env.storage().persistent().set(&vote_key, &votes_for_call);
 
         // 8. Tally votes for this outcome candidate
         let vote_key = TempKey::VoteCount(outcome_hash.clone(), signed.call_id);
@@ -638,6 +716,32 @@ impl OutcomeManager {
             .get(&InstanceKey::Oracles)
             .expect("not initialized");
         oracles.contains_key(oracle)
+    }
+
+    /// Return the trusted oracle public keys.
+    pub fn get_oracles(env: Env) -> Vec<BytesN<32>> {
+        env.storage()
+            .instance()
+            .get(&InstanceKey::OracleList)
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    /// Return the total number of trusted oracles.
+    pub fn get_oracle_count(env: Env) -> u32 {
+        Self::get_oracles(env).len() as u32
+    }
+
+    /// Return all oracle votes stored for a call.
+    pub fn get_votes(env: Env, call_id: u64) -> Vec<OracleVote> {
+        env.storage()
+            .persistent()
+            .get(&PersistentKey::Votes(call_id))
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    /// Return the number of stored oracle votes for a call.
+    pub fn get_vote_count(env: Env, call_id: u64) -> u32 {
+        Self::get_votes(env, call_id).len() as u32
     }
 
     /// Return the current contract version.

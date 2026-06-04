@@ -29,6 +29,15 @@ export class Token {
   @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  isWhitelisted: boolean;
+
+  @Column({ type: 'varchar', length: 56, nullable: true })
+  addedBy: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  addedAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

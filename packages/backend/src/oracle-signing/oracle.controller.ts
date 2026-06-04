@@ -58,7 +58,9 @@ export class OracleController {
     description:
       'Runs signing in a BullMQ background worker. Use GET /oracle/sign/jobs/:jobId to poll the result.',
   })
-  async enqueueSignPrice(@Body() dto: SignPriceDto): Promise<{ jobId: string }> {
+  async enqueueSignPrice(
+    @Body() dto: SignPriceDto,
+  ): Promise<{ jobId: string }> {
     const job = await this.oracleQueue.add('sign-price', {
       payload: {
         asset: dto.asset,

@@ -31,11 +31,13 @@ pub struct Call {
     pub pair_id: Bytes,
     /// IPFS content hash for call metadata
     pub ipfs_cid: Bytes,
-    /// Current total stake on UP position
-    pub total_up_stake: i128,
-    /// Current total stake on DOWN position
-    pub total_down_stake: i128,
-    /// Resolved outcome: 0 = unresolved, 1 = UP, 2 = DOWN
+    /// Number of possible outcomes (default: 2 for backward compatibility)
+    pub outcome_count: u32,
+    /// Map of outcome indices to total stake amounts
+    pub outcome_stakes: Map<u32, i128>,
+    /// Map of outcome indices to staker addresses and their stake amounts
+    pub stakes: Map<u32, Map<Address, i128>>,
+    /// Resolved outcome: 0 = unresolved, 1..outcome_count = specific outcome
     pub outcome: u32,
     /// Price at call creation
     pub start_price: i128,
@@ -99,6 +101,9 @@ pub struct ContractConfig {
     pub metadata_version: u32,
     /// When true, create/stake/resolve operations are blocked.
     pub paused: bool,
+    /// Number of seconds before `end_ts` during which staking is no longer
+    /// accepted. Default: 300 (5 minutes). Set to 0 to disable the buffer.
+    pub staking_cutoff_secs: u64,
 }
 
 /// Contract-wide aggregated statistics for dashboards.
@@ -114,11 +119,12 @@ pub struct GlobalStats {
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct CallStats {
-    pub total_up_stake: i128,
-    pub total_down_stake: i128,
+    /// Map of outcome indices to total stake amounts
+    pub outcome_stakes: Map<u32, i128>,
+    /// Map of outcome indices to stake counts
+    pub outcome_stake_counts: Map<u32, u32>,
+    /// Total number of stakes across all outcomes
     pub total_stakes: u32,
-    pub up_stake_count: u32,
-    pub down_stake_count: u32,
 }
 
 /// Creator reputation statistics tracked on-chain
@@ -128,4 +134,19 @@ pub struct CreatorStats {
     pub total_created: u32,
     pub total_resolved: u32,
     pub total_correct: u32,
+}
+
+/// Instance storage is capped at 64 KB. Warn when entry count exceeds this.
+pub const INSTANCE_ENTRY_WARNING_THRESHOLD: u32 = 500;
+
+/// Storage utilisation snapshot returned by `get_storage_stats`.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct StorageStats {
+    /// Total calls ever created (mirrors CallCounter).
+    pub call_count: u64,
+    /// Number of entries currently tracked in instance storage.
+    pub instance_entry_count: u32,
+    /// Rough byte estimate for instance storage (entry_count × 128 bytes).
+    pub estimated_instance_bytes: u32,
 }

@@ -9,4 +9,3 @@ export class TreasurySummaryQueryDto {
   @IsDateString()
   to?: string;
 }
-

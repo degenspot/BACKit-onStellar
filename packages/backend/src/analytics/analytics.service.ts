@@ -504,7 +504,10 @@ export class AnalyticsService {
     let prevWeekTime = 0;
     for (const week of weeks) {
       const currentTime = week.getTime();
-      if (prevWeekTime && currentTime - prevWeekTime === 7 * 24 * 60 * 60 * 1000) {
+      if (
+        prevWeekTime &&
+        currentTime - prevWeekTime === 7 * 24 * 60 * 60 * 1000
+      ) {
         currentStreak += 1;
       } else {
         currentStreak = 1;
@@ -546,7 +549,9 @@ export class AnalyticsService {
       .createQueryBuilder('stake')
       .innerJoinAndSelect('stake.call', 'call')
       .where('stake.userAddress = :userAddress', { userAddress })
-      .andWhere('call.status IN (:...statuses)', { statuses: ['OPEN', 'SETTLING'] })
+      .andWhere('call.status IN (:...statuses)', {
+        statuses: ['OPEN', 'SETTLING'],
+      })
       .getMany();
 
     if (!stakes.length) {
@@ -560,24 +565,30 @@ export class AnalyticsService {
 
     // Get all active tokens to map addresses to symbols
     const tokens = await this.tokensService.getAll();
-    const tokenMap = new Map(tokens.map(t => [t.assetIssuer || t.assetCode, t.assetCode]));
+    const tokenMap = new Map(
+      tokens.map((t) => [t.assetIssuer || t.assetCode, t.assetCode]),
+    );
 
     // Identify unique symbols needed for price lookup
     const symbolsToFetch = new Set<string>();
-    stakes.forEach(stake => {
+    stakes.forEach((stake) => {
       const stakeToken = stake.call.stakeToken;
       const symbol = stakeToken ? tokenMap.get(stakeToken) || 'XLM' : 'XLM'; // fallback
       symbolsToFetch.add(symbol);
     });
 
     // Fetch prices in USD
-    const prices = await this.coinGeckoService.getPrices(Array.from(symbolsToFetch));
+    const prices = await this.coinGeckoService.getPrices(
+      Array.from(symbolsToFetch),
+    );
 
     let totalLocked = 0;
-    const breakdown = stakes.map(stake => {
+    const breakdown = stakes.map((stake) => {
       const call = stake.call;
       const stakeToken = call.stakeToken;
-      const tokenSymbol = stakeToken ? tokenMap.get(stakeToken) || 'XLM' : 'XLM';
+      const tokenSymbol = stakeToken
+        ? tokenMap.get(stakeToken) || 'XLM'
+        : 'XLM';
       const usdPrice = prices.get(tokenSymbol) || 0; // Default to 0 if price missing
 
       const amount = Number(stake.amount);
@@ -611,5 +622,97 @@ export class AnalyticsService {
       pendingStakesCount: stakes.length,
       breakdown,
     };
+  }
+
+  // ─── Platform Analytics (#195) ───────────────────────────────────────────
+
+  private readonly platformCache = new Map<string, { data: any; expiresAt: number }>();
+
+  async getPlatformAnalytics(): Promise<any> {
+    const key = 'platform_analytics';
+    const hit = this.getCache(key);
+    if (hit) return hit;
+
+    const [callStats, stakeStats, userStats, tokenPairs] = await Promise.all([
+      this.dataSource.query(`
+        SELECT COUNT(*) AS total_calls_created,
+               COUNT(CASE WHEN outcome IN ('YES','NO') THEN 1 END) AS total_calls_resolved,
+               AVG(EXTRACT(EPOCH FROM (COALESCE("resolvedAt",NOW())-"createdAt"))/3600) AS avg_call_duration_hours
+        FROM calls`),
+      this.dataSource.query(
+        `SELECT COALESCE(SUM(amount),0) AS total_stake_volume FROM stakes`),
+      this.dataSource.query(
+        `SELECT COUNT(DISTINCT "userAddress") AS total_unique_users FROM stakes`),
+      this.dataSource.query(`
+        SELECT "contractAddress" AS token_pair, COUNT(*) AS cnt
+        FROM calls WHERE "contractAddress" IS NOT NULL
+        GROUP BY "contractAddress" ORDER BY cnt DESC LIMIT 5`),
+    ]);
+
+    const result = {
+      totalCallsCreated: parseInt(callStats[0]?.total_calls_created ?? 0),
+      totalCallsResolved: parseInt(callStats[0]?.total_calls_resolved ?? 0),
+      totalStakeVolume: parseFloat(stakeStats[0]?.total_stake_volume ?? 0),
+      totalUniqueUsers: parseInt(userStats[0]?.total_unique_users ?? 0),
+      averageCallDurationHours: parseFloat(callStats[0]?.avg_call_duration_hours ?? 0),
+      mostPopularTokenPairs: (tokenPairs as any[]).map((r) => ({
+        tokenPair: r.token_pair,
+        count: parseInt(r.cnt),
+      })),
+    };
+
+    this.setCache(key, result, 300);
+    return result;
+  }
+
+  async getPlatformTrends(period: string): Promise<any> {
+    const key = `platform_trends_${period}`;
+    const hit = this.getCache(key);
+    if (hit) return hit;
+
+    const days = period === '30d' ? 30 : period === '14d' ? 14 : 7;
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const [callTrends, userTrends, stakeTrends] = await Promise.all([
+      this.dataSource.query(
+        `SELECT DATE_TRUNC('day',"createdAt") AS day, COUNT(*) AS new_calls
+         FROM calls WHERE "createdAt">=$1 GROUP BY 1 ORDER BY 1`, [since]),
+      this.dataSource.query(
+        `SELECT DATE_TRUNC('day',"createdAt") AS day, COUNT(DISTINCT "userAddress") AS new_users
+         FROM stakes WHERE "createdAt">=$1 GROUP BY 1 ORDER BY 1`, [since]),
+      this.dataSource.query(
+        `SELECT DATE_TRUNC('day',"createdAt") AS day, COALESCE(SUM(amount),0) AS stake_volume
+         FROM stakes WHERE "createdAt">=$1 GROUP BY 1 ORDER BY 1`, [since]),
+    ]);
+
+    const result = {
+      period,
+      dataPoints: (callTrends as any[]).map((row) => {
+        const d = new Date(row.day).toISOString().split('T')[0];
+        const u = (userTrends as any[]).find((r) => new Date(r.day).toISOString().split('T')[0] === d);
+        const s = (stakeTrends as any[]).find((r) => new Date(r.day).toISOString().split('T')[0] === d);
+        return {
+          date: d,
+          newCalls: parseInt(row.new_calls ?? 0),
+          newUsers: parseInt(u?.new_users ?? 0),
+          stakeVolume: parseFloat(s?.stake_volume ?? 0),
+        };
+      }),
+    };
+
+    this.setCache(key, result, 300);
+    return result;
+  }
+
+  private getCache(key: string): any | null {
+    const e = this.platformCache.get(key);
+    if (e && Date.now() < e.expiresAt) return e.data;
+    this.platformCache.delete(key);
+    return null;
+  }
+
+  private setCache(key: string, data: any, ttlSeconds: number): void {
+    this.platformCache.set(key, { data, expiresAt: Date.now() + ttlSeconds * 1000 });
   }
 }

@@ -18,7 +18,9 @@ export class IpfsPinningService {
     return { jobId: String(job.id) };
   }
 
-  async pinOracleEvidence(evidence: OracleEvidence): Promise<{ jobId: string }> {
+  async pinOracleEvidence(
+    evidence: OracleEvidence,
+  ): Promise<{ jobId: string }> {
     const job = await this.ipfsQueue.add('pin-oracle-evidence', {
       type: 'oracle-evidence',
       evidence,
@@ -26,4 +28,3 @@ export class IpfsPinningService {
     return { jobId: String(job.id) };
   }
 }
-

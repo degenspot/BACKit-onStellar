@@ -5,6 +5,7 @@ import { SorobanRpc, xdr } from '@stellar/stellar-sdk';
 import { EventLog, EventType } from './event-log.entity';
 import { PlatformSettings } from './entities/platform-settings.entity';
 import { retryWithBackoff } from '../utils/retry';
+import { Retryable } from '../common/decorators/retryable.decorator';
 import { ConfigService } from '../config/config.service';
 import { parseAdminParamsChanged } from './parsers/admin-params.parser';
 import { PayoutsService } from '../payouts/payouts.service';
@@ -77,6 +78,7 @@ export class IndexerService {
         await this.dispatchEvent(event);
       }
     } catch (err: any) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       this.logger.error(`Indexer tick failed: ${err.message}`);
     }
   }
@@ -149,6 +151,7 @@ export class IndexerService {
     );
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async handlePayoutClaimed(
     topics: xdr.ScVal[],
     txHash: string,
@@ -165,7 +168,8 @@ export class IndexerService {
 
       const asU64 = (val?: xdr.ScVal): string | null => {
         if (!val) return null;
-        if (val.switch() === xdr.ScValType.scvU64()) return val.u64().toString();
+        if (val.switch() === xdr.ScValType.scvU64())
+          return val.u64().toString();
         return null;
       };
 
@@ -197,8 +201,11 @@ export class IndexerService {
         claimedAmount: String(amount ?? '0'),
         collectedAt: new Date(),
       });
-      this.logger.log(`PayoutClaimed synced: call=${callId} staker=${stakerAddress}`);
+      this.logger.log(
+        `PayoutClaimed synced: call=${callId} staker=${stakerAddress}`,
+      );
     } catch (err: any) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       this.logger.warn(`Failed to parse PayoutClaimed event: ${err.message}`);
     }
   }
@@ -273,6 +280,7 @@ export class IndexerService {
 
   // ─── Get Latest Ledger ────────────────────────────────────────────────────
 
+  @Retryable(3, 1000)
   async getLatestLedger(): Promise<SorobanRpc.Api.GetLatestLedgerResponse> {
     return retryWithBackoff(
       () => this.rpcServer.getLatestLedger(),

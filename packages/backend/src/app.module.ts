@@ -1,8 +1,8 @@
-import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { CacheModule } from '@nestjs/cache-manager';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { EventEmitterModule } from '@nestjs/event-emitter';
-import { ScheduleModule } from '@nestjs/schedule';
 import { CallsModule } from './calls/calls.module';
 import { HealthModule } from './health/health.module';
 import { OracleModule } from './oracle/oracle.module';
@@ -11,40 +11,14 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SearchModule } from './search/search.module';
 import { UsersModule } from './user/users.module';
-import { GatewaysModule } from './gateways/gateways.module';
-import { AuditModule } from './audit/audit.module';
-import { FirewallModule } from './firewall/firewall.module';
-import { FirewallMiddleware } from './firewall/firewall.middleware';
-import { CacheModule } from '@nestjs/cache-manager';
-import { TokensModule } from './token/tokens.module';
-import { RelayModule } from './relay/relay.module';
-import { CommentsModule } from './comments/comments.module';
-import { AdminModule } from './admin/admin.module';
-import { PayoutsModule } from './payouts/payouts.module';
-import { QueuesModule } from './common/queues/queues.module';
-import { StorageModule } from './storage/storage.module';
-import { TreasuryModule } from './treasury/treasury.module';
+import { AuthModule } from './auth/auth.module';
+import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 @Module({
   imports: [
-    CacheModule.registerAsync({
-      isGlobal: true,
-      useFactory: async () => {
-        // Here we could add logic to return Redis store if process.env.REDIS_URL is set.
-        // For now, using in-memory as the primary store for local dev.
-        return {
-          ttl: 30000,
-          max: 100, // Maximum number of items in cache
-        };
-      },
-    }),
-    ConfigModule.forRoot({
-      isGlobal: true,
-      envFilePath: '.env',
-    }),
-    QueuesModule,
-    StorageModule,
-    ScheduleModule.forRoot(),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+    CacheModule.register({ isGlobal: true }),
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DB_HOST || process.env.POSTGRES_HOST || 'localhost',
@@ -60,12 +34,6 @@ import { TreasuryModule } from './treasury/treasury.module';
       autoLoadEntities: true,
       synchronize: process.env.NODE_ENV !== 'production',
     }),
-    // Enables internal event-driven communication between modules.
-    // wildcard: true allows listeners like 'stake.*' to match 'stake.created' etc.
-    EventEmitterModule.forRoot({
-      wildcard: true,
-      delimiter: '.',
-    }),
     CallsModule,
     HealthModule,
     OracleModule,
@@ -74,26 +42,13 @@ import { TreasuryModule } from './treasury/treasury.module';
     NotificationsModule,
     SearchModule,
     UsersModule,
-    TokensModule,
-    PayoutsModule,
-    TreasuryModule,
-    GatewaysModule,
-    AuditModule,
-    FirewallModule,
-    RelayModule,
-    CommentsModule,
-    AdminModule,
+    AuthModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [{ provide: APP_INTERCEPTOR, useClass: LoggingInterceptor }],
 })
 export class AppModule implements NestModule {
-  /**
-   * Apply FirewallMiddleware to all routes.
-   * The /health path is excluded so load-balancer probes are never blocked.
-   * Add more exclusions via .exclude() chaining if needed.
-   */
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(FirewallMiddleware).exclude('/health').forRoutes('*');
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
   }
 }

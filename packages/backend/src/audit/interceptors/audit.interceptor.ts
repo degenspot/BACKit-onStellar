@@ -87,7 +87,7 @@ export class AuditInterceptor implements NestInterceptor {
           actionType,
           targetResource,
           requestPayload,
-          responsePayload: sanitize(responseBody as Record<string, unknown>),
+          responsePayload: sanitize(responseBody),
           httpStatus: res.statusCode,
           status: AuditStatus.SUCCESS,
         });
@@ -109,7 +109,7 @@ export class AuditInterceptor implements NestInterceptor {
           requestPayload,
           responsePayload: {
             error: err.message,
-            detail: sanitize(err.response as Record<string, unknown>),
+            detail: sanitize(err.response),
           },
           httpStatus,
           status: AuditStatus.FAILURE,
@@ -156,7 +156,7 @@ function sanitize(
     if (SENSITIVE_KEYS.has(k.toLowerCase())) {
       result[k] = '[REDACTED]';
     } else if (typeof v === 'object' && v !== null) {
-      result[k] = sanitize(v as Record<string, unknown>, depth + 1);
+      result[k] = sanitize(v, depth + 1);
     } else {
       result[k] = v;
     }

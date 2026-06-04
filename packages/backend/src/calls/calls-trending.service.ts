@@ -31,7 +31,10 @@ export class CallsTrendingService {
   ) {}
 
   computeTrendingScore(inputs: TrendingInputs): TrendingScoreBreakdown {
-    const ageMs = Math.max(0, inputs.now.getTime() - inputs.createdAt.getTime());
+    const ageMs = Math.max(
+      0,
+      inputs.now.getTime() - inputs.createdAt.getTime(),
+    );
     const ageHours = ageMs / (1000 * 60 * 60);
 
     // Recency bonus: higher for calls created within last 6 hours.
@@ -135,4 +138,3 @@ export class CallsTrendingService {
     return { callsProcessed: toSave.length };
   }
 }
-

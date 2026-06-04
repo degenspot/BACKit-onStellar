@@ -1,4 +1,11 @@
-import { IsOptional, IsInt, Min, Max, IsDateString, IsString } from 'class-validator';
+import {
+  IsOptional,
+  IsInt,
+  Min,
+  Max,
+  IsDateString,
+  IsString,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class TreasuryHistoryQueryDto {
@@ -27,4 +34,3 @@ export class TreasuryHistoryQueryDto {
   @IsString()
   tokenAddress?: string;
 }
-

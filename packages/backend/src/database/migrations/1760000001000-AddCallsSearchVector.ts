@@ -56,7 +56,9 @@ export class AddCallsSearchVector1760000001000 implements MigrationInterface {
     await queryRunner.query(`
       DROP TRIGGER IF EXISTS trg_calls_search_vector_update ON "calls"
     `);
-    await queryRunner.query(`DROP FUNCTION IF EXISTS calls_search_vector_update`);
+    await queryRunner.query(
+      `DROP FUNCTION IF EXISTS calls_search_vector_update`,
+    );
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_calls_search_vector"`);
     await queryRunner.query(`
       ALTER TABLE "calls"

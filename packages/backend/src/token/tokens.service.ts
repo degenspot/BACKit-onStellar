@@ -1,7 +1,13 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { TokensRepository } from './tokens.repository';
 import { Token } from './entities/token.entity';
+import { WhitelistTokenDto } from './dto/whitelist-token.dto';
 import { firstValueFrom } from 'rxjs';
 
 // Whitelist of trusted tokens — extend as needed
@@ -27,6 +33,12 @@ export const WHITELISTED_TOKENS: Partial<Token>[] = [
       'https://stellar.expert/img/assets/yXLM-GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55.svg',
   },
 ];
+
+const HORIZON_URL =
+  process.env.HORIZON_URL ||
+  (process.env.NETWORK_PASSPHRASE?.includes('Test')
+    ? 'https://horizon-testnet.stellar.org'
+    : 'https://horizon.stellar.org');
 
 @Injectable()
 export class TokensService {
@@ -167,8 +179,120 @@ export class TokensService {
     }
   }
 
-  async getAll(): Promise<Token[]> {
+  async getAll(whitelistedOnly = false): Promise<Token[]> {
+    if (whitelistedOnly) {
+      return this.tokensRepository.findWhitelisted();
+    }
     return this.tokensRepository.findAllActive();
+  }
+
+  async whitelistToken(
+    dto: WhitelistTokenDto,
+    adminAddress: string,
+  ): Promise<Token> {
+    const assetCode = dto.assetCode.toUpperCase();
+    const assetIssuer = dto.assetIssuer?.trim() || null;
+
+    const existing = await this.tokensRepository.findByAsset(
+      assetCode,
+      assetIssuer,
+    );
+
+    if (existing && existing.isWhitelisted) {
+      throw new BadRequestException(
+        `Token ${assetCode}${assetIssuer ? `:${assetIssuer}` : ''} is already whitelisted`,
+      );
+    }
+
+    if (assetIssuer) {
+      await this.validateAssetOnHorizon(assetCode, assetIssuer);
+    }
+
+    const homeDomain = assetIssuer
+      ? await this.fetchHomeDomain(assetIssuer)
+      : null;
+
+    const decimals = dto.decimals ?? 7;
+
+    if (homeDomain) {
+      this.logger.log(`Token issuer home domain: ${homeDomain}`);
+    }
+
+    if (existing) {
+      existing.isWhitelisted = true;
+      existing.addedBy = adminAddress;
+      existing.addedAt = new Date();
+      existing.decimals = decimals;
+      if (dto.logoUrl) existing.logoUrl = dto.logoUrl;
+      existing.isActive = true;
+      return this.tokensRepository.save(existing);
+    }
+
+    const token = this.tokensRepository.create({
+      assetCode,
+      assetIssuer,
+      decimals,
+      logoUrl: dto.logoUrl ?? null,
+      isActive: true,
+      isWhitelisted: true,
+      addedBy: adminAddress,
+      addedAt: new Date(),
+    });
+
+    return this.tokensRepository.save(token);
+  }
+
+  async removeWhitelistedToken(id: string): Promise<void> {
+    const token = await this.tokensRepository.findById(id);
+    if (!token) {
+      throw new NotFoundException(`Token with id ${id} not found`);
+    }
+    if (!token.isWhitelisted) {
+      throw new BadRequestException(`Token ${id} is not whitelisted`);
+    }
+    token.isWhitelisted = false;
+    await this.tokensRepository.save(token);
+  }
+
+  private async validateAssetOnHorizon(
+    code: string,
+    issuer: string,
+  ): Promise<void> {
+    const url = `${HORIZON_URL}/assets?asset_code=${encodeURIComponent(code)}&asset_issuer=${encodeURIComponent(issuer)}&limit=1`;
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(url, { timeout: 10000 }),
+      );
+
+      const records: any[] = response.data?._embedded?.records ?? [];
+      if (records.length === 0) {
+        throw new BadRequestException(
+          `Asset ${code}:${issuer} does not exist on the Stellar network`,
+        );
+      }
+    } catch (error: any) {
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException(
+        `Failed to validate asset on Stellar network: ${error?.message ?? 'unknown error'}`,
+      );
+    }
+  }
+
+  private async fetchHomeDomain(issuer: string): Promise<string | null> {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(
+          `${HORIZON_URL}/accounts/${encodeURIComponent(issuer)}`,
+          {
+            timeout: 10000,
+          },
+        ),
+      );
+      return response.data?.home_domain ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -185,7 +309,6 @@ export class TokensService {
       );
 
       if (existing) {
-        // Only update mutable fields — preserves any manual overrides
         await this.tokensRepository.save({
           ...existing,
           logoUrl: tokenData.logoUrl ?? existing.logoUrl,

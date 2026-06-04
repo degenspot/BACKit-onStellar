@@ -155,9 +155,8 @@ describe('IndexerService', () => {
   });
 
   it('handles AdminParamsChanged by applying config and saving event log', async () => {
-    const { parseAdminParamsChanged } = await import(
-      './parsers/admin-params.parser'
-    );
+    const { parseAdminParamsChanged } =
+      await import('./parsers/admin-params.parser');
     (parseAdminParamsChanged as any).mockReturnValueOnce({
       feePercent: 3,
     });
@@ -286,7 +285,9 @@ describe('IndexerService', () => {
 
   it('getEventsByType proxies to repository find', async () => {
     eventLogRepo.find.mockResolvedValueOnce([{ id: 1 }]);
-    await expect(service.getEventsByType('X' as any)).resolves.toEqual([{ id: 1 }]);
+    await expect(service.getEventsByType('X' as any)).resolves.toEqual([
+      { id: 1 },
+    ]);
     expect(eventLogRepo.find).toHaveBeenCalled();
   });
 

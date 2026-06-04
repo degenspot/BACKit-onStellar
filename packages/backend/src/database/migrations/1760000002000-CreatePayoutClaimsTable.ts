@@ -47,7 +47,10 @@ export class CreatePayoutClaimsTable1760000002000 implements MigrationInterface 
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.dropIndex('payout_claims', 'IDX_payout_claims_call_staker_unique');
+    await queryRunner.dropIndex(
+      'payout_claims',
+      'IDX_payout_claims_call_staker_unique',
+    );
     await queryRunner.dropTable('payout_claims', true);
   }
 }

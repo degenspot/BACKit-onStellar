@@ -9,7 +9,11 @@ import { QueuesModule } from '../../common/queues/queues.module';
 import { NotificationsQueueProcessor } from './notifications.queue.processor';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([NotificationEntity]), HttpModule, QueuesModule],
+  imports: [
+    TypeOrmModule.forFeature([NotificationEntity]),
+    HttpModule,
+    QueuesModule,
+  ],
   providers: [
     ExternalDispatcherService,
     EmailSenderService,

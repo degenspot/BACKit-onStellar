@@ -40,4 +40,3 @@ describe('TreasuryService', () => {
     expect(repo.save).toHaveBeenCalled();
   });
 });
-

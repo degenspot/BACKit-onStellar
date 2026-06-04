@@ -30,7 +30,9 @@ export class CommentsService {
     await this.callsService.getCallOrThrow(callId);
 
     // 2. Enforce total comment limits (max 100 comments per call)
-    const totalCount = await this.commentRepository.count({ where: { callId } });
+    const totalCount = await this.commentRepository.count({
+      where: { callId },
+    });
     if (totalCount >= 100) {
       throw new BadRequestException('Max 100 comments reached for this call');
     }

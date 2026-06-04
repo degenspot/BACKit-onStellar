@@ -23,6 +23,20 @@ jobs:
     name: Backend Lint, Build & Test
     runs-on: ubuntu-latest
 
+    env:
+      DB_PASSWORD: password
+      DB_USERNAME: postgres
+      DB_NAME: backit_test
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      POSTGRES_PASSWORD: password
+      POSTGRES_USER: postgres
+      POSTGRES_DB: backit_test
+      REDIS_URL: redis://localhost:6379
+      DATABASE_URL: postgresql://postgres:password@localhost:5432/backit_test
+      NODE_ENV: test
+      PORT: '3000'
+
     services:
       postgres:
         image: postgres:15
@@ -51,6 +65,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -85,7 +101,12 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -euo pipefail
-          CHANGED_FILES="$(git diff --name-only "$BASE_SHA" "${{ github.sha }}" || true)"
+          CHANGED_FILES="$(git diff --name-only "$BASE_SHA" "${{ github.sha }}" 2>/dev/null || true)"
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "Base commit unavailable or no diff found. Running backend checks by default."
+            echo "backend_relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           echo "$CHANGED_FILES"
           if echo "$CHANGED_FILES" | grep -Eq '^(packages/backend/|pnpm-lock.yaml$|package.json$|turbo.json$)'; then
             echo "backend_relevant=true" >> "$GITHUB_OUTPUT"
@@ -108,18 +129,41 @@ jobs:
           fi
           echo "Linting changed backend files:"
           echo "$CHANGED_BACKEND_TS_FILES"
-          pnpm --filter backend exec eslint --fix $CHANGED_BACKEND_TS_FILES
+          # When running eslint from the backend package, file paths must be relative to that package.
+          # Strip the leading packages/backend/ prefix so eslint sees the correct paths.
+          REL_FILES=$(echo "$CHANGED_BACKEND_TS_FILES" | sed -E 's#(^|\n)packages/backend/##g' | tr '\n' ' ')
+          echo "Relative files to lint: $REL_FILES"
+          pnpm --filter backend exec eslint --fix $REL_FILES
 
       - name: Build Backend
         if: steps.backend_changes.outputs.backend_relevant == 'true'
         run: pnpm --filter backend build
 
+      - name: Run Backend Startup Smoke Test
+        if: steps.backend_changes.outputs.backend_relevant == 'true'
+        run: |
+          set -euo pipefail
+          pnpm --filter backend exec node dist/main.js &
+          backend_pid=$!
+          trap "kill $backend_pid" EXIT
+          for i in $(seq 1 12); do
+            if curl --silent --fail http://localhost:3000/health; then
+              echo "Backend is up"
+              break
+            fi
+            sleep 2
+          done
+          if ! curl --silent --fail http://localhost:3000/health; then
+            echo "Backend startup smoke test failed"
+            exit 1
+          fi
+
+      - name: Run Backend E2E Tests
+        if: steps.backend_changes.outputs.backend_relevant == 'true'
+        run: pnpm --filter backend test:e2e
+
       - name: Run Backend Tests with Coverage
         if: steps.backend_changes.outputs.backend_relevant == 'true'
-        env:
-          DATABASE_URL: postgresql://postgres:password@localhost:5432/backit_test
-          REDIS_URL: redis://localhost:6379
-          NODE_ENV: test
         run: pnpm --filter backend test:cov
 
       - name: Upload Test Coverage Artifacts

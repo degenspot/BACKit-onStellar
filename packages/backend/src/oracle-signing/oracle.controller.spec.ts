@@ -2,10 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { OracleController } from './oracle.controller';
 import { OracleSigningService } from './oracle-signing.service';
 import { SignPriceDto } from './sign-price.dto';
-import {
-  SignedPriceData,
-  OraclePublicKeyResponse,
-} from './oracle.interfaces';
+import { SignedPriceData, OraclePublicKeyResponse } from './oracle.interfaces';
 import { getQueueToken } from '@nestjs/bullmq';
 import { QUEUE_ORACLE_SIGNING } from '../common/queues/queues.constants';
 

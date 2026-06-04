@@ -82,7 +82,7 @@ export class TurnstileGuard implements CanActivate {
 
     const ip = extractClientIp({
       ip: req.ip,
-      headers: req.headers as Record<string, string | string[] | undefined>,
+      headers: req.headers,
       socket: req.socket,
     });
 

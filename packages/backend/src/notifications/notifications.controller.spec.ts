@@ -14,6 +14,7 @@ const mockNotification: NotificationEntity = {
   readStatus: false,
   isDispatched: true,
   dispatchType: DispatchType.NONE,
+  inApp: true,
   createdAt: new Date('2026-01-01T00:00:00Z'),
 };
 

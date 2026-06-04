@@ -15,23 +15,22 @@ const mockRepo = {
 const makeLog = (
   offset: number,
   overrides: Partial<OracleHealthLog> = {},
-): OracleHealthLog =>
-  ({
-    id: `log-${offset}`,
-    oracleKey: 'oracle-key',
-    callId: 'call-1',
-    operation: OracleOperationType.FETCH,
-    submissionTime: new Date(Date.UTC(2026, 0, 1, 0, 0, offset)),
-    priceFetched: 1,
-    success: true,
-    errorMessage: null,
-    latencyMs: 100,
-    expectedPrice: null,
-    deviationPercent: null,
-    deviationBreached: false,
-    createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, offset)),
-    ...overrides,
-  }) as OracleHealthLog;
+): OracleHealthLog => ({
+  id: `log-${offset}`,
+  oracleKey: 'oracle-key',
+  callId: 'call-1',
+  operation: OracleOperationType.FETCH,
+  submissionTime: new Date(Date.UTC(2026, 0, 1, 0, 0, offset)),
+  priceFetched: 1,
+  success: true,
+  errorMessage: null,
+  latencyMs: 100,
+  expectedPrice: null,
+  deviationPercent: null,
+  deviationBreached: false,
+  createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, offset)),
+  ...overrides,
+});
 
 describe('OracleHealthService', () => {
   let service: OracleHealthService;

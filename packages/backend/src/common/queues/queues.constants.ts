@@ -8,4 +8,3 @@ export type QueueName =
   | typeof QUEUE_NOTIFICATIONS
   | typeof QUEUE_ORACLE_SIGNING
   | typeof QUEUE_DEAD_LETTER;
-

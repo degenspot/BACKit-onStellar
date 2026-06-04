@@ -24,6 +24,7 @@ import { OracleCall, OracleCallStatus } from './entities/oracle-call.entity';
 import { OracleOutcome } from './entities/oracle-outcome.entity';
 import { OracleHealthService } from './oracle-health.service';
 import { SigningService } from './signing.service';
+import { IpfsService } from '../storage/ipfs.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 describe('OracleService', () => {
@@ -63,6 +64,7 @@ describe('OracleService', () => {
         },
         { provide: OracleHealthService, useValue: oracleHealth },
         { provide: SigningService, useValue: signingService },
+        { provide: IpfsService, useValue: { pinEvidencePayload: jest.fn().mockResolvedValue('cid123') } },
       ],
     }).compile();
 
@@ -102,12 +104,10 @@ describe('OracleService', () => {
     rpcServer.simulateTransaction.mockResolvedValue({
       error: 'boom',
     });
-    const promise = service
-      .fetchOraclePrice('CID', 'BTC')
-      .then(
-        () => null,
-        (err) => err as Error,
-      );
+    const promise = service.fetchOraclePrice('CID', 'BTC').then(
+      () => null,
+      (err) => err as Error,
+    );
     await jest.advanceTimersByTimeAsync(7_000);
     const err = await promise;
     expect(err).toBeInstanceOf(Error);
@@ -127,12 +127,10 @@ describe('OracleService', () => {
     rpcServer.simulateTransaction.mockResolvedValueOnce({
       result: null,
     });
-    const promise = service
-      .fetchOraclePrice('CID', 'BTC')
-      .then(
-        () => null,
-        (err) => err as Error,
-      );
+    const promise = service.fetchOraclePrice('CID', 'BTC').then(
+      () => null,
+      (err) => err as Error,
+    );
     await jest.advanceTimersByTimeAsync(7_000);
     const err = await promise;
     expect(err).toBeInstanceOf(Error);
@@ -180,6 +178,31 @@ describe('OracleService', () => {
         operation: expect.any(String),
         success: true,
       }),
+    );
+  });
+
+  it('resolveMarket stores outcome even when IPFS pinning fails', async () => {
+    const call: Partial<OracleCall> = {
+      id: 2,
+      pairAddress: 'PAIR2',
+      strikePrice: 100,
+      status: OracleCallStatus.OPEN,
+      reportCount: 0,
+      isHidden: false,
+    };
+    oracleCallRepo.findOne.mockResolvedValue(call);
+
+    // Make IPFS pinning throw — resolution should still succeed
+    const ipfsMock = { pinEvidencePayload: jest.fn().mockRejectedValue(new Error('IPFS down')) };
+    (service as any).ipfsService = ipfsMock;
+
+    await service.resolveMarket(2, '90');
+
+    expect(oracleOutcomeRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'NO', signature: 'sig' }),
+    );
+    expect(oracleCallRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ status: OracleCallStatus.RESOLVED_NO }),
     );
   });
 
@@ -277,7 +300,9 @@ describe('OracleService', () => {
 
   it('getPendingCalls filters on processedAt/failedAt null', async () => {
     oracleCallRepo.find.mockResolvedValueOnce([{ id: 1 } as any]);
-    await expect(service.getPendingCalls()).resolves.toEqual([{ id: 1 } as any]);
+    await expect(service.getPendingCalls()).resolves.toEqual([
+      { id: 1 } as any,
+    ]);
     expect(oracleCallRepo.find).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.any(Object) }),
     );
@@ -285,7 +310,9 @@ describe('OracleService', () => {
 
   it('getOutcomesForCall includes relations', async () => {
     oracleOutcomeRepo.find.mockResolvedValueOnce([{ id: 9 } as any]);
-    await expect(service.getOutcomesForCall(1)).resolves.toEqual([{ id: 9 } as any]);
+    await expect(service.getOutcomesForCall(1)).resolves.toEqual([
+      { id: 9 } as any,
+    ]);
     expect(oracleOutcomeRepo.find).toHaveBeenCalledWith(
       expect.objectContaining({ relations: ['call'] }),
     );
@@ -297,7 +324,9 @@ describe('OracleService', () => {
       .mockResolvedValueOnce(1n)
       .mockResolvedValueOnce(2n);
 
-    await expect(service.fetchAllPrices('CID', ['BTC', 'ETH'])).resolves.toEqual({
+    await expect(
+      service.fetchAllPrices('CID', ['BTC', 'ETH']),
+    ).resolves.toEqual({
       BTC: 1n,
       ETH: 2n,
     });
@@ -306,9 +335,11 @@ describe('OracleService', () => {
 
   it('simulateContractRead proxies through retry wrapper', async () => {
     rpcServer.simulateTransaction.mockResolvedValueOnce({ ok: true });
-    await expect(service.simulateContractRead({} as any, 'x')).resolves.toEqual({
-      ok: true,
-    });
+    await expect(service.simulateContractRead({} as any, 'x')).resolves.toEqual(
+      {
+        ok: true,
+      },
+    );
     expect(rpcServer.simulateTransaction).toHaveBeenCalled();
   });
 

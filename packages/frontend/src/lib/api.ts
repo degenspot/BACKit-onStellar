@@ -7,6 +7,54 @@ export async function searchTokens(query: string) {
   return res.json();
 }
 
+// ── Global search ──────────────────────────────────────────────────────────
+
+export interface SearchResultMarket {
+  type: "market";
+  id: string;
+  title: string;
+  token: string;
+  outcome?: string;
+  totalStake: number;
+}
+
+export interface SearchResultUser {
+  type: "user";
+  address: string;
+  displayName?: string;
+  winRate: number;
+  totalCalls: number;
+}
+
+export interface SearchResultToken {
+  type: "token";
+  symbol: string;
+  name: string;
+  address: string;
+  price?: number;
+}
+
+export interface SearchResponse {
+  markets: SearchResultMarket[];
+  users: SearchResultUser[];
+  tokens: SearchResultToken[];
+}
+
+/**
+ * Query the unified search endpoint.
+ * GET /search?q=<query>
+ */
+export async function fetchSearch(query: string): Promise<SearchResponse> {
+  if (!query.trim()) {
+    return { markets: [], users: [], tokens: [] };
+  }
+  const res = await fetch(
+    `${BACKEND_URL}/search?q=${encodeURIComponent(query.trim())}`
+  );
+  if (!res.ok) throw new Error("Search request failed");
+  return res.json() as Promise<SearchResponse>;
+}
+
 export async function fetchFeed(
   type: "for-you" | "following",
   cursor?: string,

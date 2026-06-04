@@ -13,4 +13,3 @@ export class AdminQueuesController {
     return this.statusService.getStatus();
   }
 }
-

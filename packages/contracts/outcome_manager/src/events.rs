@@ -84,6 +84,14 @@ pub fn emit_contract_upgraded(
     );
 }
 
+/// Emitted when an admin updates a contract configuration parameter
+pub fn emit_admin_params_changed(env: &Env, new_max_submission_delay: u64) {
+    env.events().publish(
+        ("admin", "params_changed"),
+        new_max_submission_delay,
+    );
+}
+
 /// Emitted when an oracle submits a price observation for TWAP
 pub fn emit_price_observation_submitted(
     env: &Env,

@@ -6,9 +6,9 @@ use backit_shared::is_valid_fee_bps;
 use crate::errors::CallRegistryError;
 use crate::events::{
     emit_admin_params_changed_address, emit_admin_params_changed_i128,
-    emit_admin_params_changed_u32, emit_contract_paused, emit_contract_unpaused,
-    emit_token_delisted, emit_token_whitelisted, PARAM_ADMIN, PARAM_FEE_BPS,
-    PARAM_MAX_STAKE_PER_USER, PARAM_OUTCOME_MANAGER,
+    emit_admin_params_changed_u32, emit_admin_params_changed_u64, emit_contract_paused,
+    emit_contract_unpaused, emit_token_delisted, emit_token_whitelisted, PARAM_ADMIN,
+    PARAM_FEE_BPS, PARAM_MAX_STAKE_PER_USER, PARAM_OUTCOME_MANAGER, PARAM_STAKING_CUTOFF,
 };
 use crate::storage::{extend_storage_ttl, get_config, set_config};
 
@@ -173,4 +173,30 @@ pub fn unpause(env: Env) {
     set_config(&env, &config);
     extend_storage_ttl(&env);
     emit_contract_unpaused(&env, &config.admin);
+}
+
+/// Set the staking cutoff window in seconds before `end_ts`.
+///
+/// Staking is rejected when `current_timestamp >= call.end_ts - staking_cutoff_secs`.
+/// Pass `0` to disable the cutoff (allow staking right up to `end_ts`).
+///
+/// # Authorization
+/// Current admin must sign.
+///
+/// # Panics
+/// * Contract not initialized.
+pub fn set_staking_cutoff(env: Env, new_cutoff: u64) {
+    let mut config = get_config(&env).expect("not initialized");
+    config.admin.require_auth();
+    let old_cutoff = config.staking_cutoff_secs;
+    config.staking_cutoff_secs = new_cutoff;
+    set_config(&env, &config);
+    extend_storage_ttl(&env);
+    emit_admin_params_changed_u64(
+        &env,
+        PARAM_STAKING_CUTOFF,
+        &config.admin,
+        old_cutoff,
+        new_cutoff,
+    );
 }

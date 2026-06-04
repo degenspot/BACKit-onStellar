@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, Repository, IsNull } from 'typeorm'; // add IsNull
+import { DataSource, Repository, IsNull } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { Token } from './entities/token.entity';
 
@@ -16,6 +16,17 @@ export class TokensRepository extends Repository<Token> {
     });
   }
 
+  findWhitelisted(): Promise<Token[]> {
+    return this.find({
+      where: { isWhitelisted: true, isActive: true },
+      order: { assetCode: 'ASC' },
+    });
+  }
+
+  findById(id: string): Promise<Token | null> {
+    return this.findOne({ where: { id } });
+  }
+
   findByAsset(
     assetCode: string,
     assetIssuer: string | null,
@@ -23,7 +34,6 @@ export class TokensRepository extends Repository<Token> {
     return this.findOne({
       where: {
         assetCode,
-        // ✅ TypeORM requires IsNull() operator — plain null is not accepted in FindOptionsWhere
         assetIssuer: assetIssuer ?? IsNull(),
       },
     });

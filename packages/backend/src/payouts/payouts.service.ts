@@ -17,7 +17,9 @@ export class PayoutsService {
     });
   }
 
-  async listCallPayouts(callId: string): Promise<Array<PayoutClaim & { isOverdue: boolean }>> {
+  async listCallPayouts(
+    callId: string,
+  ): Promise<Array<PayoutClaim & { isOverdue: boolean }>> {
     const claims = await this.payoutClaimsRepository.find({
       where: { callId },
       order: { createdAt: 'DESC' },
@@ -80,7 +82,10 @@ export class PayoutsService {
     return this.payoutClaimsRepository.save(claim);
   }
 
-  async markFailed(callId: string, stakerAddress: string): Promise<PayoutClaim> {
+  async markFailed(
+    callId: string,
+    stakerAddress: string,
+  ): Promise<PayoutClaim> {
     const existing = await this.payoutClaimsRepository.findOne({
       where: { callId, stakerAddress },
     });

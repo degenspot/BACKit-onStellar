@@ -1,27 +1,28 @@
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
-import { Observable } from 'rxjs';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { AuthService } from '../auth.service';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  canActivate(
-    context: ExecutionContext,
-  ): boolean | Promise<boolean> | Observable<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers.authorization;
+  constructor(private readonly authService: AuthService) {}
 
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const address = authHeader.substring(7);
-      request.user = {
-        address,
-        isAdmin: address === 'GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ',
-      };
-    } else {
-      // Default mock user for dev / standard requests
-      request.user = {
-        address: 'GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ',
-        isAdmin: true,
-      };
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest();
+    const authHeader = request.headers['authorization'] as string | undefined;
+
+    if (!authHeader?.startsWith('Bearer ')) {
+      throw new UnauthorizedException(
+        'Missing or malformed Authorization header',
+      );
     }
+
+    const token = authHeader.slice(7);
+    const payload = this.authService.validateToken(token);
+    request.user = { address: payload.sub };
     return true;
   }
 }
