@@ -8,7 +8,7 @@ use crate::storage::{
     set_user_vote_on_proposal, user_has_voted,
 };
 use crate::types::{GovernanceProposal, ProposalStatus, ProposalVotes};
-use soroban_sdk::{Address, Env, Symbol, Val, Vec};
+use soroban_sdk::{Address, Env, Symbol, Vec};
 
 /// Minimum voting period in ledgers (~1 hour at 5 s/ledger = 720 ledgers).
 pub const MIN_VOTING_PERIOD: u32 = 720;
@@ -27,7 +27,7 @@ pub fn propose_change(
     env: &Env,
     proposer: Address,
     parameter: Symbol,
-    new_value: Val,
+    new_value: i128,
     voting_end_ledger: u32,
 ) -> Result<u64, CallRegistryError> {
     proposer.require_auth();
@@ -53,7 +53,7 @@ pub fn propose_change(
         id: proposal_id,
         proposer: proposer.clone(),
         parameter: parameter.clone(),
-        new_value: new_value.clone(),
+        new_value,
         voting_end_ledger,
         status: ProposalStatus::Active,
         yes_votes: 0,
@@ -179,7 +179,7 @@ pub fn execute_proposal(env: &Env, proposal_id: u64) -> Result<(), CallRegistryE
         return Err(CallRegistryError::QuorumNotMet);
     }
 
-    apply_parameter(env, &mut config, &proposal.parameter, &proposal.new_value);
+    apply_parameter(env, &mut config, &proposal.parameter, proposal.new_value);
     crate::storage::set_config(env, &config);
 
     proposal.status = ProposalStatus::Executed;
@@ -196,32 +196,22 @@ fn apply_parameter(
     env: &Env,
     config: &mut crate::types::ContractConfig,
     parameter: &Symbol,
-    new_value: &Val,
+    new_value: i128,
 ) {
-    use soroban_sdk::TryFromVal;
-
-    macro_rules! try_apply {
-        ($field:expr, $ty:ty) => {
-            if let Ok(v) = <$ty>::try_from_val(env, new_value) {
-                $field = v;
-            }
-        };
-    }
-
     if *parameter == Symbol::new(env, "fee_bps") {
-        try_apply!(config.fee_bps, u32);
+        config.fee_bps = new_value as u32;
     } else if *parameter == Symbol::new(env, "min_stake") {
-        try_apply!(config.min_stake, i128);
+        config.min_stake = new_value;
     } else if *parameter == Symbol::new(env, "staking_cutoff") {
-        try_apply!(config.staking_cutoff_secs, u64);
+        config.staking_cutoff_secs = new_value as u64;
     } else if *parameter == Symbol::new(env, "proposal_threshold") {
-        try_apply!(config.proposal_threshold, i128);
+        config.proposal_threshold = new_value;
     } else if *parameter == Symbol::new(env, "gov_quorum_bps") {
-        try_apply!(config.governance_quorum_bps, u32);
+        config.governance_quorum_bps = new_value as u32;
     } else if *parameter == Symbol::new(env, "voting_period") {
-        try_apply!(config.voting_period_ledgers, u32);
+        config.voting_period_ledgers = new_value as u32;
     } else if *parameter == Symbol::new(env, "max_stake") {
-        try_apply!(config.max_stake_per_user, i128);
+        config.max_stake_per_user = new_value;
     }
 }
 
