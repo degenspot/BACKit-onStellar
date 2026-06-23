@@ -1,4 +1,4 @@
-import {
+﻿import {
   Controller,
   Post,
   Get,
@@ -8,11 +8,13 @@ import {
   HttpStatus,
   ValidationPipe,
   UsePipes,
+  UseInterceptors,
   Query,
   DefaultValuePipe,
   ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { UsersService } from './users.service';
 import { FollowDto } from './dto/follow.dto';
 
@@ -20,8 +22,6 @@ import { FollowDto } from './dto/follow.dto';
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
-
-  // ─── existing endpoints — unchanged ──────────────────────────────────────
 
   @Post(':address/follow')
   @HttpCode(HttpStatus.OK)
@@ -43,10 +43,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Unfollow a user' })
   @ApiParam({ name: 'address', description: 'Address of the user to unfollow' })
   @ApiResponse({ status: 200, description: 'User unfollowed successfully.' })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid request or not following.',
-  })
+  @ApiResponse({ status: 400, description: 'Invalid request or not following.' })
   @UsePipes(new ValidationPipe({ whitelist: true }))
   async unfollow(
     @Param('address') address: string,
@@ -58,10 +55,7 @@ export class UsersController {
   @Get(':address/followers')
   @ApiOperation({ summary: 'Get followers list' })
   @ApiParam({ name: 'address', description: 'User address' })
-  @ApiResponse({
-    status: 200,
-    description: 'Successfully retrieved followers.',
-  })
+  @ApiResponse({ status: 200, description: 'Successfully retrieved followers.' })
   async getFollowers(
     @Param('address') address: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
@@ -73,10 +67,7 @@ export class UsersController {
   @Get(':address/following')
   @ApiOperation({ summary: 'Get following list' })
   @ApiParam({ name: 'address', description: 'User address' })
-  @ApiResponse({
-    status: 200,
-    description: 'Successfully retrieved following list.',
-  })
+  @ApiResponse({ status: 200, description: 'Successfully retrieved following list.' })
   async getFollowing(
     @Param('address') address: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
@@ -85,18 +76,15 @@ export class UsersController {
     return this.usersService.getFollowing(address, page, limit);
   }
 
-  // ─── NEW: profile with badges ─────────────────────────────────────────────
-
   @Get(':address')
-@UseInterceptors(CacheInterceptor)
-@CacheKey('user_profile_cache')
-@CacheTTL(300000)
+  @UseInterceptors(CacheInterceptor)
+  @CacheKey('user_profile_cache')
+  @CacheTTL(300000)
   @ApiOperation({ summary: 'Get user profile with badges' })
   @ApiParam({ name: 'address', description: 'Stellar wallet address' })
   @ApiResponse({
     status: 200,
-    description:
-      'User profile including assigned badges and predictor reliability.',
+    description: 'User profile including assigned badges and predictor reliability.',
     schema: {
       example: {
         id: 'uuid',

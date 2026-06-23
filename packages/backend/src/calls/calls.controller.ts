@@ -1,4 +1,4 @@
-import {
+﻿import {
   Controller,
   Post,
   Get,
@@ -6,6 +6,7 @@ import {
   Body,
   Query,
   UseGuards,
+  UseInterceptors,
   Request,
   ParseUUIDPipe,
   HttpCode,
@@ -18,6 +19,7 @@ import {
   ApiParam,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { CallsService } from './calls.service';
 import { ReportCallDto } from './dto/report-call.dto';
 import { QueryCallsDto } from './dto/query-calls.dto';
@@ -30,9 +32,9 @@ export class CallsController {
   constructor(private readonly callsService: CallsService) {}
 
   @Get('feed')
-@UseInterceptors(CacheInterceptor)
-@CacheKey('feed_cache')
-@CacheTTL(30000)
+  @UseInterceptors(CacheInterceptor)
+  @CacheKey('feed_cache')
+  @CacheTTL(30000)
   @ApiOperation({ summary: 'Get paginated feed of visible calls' })
   @ApiResponse({ status: 200, description: 'Feed returned successfully' })
   getFeed(@Query() query: QueryCallsDto) {

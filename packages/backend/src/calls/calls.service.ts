@@ -1,10 +1,13 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   ConflictException,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { CallsRepository } from './calls.repository';
 import { CallReport } from './entities/call-report.entity';
 import { ReportCallDto } from './dto/report-call.dto';
@@ -20,6 +23,7 @@ export class CallsService {
     @InjectRepository(CallReport)
     private readonly callReportRepository: Repository<CallReport>,
     private readonly ipfsService: IpfsService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
   async getFeed(query: QueryCallsDto) {
@@ -46,6 +50,10 @@ export class CallsService {
       limit,
     );
     return { data, total, page, limit };
+  }
+
+  async invalidateFeedCache(): Promise<void> {
+    await this.cacheManager.del('feed_cache');
   }
 
   async prepareCall(
@@ -84,6 +92,7 @@ export class CallsService {
       }
     }
 
+    await this.invalidateFeedCache();
     const ipfsUrl = this.ipfsService.getGatewayUrl(cid!);
     return { cid: cid!, ipfsUrl };
   }
@@ -118,6 +127,7 @@ export class CallsService {
     }
 
     await this.callsRepository.save(call);
+    await this.invalidateFeedCache();
 
     return {
       message: 'Report submitted successfully',

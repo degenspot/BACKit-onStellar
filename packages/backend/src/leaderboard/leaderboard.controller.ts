@@ -1,20 +1,18 @@
-import { UseInterceptors } from '@nestjs/common';
-import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
-import {
+﻿import {
   Controller,
   Get,
   Query,
   Param,
-  UseGuards,
   ParseUUIDPipe,
   HttpStatus,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
 } from '@nestjs/swagger';
+import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { LeaderboardService } from './leaderboard.service';
 import {
   LeaderboardQueryDto,
@@ -28,9 +26,9 @@ export class LeaderboardController {
   constructor(private readonly leaderboardService: LeaderboardService) {}
 
   @Get()
-@UseInterceptors(CacheInterceptor)
-@CacheKey('leaderboard_cache')
-@CacheTTL(120000)
+  @UseInterceptors(CacheInterceptor)
+  @CacheKey('leaderboard_cache')
+  @CacheTTL(120000)
   @ApiOperation({
     summary: 'Get leaderboard',
     description:

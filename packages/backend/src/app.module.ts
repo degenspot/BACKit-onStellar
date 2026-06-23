@@ -3,7 +3,6 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import * as redisStore from 'cache-manager-redis-store';
 import { CallsModule } from './calls/calls.module';
 import { HealthModule } from './health/health.module';
 import { OracleModule } from './oracle/oracle.module';
@@ -16,13 +15,25 @@ import { AuthModule } from './auth/auth.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
+function buildCacheConfig() {
+  if (process.env.REDIS_URL) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const redisStore = require('cache-manager-redis-store');
+      return { store: redisStore, url: process.env.REDIS_URL };
+    } catch {
+      // fall through to in-memory
+    }
+  }
+  return {};
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
     CacheModule.register({
       isGlobal: true,
-      store: process.env.REDIS_URL ? redisStore : undefined,
-      url: process.env.REDIS_URL,
+      ...buildCacheConfig(),
     }),
     TypeOrmModule.forRoot({
       type: 'postgres',
