@@ -78,6 +78,9 @@ mod errors;
 mod events;
 #[cfg(test)]
 mod fuzz_tests;
+mod governance;
+#[cfg(test)]
+mod governance_tests;
 mod sep10;
 mod shares;
 mod storage;
@@ -160,6 +163,9 @@ impl CallRegistry {
             paused: false,
             staking_cutoff_secs: 300,
             share_wasm_hash: None,
+            proposal_threshold: 0,
+            governance_quorum_bps: 500,
+            voting_period_ledgers: 120_960,
         };
 
         set_config(&env, &config);
@@ -1358,4 +1364,52 @@ impl CallRegistry {
     pub fn get_sep10_home_domain(env: Env, user: Address) -> Option<Bytes> {
         get_sep10_domain(&env, &user)
     }
+    // ---- On-chain governance ------------------------------------------------
+
+    /// Create a governance proposal to change a contract parameter.
+    pub fn propose_change(
+        env: Env,
+        proposer: Address,
+        parameter: Symbol,
+        new_value: soroban_sdk::Val,
+        voting_end_ledger: u32,
+    ) -> Result<u64, CallRegistryError> {
+        governance::propose_change(&env, proposer, parameter, new_value, voting_end_ledger)
+    }
+
+    /// Cast a weighted vote on a governance proposal.
+    pub fn vote(
+        env: Env,
+        voter: Address,
+        proposal_id: u64,
+        support: bool,
+    ) -> Result<(), CallRegistryError> {
+        governance::vote(&env, voter, proposal_id, support)
+    }
+
+    /// Execute a passed proposal after its voting deadline has elapsed.
+    pub fn execute_proposal(env: Env, proposal_id: u64) -> Result<(), CallRegistryError> {
+        governance::execute_proposal(&env, proposal_id)
+    }
+
+    /// Return a governance proposal by ID.
+    pub fn get_proposal(env: Env, proposal_id: u64) -> Option<types::GovernanceProposal> {
+        governance::get_proposal_view(&env, proposal_id)
+    }
+
+    /// Return all currently-active proposals (capped at 50).
+    pub fn get_active_proposals(env: Env) -> soroban_sdk::Vec<types::GovernanceProposal> {
+        governance::get_active_proposals(&env)
+    }
+
+    /// Return vote tallies for a proposal.
+    pub fn get_proposal_votes(env: Env, proposal_id: u64) -> Option<types::ProposalVotes> {
+        governance::get_proposal_votes_view(&env, proposal_id)
+    }
+
+    /// Return a user's cumulative historical stake volume (governance vote power).
+    pub fn get_user_stake_volume(env: Env, user: Address) -> i128 {
+        storage::get_user_total_stake_volume(&env, &user)
+    }
+
 }
