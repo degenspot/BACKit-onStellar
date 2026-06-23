@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Bytes, BytesN, Map, Symbol, Val};
+use soroban_sdk::{contracttype, Address, Bytes, BytesN, Map, Symbol};
 
 /// Describes the price-movement condition that determines the winning outcome.
 ///
@@ -229,8 +229,8 @@ pub struct GovernanceProposal {
     pub proposer: Address,
     /// The name of the parameter to change (e.g. `Symbol::new(env, "fee_bps")`).
     pub parameter: Symbol,
-    /// The proposed new value, encoded as a generic `Val`.
-    pub new_value: Val,
+    /// The proposed new value, encoded as i128 (covers u32, u64, and i128 params).
+    pub new_value: i128,
     /// The ledger sequence number after which `execute_proposal` may be called.
     pub voting_end_ledger: u32,
     /// Current lifecycle state.
