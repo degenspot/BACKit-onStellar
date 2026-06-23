@@ -36,4 +36,22 @@ pub enum CallRegistryError {
     StakingCutoffActive = 15,
     /// The SEP-10 token's `valid_until` ledger sequence has passed.
     Sep10TokenExpired = 16,
+
+    // ── Governance errors ──────────────────────────────────────────────────
+    /// The proposer's (or voter's) cumulative stake volume is below the required threshold.
+    InsufficientStake = 17,
+    /// The requested voting_end_ledger is too close to the current ledger.
+    VotingPeriodTooShort = 18,
+    /// No governance proposal exists with the given ID.
+    ProposalNotFound = 19,
+    /// The proposal is not in `Active` status (already executed or rejected).
+    ProposalNotActive = 20,
+    /// The voting deadline has already elapsed; no more votes accepted.
+    VotingEnded = 21,
+    /// The voting deadline has not yet elapsed; execution is premature.
+    VotingNotEnded = 22,
+    /// The proposal did not reach the required quorum.
+    QuorumNotMet = 23,
+    /// The caller has already voted on this proposal.
+    AlreadyVoted = 24,
 }
