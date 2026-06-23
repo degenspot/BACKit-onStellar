@@ -3,15 +3,15 @@
 use crate::types::{CallInitArgs, ConditionType, ProposalStatus};
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
-    Address, Bytes, BytesN, Env, IntoVal, Symbol, Val,
+    Address, Env, Symbol,
 };
 
-fn setup_env() -> (Env, Address, Address, crate::CallRegistry) {
+fn setup_env() -> (Env, Address, Address, crate::CallRegistryClient) {
     let env = Env::default();
     env.mock_all_auths();
 
     let contract_id = env.register_contract(None, crate::CallRegistry);
-    let client = crate::CallRegistry::new(&env, &contract_id);
+    let client = crate::CallRegistryClient::new(&env, &contract_id);
     // use client for calls
     let admin = Address::generate(&env);
     let outcome_manager = Address::generate(&env);
@@ -62,7 +62,7 @@ fn test_propose_and_vote_and_execute() {
         let voting_end = current_ledger + 2000;
 
         // propose_change
-        let new_val: Val = 200u32.into_val(&env);
+        let new_val: i128 = 200;
         let result = crate::governance::propose_change(
             &env,
             staker.clone(),
@@ -154,7 +154,7 @@ fn test_proposal_rejected_insufficient_votes() {
         let current_ledger = env.ledger().sequence();
         let voting_end = current_ledger + 2000;
 
-        let new_val: Val = 300u32.into_val(&env);
+        let new_val: i128 = 300;
         let proposal_id = crate::governance::propose_change(
             &env,
             proposer.clone(),
@@ -223,7 +223,7 @@ fn test_non_staker_cannot_propose() {
 
         let current_ledger = env.ledger().sequence();
         let voting_end = current_ledger + 2000;
-        let new_val: Val = 100u32.into_val(&env);
+        let new_val: i128 = 100;
         let result = crate::governance::propose_change(
             &env,
             non_staker,
@@ -274,7 +274,7 @@ fn test_non_staker_cannot_vote() {
 
         let current_ledger = env.ledger().sequence();
         let voting_end = current_ledger + 2000;
-        let new_val: Val = 50u32.into_val(&env);
+        let new_val: i128 = 50;
         let proposal_id = crate::governance::propose_change(
             &env,
             proposer,
@@ -330,8 +330,8 @@ fn test_get_active_proposals() {
         let current_ledger = env.ledger().sequence();
         let voting_end = current_ledger + 2000;
 
-        let val1: Val = 100u32.into_val(&env);
-        let val2: Val = 200u32.into_val(&env);
+        let val1: i128 = 100;
+        let val2: i128 = 200;
         crate::governance::propose_change(
             &env,
             proposer.clone(),
