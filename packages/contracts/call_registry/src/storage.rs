@@ -1,4 +1,7 @@
-use crate::types::{Call, ContractConfig, CreatorStats, GlobalStats, StorageStats};
+use crate::types::{
+    Call, ContractConfig, CreatorStats, GlobalStats, GovernanceProposal, ProposalVotes,
+    StorageStats,
+};
 use soroban_sdk::{contracttype, Address, Bytes, Env};
 
 // ~120 days in ledgers (5s per ledger): 120 * 24 * 3600 / 5 = 2_073_600
@@ -27,6 +30,17 @@ pub enum DataKey {
     VoidRefundClaimed(u64, Address),
     InstanceEntryCount,
     Sep10Domain(Address),
+    // ── Governance keys ───────────────────────────────────────────────────
+    /// Monotonically-increasing proposal ID counter.
+    ProposalCounter,
+    /// A single governance proposal.
+    Proposal(u64),
+    /// Separate vote-tally record for a proposal.
+    ProposalVotes(u64),
+    /// Sentinel: records that `voter` has already voted on `proposal_id`.
+    UserVoted(u64, Address),
+    /// Per-user cumulative stake volume across all resolved calls.
+    UserStakeVolume(Address),
 }
 
 /// Store contract configuration
@@ -264,6 +278,9 @@ pub fn record_stake(env: &Env, staker: &Address, amount: i128) {
     }
 
     env.storage().instance().set(&DataKey::GlobalStats, &stats);
+
+    // Accumulate per-user stake volume for governance vote-power tracking.
+    accumulate_user_stake_volume(env, staker, amount);
 }
 
 /// Get current call counter
@@ -428,4 +445,101 @@ pub fn set_sep10_domain(env: &Env, user: &Address, domain: &Bytes) {
 pub fn get_sep10_domain(env: &Env, user: &Address) -> Option<Bytes> {
     let key = DataKey::Sep10Domain(user.clone());
     env.storage().persistent().get(&key)
+}
+
+// ── Governance storage ────────────────────────────────────────────────────────
+
+/// Get the current proposal ID counter (last assigned ID).
+pub fn get_proposal_counter(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::ProposalCounter)
+        .unwrap_or(0)
+}
+
+/// Update the proposal ID counter.
+pub fn set_proposal_counter(env: &Env, counter: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::ProposalCounter, &counter);
+}
+
+/// Persist a proposal to persistent storage.
+pub fn set_proposal(env: &Env, proposal: &GovernanceProposal) {
+    let key = DataKey::Proposal(proposal.id);
+    env.storage().persistent().set(&key, proposal);
+    env.storage().persistent().extend_ttl(
+        &key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
+}
+
+/// Retrieve a proposal by ID.
+pub fn get_proposal(env: &Env, proposal_id: u64) -> Option<GovernanceProposal> {
+    let key = DataKey::Proposal(proposal_id);
+    let result: Option<GovernanceProposal> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+    }
+    result
+}
+
+/// Persist vote tallies for a proposal.
+pub fn set_proposal_votes(env: &Env, proposal_id: u64, votes: &ProposalVotes) {
+    let key = DataKey::ProposalVotes(proposal_id);
+    env.storage().persistent().set(&key, votes);
+    env.storage().persistent().extend_ttl(
+        &key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
+}
+
+/// Retrieve vote tallies for a proposal.
+pub fn get_proposal_votes(env: &Env, proposal_id: u64) -> Option<ProposalVotes> {
+    let key = DataKey::ProposalVotes(proposal_id);
+    env.storage().persistent().get(&key)
+}
+
+/// Mark that `voter` has voted on `proposal_id`.
+pub fn set_user_vote_on_proposal(env: &Env, proposal_id: u64, voter: &Address) {
+    let key = DataKey::UserVoted(proposal_id, voter.clone());
+    env.storage().persistent().set(&key, &true);
+    env.storage().persistent().extend_ttl(
+        &key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
+}
+
+/// Return `true` if `voter` has already voted on `proposal_id`.
+pub fn user_has_voted(env: &Env, proposal_id: u64, voter: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::UserVoted(proposal_id, voter.clone()))
+}
+
+/// Accumulate stake amount into the user's lifetime stake volume counter.
+/// Called from `record_stake` so every staking action updates vote power.
+pub fn accumulate_user_stake_volume(env: &Env, staker: &Address, amount: i128) {
+    let key = DataKey::UserStakeVolume(staker.clone());
+    let current: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+    let updated = current + amount;
+    env.storage().persistent().set(&key, &updated);
+    env.storage().persistent().extend_ttl(
+        &key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
+}
+
+/// Return a user's cumulative historical stake volume (used as governance vote power).
+pub fn get_user_total_stake_volume(env: &Env, staker: &Address) -> i128 {
+    let key = DataKey::UserStakeVolume(staker.clone());
+    env.storage().persistent().get(&key).unwrap_or(0)
 }
