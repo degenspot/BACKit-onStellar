@@ -52,6 +52,12 @@ export class OracleHealthLog {
   @Column({ default: false })
   deviationBreached: boolean;
 
+  @Column('decimal', { precision: 20, scale: 8, nullable: true })
+  dexScreenerPrice: number | null;
+
+  @Column('decimal', { precision: 20, scale: 8, nullable: true })
+  horizonPrice: number | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

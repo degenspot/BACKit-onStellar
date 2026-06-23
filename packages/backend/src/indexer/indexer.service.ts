@@ -151,7 +151,6 @@ export class IndexerService {
     );
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async handlePayoutClaimed(
     topics: xdr.ScVal[],
     txHash: string,

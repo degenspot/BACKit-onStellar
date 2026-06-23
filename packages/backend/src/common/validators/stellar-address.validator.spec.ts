@@ -14,12 +14,16 @@ async function validateAddress(address: string) {
 
 describe('IsStellarAddress', () => {
   it('accepts a valid Stellar address', async () => {
-    const errors = await validateAddress('GBZNLMUQMIN3VGUJISCHKMMTNMDSYFZLHFB5BKRH2HZ7ZBYXUQYXQZWX');
+    const errors = await validateAddress(
+      'GBZNLMUQMIN3VGUJISCHKMMTNMDSYFZLHFB5BKRH2HZ7ZBYXUQYXQZWX',
+    );
     expect(errors).toHaveLength(0);
   });
 
   it('rejects an address that does not start with G', async () => {
-    const errors = await validateAddress('XCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGZW5BQNL3QJBA4RDHKHRD');
+    const errors = await validateAddress(
+      'XCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGZW5BQNL3QJBA4RDHKHRD',
+    );
     expect(errors.length).toBeGreaterThan(0);
   });
 

@@ -11,6 +11,7 @@ import {
   AlertCircle,
   User,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface ConnectButtonProps {
   variant?: "full" | "icon";
@@ -28,6 +29,7 @@ export function ConnectButton({ variant = "full", className = "" }: ConnectButto
     profile,
   } = useWalletContext();
 
+  const { t } = useTranslation();
   const [modalOpen, setModalOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -150,7 +152,7 @@ export function ConnectButton({ variant = "full", className = "" }: ConnectButto
         style={{ background: "linear-gradient(135deg, #22c55e, #16a34a)", color: "white", fontFamily: "Bricolage Grotesque, sans-serif" }}
       >
         <Wallet className="w-4 h-4" />
-        Connect Wallet
+        {t("nav.connectWallet", "Connect Wallet")}
       </button>
       <WalletSelectorModal
         open={modalOpen}

@@ -34,9 +34,7 @@ export function Retryable(maxAttempts = 3, initialDelayMs = 1000) {
         }
       }
 
-      logger.error(
-        `${propertyKey} failed after ${maxAttempts} attempts`,
-      );
+      logger.error(`${propertyKey} failed after ${maxAttempts} attempts`);
       throw lastError;
     };
 

@@ -26,6 +26,11 @@ import { OracleHealthService } from './oracle-health.service';
 import { SigningService } from './signing.service';
 import { IpfsService } from '../storage/ipfs.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { Token } from '../token/entities/token.entity';
+import { PriceDeviationLog } from './entities/log.entity';
+import { OracleHealthLog } from './entities/oracle-health-log.entity';
+import { PriceFetcherService } from './price-fetcher.service';
+import { CoinGeckoService } from './coinGeko.service';
 
 describe('OracleService', () => {
   let service: OracleService;
@@ -44,6 +49,28 @@ describe('OracleService', () => {
     save: jest.fn((v) => v),
     find: jest.fn(),
   };
+  const tokenRepo = {
+    findOne: jest.fn(),
+    find: jest.fn(),
+    save: jest.fn((v) => v),
+    create: jest.fn((v) => v),
+  };
+  const priceDeviationLogRepo = {
+    findOne: jest.fn(),
+    find: jest.fn(),
+    save: jest.fn((v) => v),
+  };
+  const oracleHealthLogRepo = {
+    findOne: jest.fn(),
+    find: jest.fn(),
+    save: jest.fn((v) => v),
+  };
+  const priceFetcherRepo = {
+    fetchPrice: jest.fn(),
+  };
+  const coinGeckoRepo = {
+    getPrices: jest.fn(),
+  };
   const oracleHealth = {
     recordOperation: jest.fn().mockResolvedValue(undefined),
   };
@@ -53,6 +80,15 @@ describe('OracleService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    // Mock global.fetch by default to return empty orderbook (skips validation)
+    global.fetch = jest.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ bids: [], asks: [] }),
+      }),
+    ) as any;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OracleService,
@@ -62,9 +98,25 @@ describe('OracleService', () => {
           provide: getRepositoryToken(OracleOutcome),
           useValue: oracleOutcomeRepo,
         },
+        { provide: getRepositoryToken(Token), useValue: tokenRepo },
+        {
+          provide: getRepositoryToken(PriceDeviationLog),
+          useValue: priceDeviationLogRepo,
+        },
+        {
+          provide: getRepositoryToken(OracleHealthLog),
+          useValue: oracleHealthLogRepo,
+        },
         { provide: OracleHealthService, useValue: oracleHealth },
         { provide: SigningService, useValue: signingService },
-        { provide: IpfsService, useValue: { pinEvidencePayload: jest.fn().mockResolvedValue('cid123') } },
+        {
+          provide: IpfsService,
+          useValue: {
+            pinEvidencePayload: jest.fn().mockResolvedValue('cid123'),
+          },
+        },
+        { provide: PriceFetcherService, useValue: priceFetcherRepo },
+        { provide: CoinGeckoService, useValue: coinGeckoRepo },
       ],
     }).compile();
 
@@ -193,7 +245,9 @@ describe('OracleService', () => {
     oracleCallRepo.findOne.mockResolvedValue(call);
 
     // Make IPFS pinning throw — resolution should still succeed
-    const ipfsMock = { pinEvidencePayload: jest.fn().mockRejectedValue(new Error('IPFS down')) };
+    const ipfsMock = {
+      pinEvidencePayload: jest.fn().mockRejectedValue(new Error('IPFS down')),
+    };
     (service as any).ipfsService = ipfsMock;
 
     await service.resolveMarket(2, '90');
@@ -428,4 +482,332 @@ describe('OracleService', () => {
       roundId: 'round-1',
     });
   });
+
+  describe('Horizon Orderbook Cross-Check', () => {
+    it('normal price with low deviation passes cross-validation', async () => {
+      const call: Partial<OracleCall> = {
+        id: 10,
+        pairAddress: 'PAIR',
+        baseToken: 'XLM',
+        quoteToken: 'USDC',
+        strikePrice: 1.0,
+        status: OracleCallStatus.OPEN,
+        reportCount: 0,
+        isHidden: false,
+      };
+      oracleCallRepo.findOne.mockResolvedValue(call);
+
+      // Mock Horizon orderbook midpoint: 1.0
+      // DexScreener observed price: 1.02 (2% deviation)
+      global.fetch = jest.fn().mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              bids: [{ price: '0.99' }],
+              asks: [{ price: '1.01' }],
+            }),
+        }),
+      ) as any;
+
+      await expect(service.resolveMarket(10, '1.02')).resolves.toBeUndefined();
+      expect(oracleCallRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: OracleCallStatus.RESOLVED_YES,
+          finalPrice: '1.02',
+        }),
+      );
+      expect(oracleHealth.recordOperation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          dexScreenerPrice: 1.02,
+          horizonPrice: 1.0,
+        }),
+      );
+    });
+
+    it('high deviation triggers review and halts submission', async () => {
+      const call: Partial<OracleCall> = {
+        id: 11,
+        pairAddress: 'PAIR',
+        baseToken: 'XLM',
+        quoteToken: 'USDC',
+        strikePrice: 1.0,
+        status: OracleCallStatus.OPEN,
+        reportCount: 0,
+        isHidden: false,
+        needsAdminReview: false,
+      };
+      oracleCallRepo.findOne.mockResolvedValue(call);
+
+      // Mock Horizon orderbook midpoint: 1.0
+      // DexScreener price: 1.10 (10% deviation, threshold is 5%)
+      global.fetch = jest.fn().mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              bids: [{ price: '0.98' }],
+              asks: [{ price: '1.02' }],
+            }),
+        }),
+      ) as any;
+
+      await expect(service.resolveMarket(11, '1.10')).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(oracleCallRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          needsAdminReview: true,
+          failedAt: expect.any(Date),
+        }),
+      );
+      expect(oracleHealth.recordOperation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          dexScreenerPrice: 1.1,
+          horizonPrice: 1.0,
+        }),
+      );
+    });
+
+    it('no Horizon data is gracefully skipped and continues', async () => {
+      const call: Partial<OracleCall> = {
+        id: 12,
+        pairAddress: 'PAIR',
+        baseToken: 'XLM',
+        quoteToken: 'USDC',
+        strikePrice: 1.0,
+        status: OracleCallStatus.OPEN,
+        reportCount: 0,
+        isHidden: false,
+      };
+      oracleCallRepo.findOne.mockResolvedValue(call);
+
+      // Empty bids/asks
+      global.fetch = jest.fn().mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ bids: [], asks: [] }),
+        }),
+      ) as any;
+
+      await expect(service.resolveMarket(12, '1.02')).resolves.toBeUndefined();
+      expect(oracleCallRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: OracleCallStatus.RESOLVED_YES,
+          finalPrice: '1.02',
+        }),
+      );
+      expect(oracleHealth.recordOperation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          dexScreenerPrice: 1.02,
+          horizonPrice: null,
+        }),
+      );
+    });
+  });
+
+  describe('getPriceSources', () => {
+    it('returns price sources from health log and deviation log', async () => {
+      const call = {
+        id: 13,
+        pairAddress: 'PAIR',
+        baseToken: 'XLM',
+        quoteToken: 'USDC',
+      };
+      oracleCallRepo.findOne.mockResolvedValue(call);
+
+      oracleHealthLogRepo.findOne.mockResolvedValue({
+        dexScreenerPrice: 0.12,
+        horizonPrice: 0.125,
+      });
+
+      priceDeviationLogRepo.findOne.mockResolvedValue({
+        referencePrice: 0.119,
+      });
+
+      const res = await service.getPriceSources(13);
+      expect(res).toEqual({
+        callId: 13,
+        pairAddress: 'PAIR',
+        baseToken: 'XLM',
+        quoteToken: 'USDC',
+        sources: [
+          { source: 'DexScreener', value: 0.12 },
+          { source: 'Horizon SDEX', value: 0.125 },
+          { source: 'CoinGecko', value: 0.119 },
+        ],
+      });
+    });
+
+    /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+    it('getPriceSources handles live fetch errors gracefully', async () => {
+      const call = {
+        id: 14,
+        pairAddress: 'PAIR',
+        baseToken: 'XLM',
+        quoteToken: 'USDC',
+      };
+      oracleCallRepo.findOne.mockResolvedValue(call);
+      oracleHealthLogRepo.findOne.mockResolvedValue(null);
+      priceDeviationLogRepo.findOne.mockResolvedValue(null);
+
+      // Force PriceFetcher to throw
+      priceFetcherRepo.fetchPrice.mockRejectedValueOnce(
+        new Error('DexScreener API down'),
+      );
+
+      // Force fetchHorizonMidpoint to throw by making fetch reject
+      global.fetch = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('Horizon API down')) as any;
+
+      coinGeckoRepo.getPrices.mockResolvedValueOnce({});
+
+      const res = await service.getPriceSources(14);
+      expect(res).toEqual({
+        callId: 14,
+        pairAddress: 'PAIR',
+        baseToken: 'XLM',
+        quoteToken: 'USDC',
+        sources: [
+          { source: 'DexScreener', value: null },
+          { source: 'Horizon SDEX', value: null },
+          { source: 'CoinGecko', value: null },
+        ],
+      });
+    });
+    /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+  });
+
+  /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+  describe('Branch Coverage Tests', () => {
+    it('getAssetParams matches yXLM', async () => {
+      const res = await (service as any).getAssetParams('yXLM');
+      expect(res).toEqual({
+        asset_type: 'credit_alphanum4',
+        asset_code: 'yXLM',
+        asset_issuer:
+          'GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55',
+      });
+    });
+
+    it('getAssetParams matches code:issuer format', async () => {
+      const res1 = await (service as any).getAssetParams(
+        'USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+      );
+      expect(res1).toEqual({
+        asset_type: 'credit_alphanum4',
+        asset_code: 'USDC',
+        asset_issuer:
+          'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+      });
+
+      const res2 = await (service as any).getAssetParams(
+        'SUPERLONGCODE:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+      );
+      expect(res2).toEqual({
+        asset_type: 'credit_alphanum12',
+        asset_code: 'SUPERLONGCODE',
+        asset_issuer:
+          'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+      });
+    });
+
+    it('getAssetParams handles database token lookup and errors', async () => {
+      // Case 3a: Native token
+      tokenRepo.findOne.mockResolvedValueOnce({
+        assetCode: 'TESTNATIVE',
+        assetIssuer: null,
+      });
+      const res1 = await (service as any).getAssetParams('TESTNATIVE');
+      expect(res1).toEqual({ asset_type: 'native' });
+
+      // Case 3b: 4-char token
+      tokenRepo.findOne.mockResolvedValueOnce({
+        assetCode: 'TEST',
+        assetIssuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+      });
+      const res2 = await (service as any).getAssetParams('TEST');
+      expect(res2).toEqual({
+        asset_type: 'credit_alphanum4',
+        asset_code: 'TEST',
+        asset_issuer:
+          'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+      });
+
+      // Case 3c: 12-char token
+      tokenRepo.findOne.mockResolvedValueOnce({
+        assetCode: 'VERYLONGCODE',
+        assetIssuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+      });
+      const res3 = await (service as any).getAssetParams('VERYLONGCODE');
+      expect(res3).toEqual({
+        asset_type: 'credit_alphanum12',
+        asset_code: 'VERYLONGCODE',
+        asset_issuer:
+          'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+      });
+
+      // Case 3d: DB Error
+      tokenRepo.findOne.mockRejectedValueOnce(new Error('db down'));
+      const res4 = await (service as any).getAssetParams('OTHER');
+      expect(res4).toBeNull();
+    });
+
+    it('fetchHorizonMidpoint returns null when assets cannot be resolved', async () => {
+      tokenRepo.findOne.mockResolvedValue(null); // Resolve fails
+      const call = { baseToken: 'INVALID1', quoteToken: 'INVALID2' } as any;
+      const res = await (service as any).fetchHorizonMidpoint(call);
+      expect(res).toBeNull();
+    });
+
+    it('fetchHorizonMidpoint handles alphanumeric assets and constructs query parameters correctly', async () => {
+      let requestedUrl = '';
+      global.fetch = jest.fn().mockImplementation((url: string) => {
+        requestedUrl = url;
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              bids: [{ price: '0.5' }],
+              asks: [{ price: '0.6' }],
+            }),
+        });
+      }) as any;
+
+      const call = {
+        baseToken:
+          'USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+        quoteToken: 'yXLM',
+      } as any;
+
+      const res = await (service as any).fetchHorizonMidpoint(call);
+      expect(res).toBe(0.55);
+      expect(requestedUrl).toContain('selling_asset_code=USDC');
+      expect(requestedUrl).toContain(
+        'selling_asset_issuer=GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+      );
+      expect(requestedUrl).toContain('buying_asset_code=yXLM');
+      expect(requestedUrl).toContain(
+        'buying_asset_issuer=GARDNV3Q7YGT4AKSDF25LT32YSCCW4EV22Y2TV3I2PU2MMXJTEDL5T55',
+      );
+    });
+
+    it('fetchHorizonMidpoint returns null when Horizon API returns non-ok status', async () => {
+      global.fetch = jest.fn().mockImplementation(() =>
+        Promise.resolve({
+          ok: false,
+          status: 500,
+        }),
+      ) as any;
+
+      const call = { baseToken: 'XLM', quoteToken: 'yXLM' } as any;
+      const res = await (service as any).fetchHorizonMidpoint(call);
+      expect(res).toBeNull();
+    });
+  });
+  /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 });

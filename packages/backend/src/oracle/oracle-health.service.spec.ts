@@ -7,7 +7,7 @@ import {
 import { OracleHealthService } from './oracle-health.service';
 
 const mockRepo = {
-  create: jest.fn((dto) => dto),
+  create: jest.fn().mockImplementation((dto: unknown) => dto),
   save: jest.fn(),
   find: jest.fn(),
 };
@@ -28,6 +28,8 @@ const makeLog = (
   expectedPrice: null,
   deviationPercent: null,
   deviationBreached: false,
+  dexScreenerPrice: null,
+  horizonPrice: null,
   createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, offset)),
   ...overrides,
 });

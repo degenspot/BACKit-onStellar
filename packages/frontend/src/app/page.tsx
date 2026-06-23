@@ -14,6 +14,7 @@ import {
   Award,
   Target,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 32 },
@@ -22,6 +23,7 @@ const fadeUp = {
 
 export default function HomePage() {
   const [walletConnected, setWalletConnected] = useState(false);
+  const { t } = useTranslation();
 
   const howItWorks = [
     {
@@ -187,13 +189,13 @@ export default function HomePage() {
         >
           <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-green-400/30 bg-green-400/10 px-4 py-2 text-xs font-medium text-green-400">
             <span className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
-            Prediction Markets on Stellar
+            {t("hero.badge", "Prediction Markets on Stellar")}
           </div>
 
           <h1 className="mb-6 text-5xl font-extrabold leading-tight tracking-tight md:text-7xl lg:text-8xl">
-            <span className="shimmer-text">Predict.</span>{" "}
-            <span>Stake.</span>{" "}
-            <span className="text-green-400">Win.</span>
+            <span className="shimmer-text">{t("hero.title1", "Predict.")}</span>{" "}
+            <span>{t("hero.title2", "Stake.")}</span>{" "}
+            <span className="text-green-400">{t("hero.title3", "Win.")}</span>
           </h1>
 
           <p className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-gray-400 md:text-xl">

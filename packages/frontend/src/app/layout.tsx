@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { WalletProvider } from "@/components/WalletContext";
 import { PlatformConfigProvider } from "@/contexts/PlatformConfigContext";
 import { NavBar } from "@/components/NavBar";
+import { I18nProvider } from "@/components/I18nProvider";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -24,12 +25,14 @@ export default function RootLayout({
           useWalletContext(). NavBar is a Client Component that reads
           the live wallet address and passes it to NotificationBell.
         */}
-        <WalletProvider>
-          <PlatformConfigProvider>
-            <NavBar />
-            <main>{children}</main>
-          </PlatformConfigProvider>
-        </WalletProvider>
+        <I18nProvider>
+          <WalletProvider>
+            <PlatformConfigProvider>
+              <NavBar />
+              <main>{children}</main>
+            </PlatformConfigProvider>
+          </WalletProvider>
+        </I18nProvider>
       </body>
     </html>
   );

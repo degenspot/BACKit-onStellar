@@ -1,4 +1,9 @@
-import { Controller, Get, ServiceUnavailableException, VERSION_NEUTRAL } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  ServiceUnavailableException,
+  VERSION_NEUTRAL,
+} from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -56,7 +61,6 @@ export class HealthController {
     },
   })
   async check() {
-    // eslint-disable-next-line @typescript-eslint/await-thenable
     const [database, stellar_rpc, memory_heap_mb] = await Promise.all([
       this.checkDatabase(),
       this.checkStellarRpc(),

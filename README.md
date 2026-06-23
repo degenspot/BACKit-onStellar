@@ -16,7 +16,7 @@ It allows users to create "calls" (predictions), back them with onchain stakes, 
 ## 🛠 Tech Stack
 
 - **Frontend**: Next.js, Tailwind CSS, `@stellar/stellar-sdk`, StellarWalletsKit
-- **Backend**: NestJS, TypeORM, PostgreSQL
+- **Backend**: NestJS, TypeORM, PostgreSQL, Redis (BullMQ)
 - **Smart Contracts**: Rust, Soroban
 - **Chain**: Stellar Testnet (Soroban)
 
@@ -63,9 +63,24 @@ cd back-it-onstellar
 
     **_Your available services should now be running_**
     - Backend - http://localhost:3001
-    - RabbitMQ - http://localhost:6379
+    - Redis - http://localhost:6379
     - Postgresql - http://localhost:5433
     - Frontend - http://localhost:3000
+
+## 🪝 Pre-Commit Hooks
+
+This project enforces code quality via **Husky + lint-staged**. On every commit:
+
+- **ESLint** runs on staged `.ts`/`.tsx` files (backend and frontend)
+- **Prettier** formats all staged files
+- **commitlint** validates commit messages follow the [Conventional Commits](https://www.conventionalcommits.org/) format
+
+**Commit message format:** `type(scope): description`
+
+- **Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`, `perf`
+- **Scopes:** `frontend`, `backend`, `contracts`, `root`, `infra`, `docs`, `ci`
+
+_Examples:_ `feat(frontend): add countdown timer to CallCard`, `fix(backend): resolve WebSocket connection leak`
 
       Note for Soroban development
       Inside packages/contracts you can use:

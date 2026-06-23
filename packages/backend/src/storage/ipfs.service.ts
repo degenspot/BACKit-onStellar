@@ -1,3 +1,4 @@
+/// <reference types="multer" />
 import { Injectable, Logger } from '@nestjs/common';
 
 export interface CallContent {
@@ -28,10 +29,14 @@ export class IpfsService {
   private readonly logger = new Logger(IpfsService.name);
 
   async pinCallContent(content: CallContent): Promise<string> {
+    this.logger.log(`Pinning call content: ${content.title}`);
+    await Promise.resolve();
     return `mock_cid_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
   }
 
   async pinOracleEvidence(evidence: OracleEvidence): Promise<string> {
+    this.logger.log(`Pinning oracle evidence for call ${evidence.callId}`);
+    await Promise.resolve();
     return `mock_evidence_cid_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
   }
 
@@ -42,6 +47,7 @@ export class IpfsService {
       this.logger.log(
         `Pinned oracle evidence for call ${payload.callId}: ${cid}`,
       );
+      await Promise.resolve();
       return cid;
     } catch (error) {
       this.logger.warn(
@@ -52,6 +58,8 @@ export class IpfsService {
   }
 
   async getContent(cid: string): Promise<any> {
+    this.logger.log(`Getting content for CID: ${cid}`);
+    await Promise.resolve();
     return {
       title: 'Mock Content',
       thesis: 'This is mock content for testing',
@@ -62,5 +70,13 @@ export class IpfsService {
   getGatewayUrl(cid: string): string {
     const gateway = process.env.IPFS_GATEWAY || 'https://ipfs.io/ipfs';
     return `${gateway}/${cid}`;
+  }
+
+  async pinAvatar(file: Express.Multer.File): Promise<string> {
+    this.logger.log(`Pinning avatar for file: ${file.originalname}`);
+    await Promise.resolve();
+    // In a real implementation, this would upload the file to IPFS
+    // For now, we return a mock CID
+    return `mock_avatar_cid_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
   }
 }

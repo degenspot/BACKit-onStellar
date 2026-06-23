@@ -50,6 +50,9 @@ export class OracleCall {
 
   @Column({ type: 'boolean', default: false })
   isHidden: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  needsAdminReview: boolean;
   // ────────────────────────────────────────────────────────────────────────
 
   @Column({ type: 'timestamp', nullable: true })

@@ -16,6 +16,8 @@ export interface OracleHealthRecordInput {
   success: boolean;
   errorMessage?: string | null;
   latencyMs?: number;
+  dexScreenerPrice?: number | null;
+  horizonPrice?: number | null;
 }
 
 export interface OracleHealthAlert {
@@ -78,6 +80,8 @@ export class OracleHealthService {
         deviationBreached:
           deviationPercent !== null &&
           deviationPercent > this.deviationThreshold,
+        dexScreenerPrice: input.dexScreenerPrice ?? null,
+        horizonPrice: input.horizonPrice ?? null,
       });
 
       await this.healthLogRepo.save(log);

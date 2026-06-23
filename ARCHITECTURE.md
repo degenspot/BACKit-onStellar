@@ -7,6 +7,7 @@
 ## Stack Overview
 
 ### Stellar (Soroban) Stack
+
 - **Frontend:** Next.js (App Router) + `@stellar/stellar-sdk` + `@stellar/freighter-api`
 - **Wallet / Auth:** Freighter (primary), Lobstr, Albedo, xBull
 - **Contracts:** Rust + Soroban SDK, Stellar CLI (`stellar`)
@@ -14,6 +15,7 @@
 - **Fees:** Stellar resource fees (~0.0001 XLM per transaction)
 
 ### Backend Infrastructure
+
 - **Backend:** NestJS (Oracle worker, relayer, indexer)
 - **DB:** PostgreSQL + Redis + BullMQ
 - **Price sources:** DexScreener (primary) + StellarX/SDEX (fallback)
@@ -85,7 +87,7 @@ sequenceDiagram
   participant M as outcome_manager (Soroban)
 
   U->>W: Sign createCall transaction
-  W->>C: create_call(...) 
+  W->>C: create_call(...)
   C-->>N: emit CallCreated (via SorobanRPC polling)
   N->>IP: pin call content (CID)
   N->>DB: store call record
@@ -104,6 +106,7 @@ sequenceDiagram
 # 3 — Component Responsibilities
 
 ## 3.1 Frontend (Next.js + Stellar SDK)
+
 - **Wallet / Auth**: Freighter wallet connection via `@stellar/freighter-api`; support Lobstr, Albedo as alternatives.
 - **Token discovery**: Proxy calls to backend `/tokens/search` which queries DexScreener and caches results.
 - **Create Call UI**: Title, thesis, token selector, condition builder (Target/Percent/Range), stake selector (USDC default). Upload thesis to IPFS.
@@ -112,6 +115,7 @@ sequenceDiagram
 - **Outcome provenance**: Show final price, oracle public key, ed25519 signature and link to evidence (API response pinned to IPFS if required).
 
 ## 3.2 Off-chain Backend (NestJS)
+
 - **AuthModule**: Map Stellar public keys → user profiles.
 - **CallsModule**: Create drafts, IPFS pinning, transaction building.
 - **OracleModule**: Price fetcher, ed25519 signing, outcome submission.
@@ -120,11 +124,13 @@ sequenceDiagram
 - **AdminModule**: Moderation, dispute handling.
 
 ## 3.3 On-chain (Soroban Contracts)
+
 - **call_registry**: Stores call records, manages stakes, emits `CallCreated`.
 - **outcome_manager**: Verifies ed25519 signatures and settles outcomes; supports `withdraw_payout`.
 - **No Paymaster needed**: Stellar's low fees (~0.0001 XLM) make gas sponsorship unnecessary.
 
 ## 3.4 Indexing & Storage
+
 - **SorobanRPC**: Poll `getEvents` for contract events (7-day retention limit).
 - **Self-managed persistence**: Store events immediately in PostgreSQL for permanent history.
 - **PostgreSQL**: Main read model for UI and feeds; use `tsvector` for full-text search.
@@ -137,11 +143,13 @@ sequenceDiagram
 ## 4.1 Contracts & Responsibilities
 
 ### call_registry (factory/registry)
+
 - `create_call(...)` — registers call metadata + escrows stake
 - `stake_on_call(call_id, amount, position)` — other participants can join (YES/NO positions)
 - Emits `CallCreated`, `StakeAdded` events
 
 ### outcome_manager
+
 - `submit_outcome(call_id, outcome, final_price, timestamp, public_key, signature)`
 - Verifies ed25519 signature via `env.crypto().ed25519_verify()`
 - Marks `settled` and emits `OutcomeSubmitted`
@@ -150,47 +158,14 @@ sequenceDiagram
 ## 4.2 Contract Structure
 
 ```rust
-// packages/contracts-stellar/call_registry/src/lib.rs
+// packages/contracts/call_registry/src/lib.rs (illustrative — see source for latest)
 #![no_std]
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short,
-    Address, BytesN, Env, String,
+    Address, BytesN, Env, Map, String,
     token::TokenClient,
 };
-
-#[contracttype]
-#[derive(Clone)]
-pub struct Call {
-    pub creator: Address,
-    pub stake_token: Address,
-    pub total_stake_yes: i128,
-    pub total_stake_no: i128,
-    pub start_ts: u64,
-    pub end_ts: u64,
-    pub token_address: Address,
-    pub pair_id: BytesN<32>,
-    pub ipfs_cid: String,
-    pub settled: bool,
-    pub outcome: bool,
-    pub final_price: i128,
-}
-
-#[contracttype]
-pub enum DataKey {
-    Call(u64),
-    NextCallId,
-    UserStake(u64, Address, bool), // (call_id, user, position)
-    Config,
-}
-
-#[contracttype]
-#[derive(Clone)]
-pub struct Config {
-    pub admin: Address,
-    pub outcome_manager: Address,
-    pub min_stake: i128,
-    pub platform_fee_bps: u32,
-}
+use crate::types::{Call, ConditionType, ContractConfig};
 
 #[contract]
 pub struct CallRegistry;
@@ -198,19 +173,7 @@ pub struct CallRegistry;
 #[contractimpl]
 impl CallRegistry {
     /// Initialize the contract with admin and configuration
-    pub fn initialize(env: Env, admin: Address, outcome_manager: Address) {
-        admin.require_auth();
-        
-        let config = Config {
-            admin,
-            outcome_manager,
-            min_stake: 1_000_000, // 0.1 USDC (7 decimals)
-            platform_fee_bps: 100, // 1%
-        };
-        
-        env.storage().instance().set(&DataKey::Config, &config);
-        env.storage().instance().set(&DataKey::NextCallId, &0u64);
-    }
+    pub fn initialize(env: Env, admin: Address, outcome_manager: Address) { /* ... */ }
 
     /// Create a new prediction call
     pub fn create_call(
@@ -222,116 +185,70 @@ impl CallRegistry {
         token_address: Address,
         pair_id: BytesN<32>,
         ipfs_cid: String,
+        start_price: i128,
+        condition: ConditionType,
     ) -> u64 {
-        creator.require_auth();
-        
-        let config: Config = env.storage().instance()
-            .get(&DataKey::Config)
-            .expect("Contract not initialized");
-        
-        assert!(stake_amount >= config.min_stake, "Stake below minimum");
-        assert!(end_ts > env.ledger().timestamp(), "End time must be in future");
-        
-        // Transfer stake to contract
-        let token = TokenClient::new(&env, &stake_token);
-        token.transfer(&creator, &env.current_contract_address(), &stake_amount);
-        
-        // Get next call ID
-        let call_id: u64 = env.storage().instance()
-            .get(&DataKey::NextCallId)
-            .unwrap_or(0);
-        
-        // Create call
-        let call = Call {
-            creator: creator.clone(),
-            stake_token,
-            total_stake_yes: stake_amount,
-            total_stake_no: 0,
-            start_ts: env.ledger().timestamp(),
-            end_ts,
-            token_address,
-            pair_id,
-            ipfs_cid,
-            settled: false,
-            outcome: false,
-            final_price: 0,
-        };
-        
-        env.storage().persistent().set(&DataKey::Call(call_id), &call);
-        env.storage().instance().set(&DataKey::NextCallId, &(call_id + 1));
-        
-        // Store user stake
-        env.storage().persistent().set(
-            &DataKey::UserStake(call_id, creator.clone(), true),
-            &stake_amount
-        );
-        
-        // Emit event
-        env.events().publish(
-            (symbol_short!("CallCrtd"), call_id),
-            (creator, stake_amount, end_ts, token_address)
-        );
-        
-        call_id
+        // ...
+        // The Call struct now uses outcome_stakes: Map<u32, i128> for multi-outcome
+        // support (beyond binary UP/DOWN), with fields for cancelled, voided,
+        // condition, start_price, and metadata_version.
     }
-    
-    /// Add stake to an existing call
+
+    /// Add stake to an existing call (supports multi-outcome via position: u32)
     pub fn stake_on_call(
         env: Env,
         staker: Address,
         call_id: u64,
         amount: i128,
-        position: bool, // true = YES, false = NO
-    ) {
-        staker.require_auth();
-        
-        let mut call: Call = env.storage().persistent()
-            .get(&DataKey::Call(call_id))
-            .expect("Call not found");
-        
-        assert!(env.ledger().timestamp() < call.end_ts, "Call has ended");
-        assert!(!call.settled, "Call already settled");
-        
-        // Transfer stake
-        let token = TokenClient::new(&env, &call.stake_token);
-        token.transfer(&staker, &env.current_contract_address(), &amount);
-        
-        // Update totals
-        if position {
-            call.total_stake_yes += amount;
-        } else {
-            call.total_stake_no += amount;
-        }
-        
-        env.storage().persistent().set(&DataKey::Call(call_id), &call);
-        
-        // Update or create user stake
-        let stake_key = DataKey::UserStake(call_id, staker.clone(), position);
-        let existing: i128 = env.storage().persistent()
-            .get(&stake_key)
-            .unwrap_or(0);
-        env.storage().persistent().set(&stake_key, &(existing + amount));
-        
-        // Emit event
-        env.events().publish(
-            (symbol_short!("StakeAdd"), call_id),
-            (staker, position, amount)
-        );
-    }
-    
+        position: u32, // 1 = UP, 2 = DOWN, 3+ = extended outcomes
+    ) { /* ... */ }
+
+    /// Cancel a call (creator only, before any third-party stakes)
+    pub fn cancel_call(env: Env, creator: Address, call_id: u64) { /* ... */ }
+
     /// Get call details (view function)
-    pub fn get_call(env: Env, call_id: u64) -> Call {
-        env.storage().persistent()
-            .get(&DataKey::Call(call_id))
-            .expect("Call not found")
-    }
+    pub fn get_call(env: Env, call_id: u64) -> Call { /* ... */ }
+}
+```
+
+> **Note**: The `Call` struct has evolved from a binary `total_stake_yes`/`total_stake_no` model
+> to a generalized `outcome_stakes: Map<u32, i128>` multi-outcome model (see `packages/contracts/call_registry/src/types.rs`).
+> Key fields include: `id`, `creator`, `stake_token`, `stake_amount`, `end_ts`, `token_address`, `pair_id`,
+> `ipfs_cid`, `outcome_count`, `outcome_stakes`, `stakes`, `outcome`, `start_price`, `end_price`,
+> `condition: ConditionType`, `settled`, `voided`, `cancelled`, `created_at`, `metadata_version`.
+
+```rust
+// packages/contracts/call_registry/src/types.rs (current)
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Call {
+    pub id: u64,
+    pub creator: Address,
+    pub stake_token: Address,
+    pub stake_amount: i128,
+    pub end_ts: u64,
+    pub token_address: Address,
+    pub pair_id: Bytes,
+    pub ipfs_cid: Bytes,
+    pub outcome_count: u32,                  // default 2 for backward compatibility
+    pub outcome_stakes: Map<u32, i128>,      // per-outcome total stakes
+    pub stakes: Map<u32, Map<Address, i128>>, // per-outcome per-staker stakes
+    pub outcome: u32,                        // 0 = unresolved, 1..N = specific outcome
+    pub start_price: i128,
+    pub end_price: i128,
+    pub condition: ConditionType,            // on-chain condition enum
+    pub settled: bool,
+    pub voided: bool,                        // admin-voided (triggers full refunds)
+    pub cancelled: bool,                     // creator-cancelled
+    pub created_at: u64,
+    pub metadata_version: u32,
 }
 ```
 
 ## 4.3 Outcome Manager Contract
 
 ```rust
-// packages/contracts-stellar/outcome_manager/src/lib.rs
+// packages/contracts/outcome_manager/src/lib.rs
 #![no_std]
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short,
@@ -360,22 +277,22 @@ impl OutcomeManager {
         oracle_pubkey: BytesN<32>,
     ) {
         admin.require_auth();
-        
+
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::CallRegistry, &call_registry);
         env.storage().instance().set(&DataKey::AuthorizedOracle(oracle_pubkey), &true);
     }
-    
+
     /// Add an authorized oracle
     pub fn add_oracle(env: Env, oracle_pubkey: BytesN<32>) {
         let admin: Address = env.storage().instance()
             .get(&DataKey::Admin)
             .expect("Not initialized");
         admin.require_auth();
-        
+
         env.storage().instance().set(&DataKey::AuthorizedOracle(oracle_pubkey), &true);
     }
-    
+
     /// Submit outcome with ed25519 signature verification
     pub fn submit_outcome(
         env: Env,
@@ -391,30 +308,30 @@ impl OutcomeManager {
             .get(&DataKey::Settled(call_id))
             .unwrap_or(false);
         assert!(!settled, "Already settled");
-        
+
         // Verify oracle is authorized
         let is_authorized: bool = env.storage().instance()
             .get(&DataKey::AuthorizedOracle(public_key.clone()))
             .unwrap_or(false);
         assert!(is_authorized, "Unauthorized oracle");
-        
+
         // Construct message to verify
         // Format: "BACKit:Outcome:{call_id}:{outcome}:{final_price}:{timestamp}"
         let message = Self::build_outcome_message(&env, call_id, outcome, final_price, timestamp);
-        
+
         // Verify ed25519 signature
         env.crypto().ed25519_verify(&public_key, &message, &signature);
-        
+
         // Mark settled
         env.storage().persistent().set(&DataKey::Settled(call_id), &true);
-        
+
         // Emit event
         env.events().publish(
             (symbol_short!("Outcome"), call_id),
             (outcome, final_price, public_key)
         );
     }
-    
+
     /// Build canonical message for signature verification
     fn build_outcome_message(
         env: &Env,
@@ -425,45 +342,45 @@ impl OutcomeManager {
     ) -> Bytes {
         // Construct canonical byte message
         let mut message = Bytes::new(env);
-        
+
         // Prefix
         message.append(&Bytes::from_slice(env, b"BACKit:Outcome:"));
-        
+
         // Call ID as bytes
         message.append(&Self::u64_to_bytes(env, call_id));
         message.append(&Bytes::from_slice(env, b":"));
-        
+
         // Outcome
         message.append(&Bytes::from_slice(env, if outcome { b"1" } else { b"0" }));
         message.append(&Bytes::from_slice(env, b":"));
-        
+
         // Final price
         message.append(&Self::i128_to_bytes(env, final_price));
         message.append(&Bytes::from_slice(env, b":"));
-        
+
         // Timestamp
         message.append(&Self::u64_to_bytes(env, timestamp));
-        
+
         message
     }
-    
+
     fn u64_to_bytes(env: &Env, val: u64) -> Bytes {
         // Simple conversion for message construction
         Bytes::from_slice(env, &val.to_be_bytes())
     }
-    
+
     fn i128_to_bytes(env: &Env, val: i128) -> Bytes {
         Bytes::from_slice(env, &val.to_be_bytes())
     }
-    
+
     /// Withdraw payout for a settled call
     pub fn withdraw_payout(env: Env, caller: Address, call_id: u64) {
         caller.require_auth();
-        
+
         // Implementation: calculate share and transfer
         // This would interact with call_registry to get call details
         // and distribute winnings based on stake position
-        
+
         env.events().publish(
             (symbol_short!("Payout"), call_id),
             (caller,)
@@ -480,11 +397,11 @@ impl OutcomeManager {
 
 Soroban provides three storage types with different characteristics:
 
-| Storage Type | Characteristics | Use Cases | Limit |
-|--------------|-----------------|-----------|-------|
-| **Instance** | Loaded every call, shared TTL with contract | Config, admin address, oracle list | 64 KB total |
-| **Persistent** | Per-key, archivable but restorable | Call data, user stakes | Per-entry limits |
-| **Temporary** | Auto-deleted when TTL expires | Price cache, session data | Per-entry limits |
+| Storage Type   | Characteristics                             | Use Cases                          | Limit            |
+| -------------- | ------------------------------------------- | ---------------------------------- | ---------------- |
+| **Instance**   | Loaded every call, shared TTL with contract | Config, admin address, oracle list | 64 KB total      |
+| **Persistent** | Per-key, archivable but restorable          | Call data, user stakes             | Per-entry limits |
+| **Temporary**  | Auto-deleted when TTL expires               | Price cache, session data          | Per-entry limits |
 
 ## 5.2 Storage Selection for BACKit
 
@@ -548,40 +465,40 @@ The oracle constructs a deterministic message for signing:
 
 ```typescript
 // oracle.service.ts
-import nacl from 'tweetnacl';
-import { Keypair } from '@stellar/stellar-sdk';
+import nacl from "tweetnacl";
+import { Keypair } from "@stellar/stellar-sdk";
 
 function signOutcome(
   callId: number,
   outcome: boolean,
   finalPrice: bigint,
-  timestamp: number
+  timestamp: number,
 ): { signature: Buffer; publicKey: Buffer } {
   // Construct canonical message matching contract format
   const callIdBytes = Buffer.alloc(8);
   callIdBytes.writeBigUInt64BE(BigInt(callId));
-  
+
   const priceBytes = Buffer.alloc(16);
   priceBytes.writeBigInt64BE(finalPrice, 8);
-  
+
   const timestampBytes = Buffer.alloc(8);
   timestampBytes.writeBigUInt64BE(BigInt(timestamp));
-  
+
   const message = Buffer.concat([
-    Buffer.from('BACKit:Outcome:'),
+    Buffer.from("BACKit:Outcome:"),
     callIdBytes,
-    Buffer.from(':'),
-    Buffer.from(outcome ? '1' : '0'),
-    Buffer.from(':'),
+    Buffer.from(":"),
+    Buffer.from(outcome ? "1" : "0"),
+    Buffer.from(":"),
     priceBytes,
-    Buffer.from(':'),
+    Buffer.from(":"),
     timestampBytes,
   ]);
-  
+
   // Sign with ed25519 private key (from KMS in production)
   const keypair = Keypair.fromSecret(process.env.ORACLE_SECRET_KEY);
   const signature = nacl.sign.detached(message, keypair.rawSecretKey());
-  
+
   return {
     signature: Buffer.from(signature),
     publicKey: keypair.rawPublicKey(),
@@ -596,7 +513,7 @@ sequenceDiagram
   participant O as OracleWorker
   participant K as KMS/Vault
   participant C as outcome_manager
-  
+
   O->>O: Build canonical message
   O->>K: Sign message with ed25519 key
   K-->>O: Return signature
@@ -637,7 +554,7 @@ sequenceDiagram
 // oracle/oracle.worker.ts
 @Injectable()
 export class OracleWorker {
-  @Cron('*/30 * * * * *') // Every 30 seconds
+  @Cron("*/30 * * * * *") // Every 30 seconds
   async processDueCalls() {
     const dueCalls = await this.db.query(`
       SELECT * FROM calls 
@@ -645,7 +562,7 @@ export class OracleWorker {
         AND status = 'OPEN' 
       FOR UPDATE SKIP LOCKED
     `);
-    
+
     for (const call of dueCalls) {
       try {
         // Fetch final price
@@ -654,23 +571,26 @@ export class OracleWorker {
           await this.markUnresolved(call.id);
           continue;
         }
-        
+
         // Evaluate condition
         const outcome = this.evaluateCondition(call.condition_json, price);
-        
+
         // Sign outcome
         const { signature, publicKey } = this.signOutcome(
-          call.id, outcome, price, Date.now()
+          call.id,
+          outcome,
+          price,
+          Date.now(),
         );
-        
+
         // Submit to contract
         await this.submitOutcome(call, outcome, price, signature, publicKey);
-        
+
         // Update DB
-        await this.db.update(call.id, { 
-          status: 'SETTLING',
+        await this.db.update(call.id, {
+          status: "SETTLING",
           final_price: price,
-          oracle_signature: signature.toString('hex'),
+          oracle_signature: signature.toString("hex"),
         });
       } catch (error) {
         this.logger.error(`Failed to process call ${call.id}`, error);
@@ -698,28 +618,28 @@ export class OracleWorker {
 
 ```typescript
 // lib/wallet.ts
-import freighter from '@stellar/freighter-api';
+import freighter from "@stellar/freighter-api";
 
 export async function connectWallet(): Promise<string | null> {
   try {
     // Check if Freighter is installed
     const isInstalled = await freighter.isConnected();
     if (!isInstalled) {
-      window.open('https://freighter.app', '_blank');
+      window.open("https://freighter.app", "_blank");
       return null;
     }
-    
+
     // Request access
     const hasAccess = await freighter.isAllowed();
     if (!hasAccess) {
       await freighter.setAllowed();
     }
-    
+
     // Get public key
     const publicKey = await freighter.getPublicKey();
     return publicKey;
   } catch (error) {
-    console.error('Wallet connection failed:', error);
+    console.error("Wallet connection failed:", error);
     return null;
   }
 }
@@ -734,17 +654,17 @@ export async function getNetwork(): Promise<string> {
 
 ```typescript
 // lib/transactions.ts
-import { 
+import {
   SorobanRpc,
   TransactionBuilder,
   Networks,
   Contract,
   Address,
   xdr,
-} from '@stellar/stellar-sdk';
-import freighter from '@stellar/freighter-api';
+} from "@stellar/stellar-sdk";
+import freighter from "@stellar/freighter-api";
 
-const server = new SorobanRpc.Server('https://soroban-testnet.stellar.org');
+const server = new SorobanRpc.Server("https://soroban-testnet.stellar.org");
 
 export async function createCall(
   callerPublicKey: string,
@@ -756,45 +676,46 @@ export async function createCall(
   ipfsCid: string,
 ): Promise<string> {
   const account = await server.getAccount(callerPublicKey);
-  
+
   const contract = new Contract(CALL_REGISTRY_CONTRACT_ID);
-  
+
   const tx = new TransactionBuilder(account, {
-    fee: '100',
+    fee: "100",
     networkPassphrase: Networks.TESTNET,
   })
     .addOperation(
       contract.call(
-        'create_call',
+        "create_call",
         Address.fromString(callerPublicKey).toScVal(),
         Address.fromString(stakeToken).toScVal(),
-        xdr.ScVal.scvI128(new xdr.Int128Parts({
-          hi: BigInt(stakeAmount >> 64n),
-          lo: BigInt(stakeAmount & 0xFFFFFFFFFFFFFFFFn),
-        })),
+        xdr.ScVal.scvI128(
+          new xdr.Int128Parts({
+            hi: BigInt(stakeAmount >> 64n),
+            lo: BigInt(stakeAmount & 0xffffffffffffffffn),
+          }),
+        ),
         xdr.ScVal.scvU64(xdr.Uint64.fromBigInt(BigInt(endTs))),
         Address.fromString(tokenAddress).toScVal(),
         // ... other params
-      )
+      ),
     )
     .setTimeout(30)
     .build();
-  
+
   // Simulate to get resource estimate
   const simulated = await server.simulateTransaction(tx);
   const prepared = SorobanRpc.assembleTransaction(tx, simulated);
-  
+
   // Sign with Freighter
-  const signedXDR = await freighter.signTransaction(
-    prepared.toXDR(),
-    { networkPassphrase: Networks.TESTNET }
-  );
-  
+  const signedXDR = await freighter.signTransaction(prepared.toXDR(), {
+    networkPassphrase: Networks.TESTNET,
+  });
+
   // Submit
   const result = await server.sendTransaction(
-    TransactionBuilder.fromXDR(signedXDR, Networks.TESTNET)
+    TransactionBuilder.fromXDR(signedXDR, Networks.TESTNET),
   );
-  
+
   return result.hash;
 }
 ```
@@ -803,19 +724,19 @@ export async function createCall(
 
 ```typescript
 // Support multiple wallets
-export type WalletType = 'freighter' | 'lobstr' | 'albedo';
+export type WalletType = "freighter" | "lobstr" | "albedo";
 
 export async function connectWallet(type: WalletType): Promise<string | null> {
   switch (type) {
-    case 'freighter':
+    case "freighter":
       return connectFreighter();
-    case 'lobstr':
+    case "lobstr":
       // LOBSTR wallet uses WalletConnect
       return connectLobstrWC();
-    case 'albedo':
+    case "albedo":
       return connectAlbedo();
     default:
-      throw new Error('Unknown wallet type');
+      throw new Error("Unknown wallet type");
   }
 }
 ```
@@ -846,27 +767,27 @@ export async function connectWallet(type: WalletType): Promise<string | null> {
 
 ```typescript
 // indexer/indexer.service.ts
-import { SorobanRpc } from '@stellar/stellar-sdk';
+import { SorobanRpc } from "@stellar/stellar-sdk";
 
 @Injectable()
 export class IndexerService {
   private lastProcessedLedger: number = 0;
-  
+
   constructor(
     private readonly db: DatabaseService,
     private readonly ws: WebSocketGateway,
   ) {}
-  
-  @Cron('*/5 * * * * *') // Every 5 seconds
+
+  @Cron("*/5 * * * * *") // Every 5 seconds
   async pollEvents() {
     const server = new SorobanRpc.Server(process.env.SOROBAN_RPC_URL);
-    
+
     try {
       const response = await server.getEvents({
-        startLedger: this.lastProcessedLedger || await this.getLatestLedger(),
+        startLedger: this.lastProcessedLedger || (await this.getLatestLedger()),
         filters: [
           {
-            type: 'contract',
+            type: "contract",
             contractIds: [
               process.env.CALL_REGISTRY_CONTRACT_ID,
               process.env.OUTCOME_MANAGER_CONTRACT_ID,
@@ -875,38 +796,38 @@ export class IndexerService {
         ],
         pagination: { limit: 100 },
       });
-      
+
       for (const event of response.events) {
         await this.processEvent(event);
       }
-      
+
       if (response.latestLedger) {
         this.lastProcessedLedger = response.latestLedger;
         await this.saveCheckpoint(response.latestLedger);
       }
     } catch (error) {
-      this.logger.error('Event polling failed', error);
+      this.logger.error("Event polling failed", error);
     }
   }
-  
+
   private async processEvent(event: SorobanRpc.Api.EventInfo) {
     const topic = event.topic[0]; // First topic is event name
-    
+
     switch (topic) {
-      case 'CallCrtd':
+      case "CallCrtd":
         await this.handleCallCreated(event);
         break;
-      case 'StakeAdd':
+      case "StakeAdd":
         await this.handleStakeAdded(event);
         break;
-      case 'Outcome':
+      case "Outcome":
         await this.handleOutcome(event);
         break;
-      case 'Payout':
+      case "Payout":
         await this.handlePayout(event);
         break;
     }
-    
+
     // Push to connected clients
     this.ws.emitEvent(event);
   }
@@ -915,10 +836,11 @@ export class IndexerService {
 
 ## 9.3 Data Retention Strategy
 
-> **Important**: SorobanRPC only retains events for 7 days (24 hours by default). 
+> **Important**: SorobanRPC only retains events for 7 days (24 hours by default).
 > Your indexer MUST persist events immediately.
 
 Options:
+
 1. **Self-managed** (recommended): Poll every 5 seconds, store in PostgreSQL
 2. **Mercury**: Third-party indexing service (https://mercurydata.app)
 3. **SubQuery**: Decentralized indexing (https://subquery.network)
@@ -937,12 +859,12 @@ Options:
 
 ```typescript
 // storage/ipfs.service.ts
-import { PinataSDK } from 'pinata-web3';
+import { PinataSDK } from "pinata-web3";
 
 @Injectable()
 export class IpfsService {
   private pinata: PinataSDK;
-  
+
   async pinCallContent(content: CallContent): Promise<string> {
     const json = JSON.stringify({
       title: content.title,
@@ -950,11 +872,11 @@ export class IpfsService {
       condition: content.condition,
       createdAt: new Date().toISOString(),
     });
-    
+
     const result = await this.pinata.upload.json(JSON.parse(json));
     return result.IpfsHash;
   }
-  
+
   async pinOracleEvidence(evidence: OracleEvidence): Promise<string> {
     const result = await this.pinata.upload.json({
       callId: evidence.callId,
@@ -1008,14 +930,14 @@ export class IpfsService {
 
 # 12 — Failure Modes & Mitigations
 
-| Failure Mode | Impact | Mitigation |
-|--------------|--------|------------|
-| **Price API outage** | Cannot resolve calls | Fallback to SDEX prices; mark UNRESOLVED if both fail |
-| **Oracle key compromise** | Malicious outcomes | Pause contract via admin; rotate keys; audit logs |
-| **SorobanRPC unavailable** | Cannot index events | Self-host Stellar Core + SorobanRPC; use multiple endpoints |
-| **Liquidity manipulation** | Incorrect outcomes | Enforce minimum liquidity thresholds; use TWAP |
-| **State archival** | Call data inaccessible | Proactive TTL extension; backend automation |
-| **Spam attacks** | Resource exhaustion | Minimum stake requirement; rate limiting |
+| Failure Mode               | Impact                 | Mitigation                                                  |
+| -------------------------- | ---------------------- | ----------------------------------------------------------- |
+| **Price API outage**       | Cannot resolve calls   | Fallback to SDEX prices; mark UNRESOLVED if both fail       |
+| **Oracle key compromise**  | Malicious outcomes     | Pause contract via admin; rotate keys; audit logs           |
+| **SorobanRPC unavailable** | Cannot index events    | Self-host Stellar Core + SorobanRPC; use multiple endpoints |
+| **Liquidity manipulation** | Incorrect outcomes     | Enforce minimum liquidity thresholds; use TWAP              |
+| **State archival**         | Call data inaccessible | Proactive TTL extension; backend automation                 |
+| **Spam attacks**           | Resource exhaustion    | Minimum stake requirement; rate limiting                    |
 
 ---
 
@@ -1065,7 +987,7 @@ stellar contract invoke \
 ## 13.2 Contract Directory Structure
 
 ```
-/packages/contracts-stellar
+/packages/contracts
 ├── Cargo.toml
 ├── call_registry/
 │   ├── Cargo.toml
@@ -1093,23 +1015,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust
         uses: dtolnay/rust-action@stable
         with:
           targets: wasm32-unknown-unknown
-      
+
       - name: Install Stellar CLI
         run: cargo install stellar-cli --features opt
-      
+
       - name: Build contracts
         run: stellar contract build
-        working-directory: packages/contracts-stellar
-      
+        working-directory: packages/contracts
+
       - name: Run tests
         run: cargo test
-        working-directory: packages/contracts-stellar
-      
+        working-directory: packages/contracts
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -1122,12 +1044,14 @@ jobs:
 # 14 — MVP Roadmap
 
 ## Sprint 0 (1 week) — Scaffolding
+
 - [ ] Soroban contract skeleton + basic tests
 - [ ] Next.js + Freighter wallet integration demo
 - [ ] NestJS skeleton + PostgreSQL schema
 - [ ] IPFS pinning service setup
 
 ## Sprint 1 (2–3 weeks) — Core Flows
+
 - [ ] Implement `call_registry` contract with tests
 - [ ] Implement `outcome_manager` contract with tests
 - [ ] Deploy SAC for USDC on testnet
@@ -1135,6 +1059,7 @@ jobs:
 - [ ] SorobanRPC event indexer → PostgreSQL
 
 ## Sprint 2 (2 weeks) — Oracle Automation
+
 - [ ] OracleWorker: DexScreener integration
 - [ ] ed25519 key management (dev: env, prod: KMS)
 - [ ] Relayer: submit_outcome transactions
@@ -1142,6 +1067,7 @@ jobs:
 - [ ] Real-time notifications via WebSocket
 
 ## Sprint 3 (2 weeks) — Production Readiness
+
 - [ ] TTL management automation
 - [ ] Liquidity threshold checks
 - [ ] Moderation UI for admins
@@ -1172,17 +1098,19 @@ CREATE TABLE calls (
   token_address VARCHAR(56),
   pair_id TEXT,
   stake_token VARCHAR(56),
-  total_stake_yes NUMERIC,
-  total_stake_no NUMERIC,
+  outcome_count INT DEFAULT 2,
+  outcome_stakes JSONB,        -- Map<u32, i128> per-outcome totals (replaces total_stake_yes/no)
   start_ts TIMESTAMPTZ,
   end_ts TIMESTAMPTZ,
-  condition_json JSONB,
-  status VARCHAR DEFAULT 'OPEN', -- OPEN, SETTLING, RESOLVED, UNRESOLVED
-  outcome BOOLEAN,
+  condition_json JSONB,        -- ConditionType: TargetAbove/Below, PercentUp/Down, Range
+  status VARCHAR DEFAULT 'OPEN', -- OPEN, SETTLING, RESOLVED, UNRESOLVED, PAUSED, CANCELLED, VOIDED
+  outcome INT,                 -- 0 = unresolved, 1..N = specific outcome
   final_price NUMERIC,
   oracle_pubkey TEXT,
   oracle_signature TEXT,
   evidence_cid TEXT,
+  cancelled BOOLEAN DEFAULT FALSE,
+  voided BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -1224,9 +1152,9 @@ interface OracleSignature {
   callId: number;
   outcome: boolean;
   finalPrice: string; // Stringified bigint
-  timestamp: number;  // Unix timestamp in seconds
-  publicKey: string;  // Hex-encoded 32-byte ed25519 public key
-  signature: string;  // Hex-encoded 64-byte ed25519 signature
+  timestamp: number; // Unix timestamp in seconds
+  publicKey: string; // Hex-encoded 32-byte ed25519 public key
+  signature: string; // Hex-encoded 64-byte ed25519 signature
 }
 
 // Message format (canonical byte representation)
@@ -1279,7 +1207,7 @@ sequenceDiagram
   participant O as OracleWorker
   participant DS as DexScreener
   participant OM as outcome_manager
-  
+
   Note over U,OM: === CREATE CALL ===
   U->>F: Fill call form (token, condition, stake)
   F->>IP: Pin thesis content
@@ -1293,9 +1221,9 @@ sequenceDiagram
   CR-->>I: Emit CallCreated event
   I->>DB: Store call record
   I->>F: Push notification via WebSocket
-  
+
   Note over U,OM: === WAIT FOR END TIME ===
-  
+
   Note over U,OM: === RESOLVE CALL ===
   O->>DB: Query due calls
   O->>DS: Fetch final price
@@ -1307,7 +1235,7 @@ sequenceDiagram
   OM-->>I: Emit OutcomeSubmitted
   I->>DB: Update call status
   I->>F: Push notification
-  
+
   Note over U,OM: === CLAIM PAYOUT ===
   U->>F: Click "Claim Payout"
   F->>W: Request signature

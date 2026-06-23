@@ -56,6 +56,8 @@ pub enum InstanceKey {
     Paused,                  // Emergency pause flag for rogue oracle detection
     Version,
     MaxSubmissionDelay,
+    /// Map of (call_id, staker) -> claimable balance ID (32-byte Stellar balance ID)
+    ClaimableBalanceId(u64, Address),
 }
 
 #[contracttype]
@@ -63,7 +65,6 @@ pub enum InstanceKey {
 pub enum PersistentKey {
     Votes(u64),
 }
-
 
 /// A single price data point submitted by an oracle for TWAP calculation
 #[contracttype]

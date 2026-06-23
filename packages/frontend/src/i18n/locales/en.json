@@ -1,0 +1,103 @@
+{
+  "nav": {
+    "connectWallet": "Connect Wallet",
+    "connected": "● Connected",
+    "fee": "Fee: {{percent}}%",
+    "search": "Search",
+    "shortcuts": "Keyboard Shortcuts",
+    "home": "Back to home"
+  },
+  "hero": {
+    "badge": "LIVE — Prediction Markets on Stellar",
+    "title1": "Predict With",
+    "title2": "Your Friends.",
+    "title3": "Win Together.",
+    "subtitle": "Social prediction markets where your calls earn real yield. Stake your conviction, compete on the leaderboard, and settle instantly on-chain.",
+    "launchApp": "Launch App",
+    "howItWorks": "How it Works"
+  },
+  "stats": {
+    "totalVolume": "Total Volume",
+    "activePredictors": "Active Predictors",
+    "avgWinRate": "Avg Win Rate",
+    "chainsSupported": "Chains Supported"
+  },
+  "mockCard": {
+    "trending": "TRENDING CALL",
+    "odds": "{{odds}}x odds",
+    "title": "BTC hits $75k before April",
+    "author": "by @{{username}} · {{backers}} backers",
+    "pool": "Pool: ${{amount}}",
+    "closes": "Closes: {{time}}"
+  },
+  "howItWorks": {
+    "tagline": "THE PROCESS",
+    "title": "Three steps to the moon.",
+    "step1": {
+      "title": "Make Your Call",
+      "desc": "Browse live markets or create your own prediction. Any token, any outcome. Put your conviction on the line."
+    },
+    "step2": {
+      "title": "Stake & Compete",
+      "desc": "Back your call with XLM or any supported token. Friends can back you or bet against you — social markets at its finest."
+    },
+    "step3": {
+      "title": "Win & Earn",
+      "desc": "Markets settle instantly on-chain. Winners claim rewards automatically. Your rep grows with every correct call."
+    }
+  },
+  "features": {
+    "tagline": "BUILT DIFFERENT",
+    "title": "Everything you need to win.",
+    "multiChain": {
+      "title": "Multi-Chain",
+      "desc": "Trade across Stellar, Ethereum, Solana, and Avalanche from a single unified interface.",
+      "badge": "4 Chains"
+    },
+    "socialFeed": {
+      "title": "Social Feed",
+      "desc": "Follow top predictors, copy calls, and build your reputation on the leaderboard.",
+      "badge": "Live"
+    },
+    "instantSettlement": {
+      "title": "Instant Settlement",
+      "desc": "Soroban smart contracts settle markets in seconds. No waiting, no disputes.",
+      "badge": "<2s"
+    },
+    "reputationScore": {
+      "title": "Reputation Score",
+      "desc": "Your track record is on-chain. Build credibility, unlock higher stake limits.",
+      "badge": "On-chain"
+    },
+    "realYield": {
+      "title": "Real Yield",
+      "desc": "Winning predictors earn from the losing side. No house cut — pure peer-to-peer.",
+      "badge": "0% Fee*"
+    },
+    "createMarkets": {
+      "title": "Create Markets",
+      "desc": "Anyone can launch a prediction market on any outcome. Permissionless and unstoppable.",
+      "badge": "Open"
+    }
+  },
+  "leaderboard": {
+    "tagline": "SOCIAL RANKINGS",
+    "title": "Top Predictors This Week",
+    "calls": "{{count}} calls",
+    "winRate": "{{rate}}% WR"
+  },
+  "cta": {
+    "title1": "Your next call",
+    "title2": "could change everything.",
+    "desc": "Join thousands of predictors already earning on BACKit. Connect your wallet and make your first call in under 60 seconds.",
+    "button": "Connect Wallet & Start",
+    "footnote": "No account needed. Non-custodial. Your keys, your calls."
+  },
+  "footer": {
+    "copyright": "© 2025 BACKit. Powered by Stellar Soroban.",
+    "viewSample": "View Sample Profile",
+    "docs": "Docs",
+    "discord": "Discord",
+    "twitter": "Twitter"
+  }
+}

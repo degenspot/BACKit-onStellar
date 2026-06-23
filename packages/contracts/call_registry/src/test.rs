@@ -1,4 +1,8 @@
 #![cfg(test)]
+#![allow(deprecated)]
+#![allow(unused)]
+
+extern crate std;
 
 use soroban_sdk::{
     contract, contractimpl,
@@ -31,13 +35,19 @@ mod call_registry {
 
     const TEST_MIN_STAKE: i128 = 1_000_000;
     const TEST_START_PRICE: i128 = 100_000_000;
+    const STAKE_ON_CALL_BUDGET_CPU: u64 = 20_000_000;
+    const STAKE_ON_CALL_BUDGET_MEM: u64 = 200_000;
+    const GET_CALLS_PAGINATED_BUDGET_CPU: u64 = 10_000_000;
+    const GET_CALLS_PAGINATED_BUDGET_MEM: u64 = 100_000;
+    const GET_CALL_STAKERS_BUDGET_CPU: u64 = 20_000_000;
+    const GET_CALL_STAKERS_BUDGET_MEM: u64 = 200_000;
 
     /// Spin up a fresh environment with a registered, initialised CallRegistry.
     fn setup() -> (Env, CallRegistryClient<'static>, Address, Address) {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
@@ -96,22 +106,46 @@ mod call_registry {
         end_ts: &u64,
         token_address: &Address,
         pair_id: &Bytes,
-        ipfs_cid: &Bytes,
+        metadata_hash: &BytesN<32>,
         outcome_count: &u32,
     ) -> crate::types::Call {
         client.whitelist_token(stake_token);
+        // Use a default IPFS CID for tests
+        let ipfs_cid = Bytes::from_slice(&client.env, b"QmXxxx");
         client.create_call(
             creator,
-            stake_token,
-            stake_amount,
-            &TEST_START_PRICE,
-            end_ts,
-            token_address,
-            pair_id,
-            ipfs_cid,
-            &ConditionType::TargetAbove(100_000_000_i128),
-            outcome_count,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: *stake_amount,
+                start_price: TEST_START_PRICE,
+                end_ts: *end_ts,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid,
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000_i128),
+                outcome_count: *outcome_count,
+            },
         )
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct BudgetUsage {
+        cpu: u64,
+        mem: u64,
+    }
+
+    fn measure_budget<F>(env: &Env, _cpu_limit: u64, _mem_limit: u64, f: F) -> BudgetUsage
+    where
+        F: FnOnce(),
+    {
+        env.cost_estimate().budget().reset_default();
+        f();
+        let budget = env.cost_estimate().budget();
+        BudgetUsage {
+            cpu: budget.cpu_instruction_cost(),
+            mem: budget.memory_bytes_cost(),
+        }
     }
 
     // ── initialize ────────────────────────────────────────────────────────────
@@ -119,7 +153,7 @@ mod call_registry {
     #[test]
     fn test_initialize() {
         let (env, admin, outcome_manager, _) = create_test_env();
-        let contract_id = env.register_contract(None, CallRegistry);
+        let contract_id = env.register(CallRegistry, ());
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -208,6 +242,51 @@ mod call_registry {
         client.set_outcome_manager(&new_om);
 
         assert_eq!(client.get_config().outcome_manager, new_om);
+    }
+
+    #[test]
+    fn test_dataentry_set_and_get() {
+        let (env, client, _admin, _om) = setup();
+
+        // Prepare inputs
+        let creator = Address::generate(&env);
+        let stake_token = env.register_contract(None, MockToken);
+        client.whitelist_token(&stake_token);
+        let token_address = Address::generate(&env);
+        let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        // Use a deterministic metadata hash for test
+        let metadata_hash = {
+            let mut arr = [0u8; 32];
+            arr[0] = 42u8;
+            BytesN::from_array(&env, &arr)
+        };
+
+        // Create the call
+        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let call = client.create_call(
+            &creator,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: 100_000_000_i128,
+                start_price: TEST_START_PRICE,
+                end_ts: 2000u64,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid,
+                metadata_hash: metadata_hash.clone(),
+                condition: crate::types::ConditionType::TargetAbove(100_000_000_i128),
+                outcome_count: 2u32,
+            },
+        );
+
+        // Read back the stored DataEntry for the metadata hash
+        // Since this is the first call in a fresh test environment, the ID is 1.
+        let key = Bytes::from_slice(&env, b"call_1_hash");
+        let entry: Option<Bytes> = client.get_call_data_entry(&call.id, &key);
+        assert!(entry.is_some(), "DataEntry should be set");
+        let entry_bytes = entry.unwrap();
+        // Expect base-64 encoded byte hash
+        assert!(entry_bytes.len() > 0u32);
     }
 
     #[test]
@@ -306,7 +385,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = create_call_with_default_condition(
             &client,
@@ -316,7 +395,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -355,7 +434,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = create_call_with_default_condition(
             &client,
@@ -365,7 +444,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -387,7 +466,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = create_call_with_default_condition(
             &client,
@@ -397,11 +476,11 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_default();
         client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
 
         let staker_calls = client.get_staker_calls(&staker);
@@ -424,7 +503,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = create_call_with_default_condition(
             &client,
@@ -434,7 +513,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -463,7 +542,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let stats = client.get_global_stats();
         assert_eq!(stats.total_calls, 0);
@@ -478,7 +557,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
         let call2 = create_call_with_default_condition(
@@ -489,14 +568,14 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
         let stats = client.get_global_stats();
         assert_eq!(stats.total_calls, 2);
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_default();
         client.stake_on_call(&staker1, &call1.id, &50_000_000_i128, &1);
         client.stake_on_call(&staker1, &call1.id, &20_000_000_i128, &1);
         client.stake_on_call(&staker2, &call2.id, &30_000_000_i128, &2);
@@ -521,7 +600,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = create_call_with_default_condition(
             &client,
@@ -531,7 +610,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -560,19 +639,22 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let result = client.try_create_call(
             &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &0_i128,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &ipfs_cid,
-            &ConditionType::TargetAbove(100_000_000_i128),
-            &2,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: 100_000_000_i128,
+                start_price: 0_i128,
+                end_ts: 2000u64,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000_i128),
+                outcome_count: 2,
+            },
         );
 
         assert_eq!(result, Err(Ok(CallRegistryError::InvalidStakeAmount)));
@@ -591,7 +673,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
         let call = create_call_with_default_condition(
             &client,
             &creator,
@@ -600,7 +682,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -626,19 +708,22 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let result = client.try_create_call(
             &creator,
-            &stake_token,
-            &-100_000_000_i128,
-            &TEST_START_PRICE,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &ipfs_cid,
-            &ConditionType::TargetAbove(100_000_000_i128),
-            &2,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: -100_000_000_i128,
+                start_price: TEST_START_PRICE,
+                end_ts: 2000u64,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000_i128),
+                outcome_count: 2,
+            },
         );
 
         assert_eq!(
@@ -661,19 +746,22 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let result = client.try_create_call(
             &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &TEST_START_PRICE,
-            &500u64, // in the past
-            &token_address,
-            &pair_id,
-            &ipfs_cid,
-            &ConditionType::TargetAbove(100_000_000_i128),
-            &2,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: 100_000_000_i128,
+                start_price: TEST_START_PRICE,
+                end_ts: 500u64, // in the past
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000_i128),
+                outcome_count: 2,
+            },
         );
 
         assert_eq!(
@@ -699,7 +787,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = create_call_with_default_condition(
             &client,
@@ -709,11 +797,11 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_default();
 
         let updated_call = client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
 
@@ -735,7 +823,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = create_call_with_default_condition(
             &client,
@@ -745,7 +833,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -769,7 +857,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = create_call_with_default_condition(
             &client,
@@ -779,7 +867,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -807,7 +895,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = create_call_with_default_condition(
             &client,
@@ -817,7 +905,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -844,7 +932,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let created_call = create_call_with_default_condition(
             &client,
@@ -854,7 +942,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -898,7 +986,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = create_call_with_default_condition(
             &client,
@@ -908,7 +996,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -938,7 +1026,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = create_call_with_default_condition(
             &client,
@@ -948,7 +1036,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -973,7 +1061,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = create_call_with_default_condition(
             &client,
@@ -983,7 +1071,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -1013,7 +1101,7 @@ mod call_registry {
         let stake_token = Address::generate(&env);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         create_call_with_default_condition(
             &client,
@@ -1023,7 +1111,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
         create_call_with_default_condition(
@@ -1034,7 +1122,7 @@ mod call_registry {
             &3000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -1056,7 +1144,7 @@ mod call_registry {
         let stake_token = env.register_stellar_asset_contract(token_admin);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         create_call_with_default_condition(
             &client,
@@ -1066,7 +1154,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
         create_call_with_default_condition(
@@ -1077,7 +1165,7 @@ mod call_registry {
             &3000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
         create_call_with_default_condition(
@@ -1088,7 +1176,7 @@ mod call_registry {
             &4000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -1111,7 +1199,7 @@ mod call_registry {
         let stake_token = Address::generate(&env);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         for _ in 0..25 {
             create_call_with_default_condition(
@@ -1122,7 +1210,7 @@ mod call_registry {
                 &2000u64,
                 &token_address,
                 &pair_id,
-                &ipfs_cid,
+                &metadata_hash,
                 &2,
             );
         }
@@ -1146,7 +1234,7 @@ mod call_registry {
         let stake_token = Address::generate(&env);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         create_call_with_default_condition(
             &client,
@@ -1156,7 +1244,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
         create_call_with_default_condition(
@@ -1167,7 +1255,7 @@ mod call_registry {
             &3000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
         create_call_with_default_condition(
@@ -1178,7 +1266,7 @@ mod call_registry {
             &4000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -1204,7 +1292,7 @@ mod call_registry {
         let stake_token = Address::generate(&env);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         create_call_with_default_condition(
             &client,
@@ -1214,7 +1302,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
         create_call_with_default_condition(
@@ -1225,7 +1313,7 @@ mod call_registry {
             &3000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
         create_call_with_default_condition(
@@ -1236,7 +1324,7 @@ mod call_registry {
             &4000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -1251,12 +1339,16 @@ mod call_registry {
 
     // ── void_call / claim_void_refund ─────────────────────────────────────────
 
-    fn make_call(env: &Env, client: &CallRegistryClient<'_>, creator: &Address) -> (crate::types::Call, Address) {
+    fn make_call(
+        env: &Env,
+        client: &CallRegistryClient<'_>,
+        creator: &Address,
+    ) -> (crate::types::Call, Address) {
         let stake_token = env.register_contract(None, MockToken);
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(env);
         let pair_id = Bytes::from_slice(env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(env, &[0u8; 32]);
 
         let call = create_call_with_default_condition(
             client,
@@ -1266,7 +1358,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
         (call, stake_token)
@@ -1333,19 +1425,23 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
+        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
         let call = client.create_call(
             &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &TEST_START_PRICE,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &ipfs_cid,
-            &ConditionType::TargetAbove(100_000_000_i128),
-            &3,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: 100_000_000_i128,
+                start_price: TEST_START_PRICE,
+                end_ts: 2000u64,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid: ipfs_cid.clone(),
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000_i128),
+                outcome_count: 3,
+            },
         );
 
         assert_eq!(call.id, 1);
@@ -1369,22 +1465,26 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
+        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
         let call = client.create_call(
             &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &TEST_START_PRICE,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &ipfs_cid,
-            &ConditionType::TargetAbove(100_000_000_i128),
-            &3,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: 100_000_000_i128,
+                start_price: TEST_START_PRICE,
+                end_ts: 2000u64,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid: ipfs_cid.clone(),
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000_i128),
+                outcome_count: 3,
+            },
         );
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_default();
 
         client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
         client.stake_on_call(&staker, &call.id, &30_000_000_i128, &2);
@@ -1409,19 +1509,23 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
+        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
         let call = client.create_call(
             &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &TEST_START_PRICE,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &ipfs_cid,
-            &ConditionType::TargetAbove(100_000_000_i128),
-            &3,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: 100_000_000_i128,
+                start_price: TEST_START_PRICE,
+                end_ts: 2000u64,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid: ipfs_cid.clone(),
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000_i128),
+                outcome_count: 3,
+            },
         );
 
         env.ledger().set_timestamp(3000); // after end_ts
@@ -1445,19 +1549,23 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
+        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
         let call = client.create_call(
             &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &TEST_START_PRICE,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &ipfs_cid,
-            &ConditionType::TargetAbove(100_000_000_i128),
-            &3,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: 100_000_000_i128,
+                start_price: TEST_START_PRICE,
+                end_ts: 2000u64,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid: ipfs_cid.clone(),
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000_i128),
+                outcome_count: 3,
+            },
         );
 
         env.ledger().set_timestamp(3000);
@@ -1484,19 +1592,24 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
+
         let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
 
         let call = client.create_call(
             &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &TEST_START_PRICE,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &ipfs_cid,
-            &ConditionType::TargetAbove(100_000_000_i128),
-            &3,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: 100_000_000_i128,
+                start_price: TEST_START_PRICE,
+                end_ts: 2000u64,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid: ipfs_cid.clone(),
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000_i128),
+                outcome_count: 3,
+            },
         );
 
         let result = client.try_stake_on_call(&staker, &call.id, &50_000_000_i128, &4);
@@ -1521,22 +1634,25 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = client.create_call(
             &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &TEST_START_PRICE,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &ipfs_cid,
-            &ConditionType::TargetAbove(100_000_000_i128),
-            &3,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: 100_000_000_i128,
+                start_price: TEST_START_PRICE,
+                end_ts: 2000u64,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000_i128),
+                outcome_count: 3,
+            },
         );
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_default();
 
         client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
         client.stake_on_call(&staker, &call.id, &30_000_000_i128, &2);
@@ -1562,22 +1678,25 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = client.create_call(
             &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &TEST_START_PRICE,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &ipfs_cid,
-            &ConditionType::TargetAbove(100_000_000_i128),
-            &3,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: 100_000_000_i128,
+                start_price: TEST_START_PRICE,
+                end_ts: 2000u64,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000_i128),
+                outcome_count: 3,
+            },
         );
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_default();
 
         client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
         client.stake_on_call(&staker, &call.id, &30_000_000_i128, &2);
@@ -1610,22 +1729,25 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         let call = client.create_call(
             &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &TEST_START_PRICE,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &ipfs_cid,
-            &ConditionType::TargetAbove(100_000_000_i128),
-            &3,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: 100_000_000_i128,
+                start_price: TEST_START_PRICE,
+                end_ts: 2000u64,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000_i128),
+                outcome_count: 3,
+            },
         );
 
-        env.budget().reset_unlimited();
+        env.cost_estimate().budget().reset_default();
 
         client.stake_on_call(&staker1, &call.id, &50_000_000_i128, &1);
         client.stake_on_call(&staker2, &call.id, &30_000_000_i128, &1);
@@ -1658,7 +1780,7 @@ mod call_registry {
         client.whitelist_token(&stake_token);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         // Creator starts with no stats
         let stats = client.get_creator_stats_view(&creator);
@@ -1675,7 +1797,7 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -1693,7 +1815,7 @@ mod call_registry {
             &3000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
@@ -1715,12 +1837,12 @@ mod call_registry {
         let stake_token = env.register_contract(None, MockToken);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         client.whitelist_token(&stake_token);
 
         // Creator creates a call
-        let _call = create_call_with_default_condition(
+        let call = create_call_with_default_condition(
             &client,
             &creator,
             &stake_token,
@@ -1728,16 +1850,16 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
         // Creator stakes on UP position (winning side)
-        client.stake_on_call(&creator, &1u64, &50_000_000_i128, &1);
+        client.stake_on_call(&creator, &call.id, &50_000_000_i128, &1);
 
         // Resolve as UP (creator staked on winning side)
         env.ledger().set_timestamp(2100);
-        client.resolve_call(&1u64, &1u32, &150_000_000_i128);
+        client.resolve_call(&call.id, &1u32, &150_000_000_i128);
 
         let stats = client.get_creator_stats_view(&creator);
         assert_eq!(stats.total_created, 1);
@@ -1757,12 +1879,12 @@ mod call_registry {
         let stake_token = env.register_contract(None, MockToken);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         client.whitelist_token(&stake_token);
 
         // Creator creates a call
-        let _call = create_call_with_default_condition(
+        let call = create_call_with_default_condition(
             &client,
             &creator,
             &stake_token,
@@ -1770,16 +1892,16 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
 
         // Creator stakes on UP (but outcome will be DOWN, so incorrect)
-        client.stake_on_call(&creator, &1u64, &50_000_000_i128, &1);
+        client.stake_on_call(&creator, &call.id, &50_000_000_i128, &1);
 
         // Resolve as DOWN (creator staked on losing side)
         env.ledger().set_timestamp(2100);
-        client.resolve_call(&1u64, &2u32, &50_000_000_i128);
+        client.resolve_call(&call.id, &2u32, &50_000_000_i128);
 
         let stats = client.get_creator_stats_view(&creator);
         assert_eq!(stats.total_created, 1);
@@ -1799,12 +1921,12 @@ mod call_registry {
         let stake_token = env.register_contract(None, MockToken);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         client.whitelist_token(&stake_token);
 
         // Create call 1 and creator stakes on UP
-        let _call1 = create_call_with_default_condition(
+        let call1 = create_call_with_default_condition(
             &client,
             &creator,
             &stake_token,
@@ -1812,13 +1934,13 @@ mod call_registry {
             &2000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
-        client.stake_on_call(&creator, &1u64, &50_000_000_i128, &1);
+        client.stake_on_call(&creator, &call1.id, &50_000_000_i128, &1);
 
         // Create call 2 and creator stakes on DOWN
-        let _call2 = create_call_with_default_condition(
+        let call2 = create_call_with_default_condition(
             &client,
             &creator,
             &stake_token,
@@ -1826,13 +1948,13 @@ mod call_registry {
             &3000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
-        client.stake_on_call(&creator, &2u64, &50_000_000_i128, &2);
+        client.stake_on_call(&creator, &call2.id, &50_000_000_i128, &2);
 
         // Create call 3 and creator stakes on UP
-        let _call3 = create_call_with_default_condition(
+        let call3 = create_call_with_default_condition(
             &client,
             &creator,
             &stake_token,
@@ -1840,22 +1962,22 @@ mod call_registry {
             &4000u64,
             &token_address,
             &pair_id,
-            &ipfs_cid,
+            &metadata_hash,
             &2,
         );
-        client.stake_on_call(&creator, &3u64, &50_000_000_i128, &1);
+        client.stake_on_call(&creator, &call3.id, &50_000_000_i128, &1);
 
         // Resolve call 1 as UP (correct - creator staked UP)
         env.ledger().set_timestamp(2100);
-        client.resolve_call(&1u64, &1u32, &150_000_000_i128);
+        client.resolve_call(&call1.id, &1u32, &150_000_000_i128);
 
         // Resolve call 2 as UP (incorrect - creator staked DOWN)
         env.ledger().set_timestamp(3100);
-        client.resolve_call(&2u64, &1u32, &150_000_000_i128);
+        client.resolve_call(&call2.id, &1u32, &150_000_000_i128);
 
         // Resolve call 3 as UP (correct - creator staked UP)
         env.ledger().set_timestamp(4100);
-        client.resolve_call(&3u64, &1u32, &150_000_000_i128);
+        client.resolve_call(&call3.id, &1u32, &150_000_000_i128);
 
         let stats = client.get_creator_stats_view(&creator);
         assert_eq!(stats.total_created, 3);
@@ -1890,17 +2012,31 @@ mod call_registry {
         let stake_token = env.register_contract(None, MockToken);
         let token_address = Address::generate(&env);
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-        let ipfs_cid = Bytes::from_slice(&env, b"QmXxxx");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
         client.whitelist_token(&stake_token);
 
         create_call_with_default_condition(
-            &client, &creator, &stake_token, &100_000_000_i128,
-            &2000u64, &token_address, &pair_id, &ipfs_cid, &2,
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &2000u64,
+            &token_address,
+            &pair_id,
+            &metadata_hash,
+            &2,
         );
         create_call_with_default_condition(
-            &client, &creator, &stake_token, &100_000_000_i128,
-            &3000u64, &token_address, &pair_id, &ipfs_cid, &2,
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &3000u64,
+            &token_address,
+            &pair_id,
+            &metadata_hash,
+            &2,
         );
 
         let stats = client.get_storage_stats();
@@ -1945,5 +2081,712 @@ mod call_registry {
             ]
         });
         assert!(!has_warning);
+    }
+
+    #[test]
+    fn test_get_call_stakers_paginated_caps_response() {
+        let (env, admin, outcome_manager, creator) = create_test_env();
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+
+        client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
+        env.ledger().set_timestamp(1000);
+
+        let stake_token = env.register_contract(None, MockToken);
+        client.whitelist_token(&stake_token);
+        let token_address = Address::generate(&env);
+        let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let call = create_call_with_default_condition(
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &3000u64,
+            &token_address,
+            &pair_id,
+            &metadata_hash,
+            &2,
+        );
+
+        for _ in 0..60u32 {
+            let staker = Address::generate(&env);
+            client.stake_on_call(&staker, &call.id, &TEST_MIN_STAKE, &1u32);
+        }
+
+        let first_page = client.get_call_stakers(&call.id);
+        let second_page = client.get_call_stakers_paginated(&call.id, &50u32, &50u32);
+
+        assert_eq!(first_page.len(), 50);
+        assert_eq!(second_page.len(), 10);
+    }
+
+    #[test]
+    fn test_stake_on_call_stays_within_budget() {
+        let (env, admin, outcome_manager, creator) = create_test_env();
+        let staker = Address::generate(&env);
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+
+        client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
+        env.ledger().set_timestamp(1000);
+
+        let stake_token = env.register_contract(None, MockToken);
+        client.whitelist_token(&stake_token);
+        let token_address = Address::generate(&env);
+        let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let call = create_call_with_default_condition(
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &3000u64,
+            &token_address,
+            &pair_id,
+            &metadata_hash,
+            &2,
+        );
+
+        let usage = measure_budget(
+            &env,
+            STAKE_ON_CALL_BUDGET_CPU,
+            STAKE_ON_CALL_BUDGET_MEM,
+            || {
+                client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1u32);
+            },
+        );
+
+        std::println!(
+            "call_registry::stake_on_call cpu={} mem={}",
+            usage.cpu,
+            usage.mem
+        );
+        assert!(usage.cpu <= STAKE_ON_CALL_BUDGET_CPU);
+        assert!(usage.mem <= STAKE_ON_CALL_BUDGET_MEM);
+    }
+
+    #[test]
+    #[should_panic(expected = "ExceededLimit")]
+    fn test_stake_on_call_exceeding_budget_fails() {
+        let (env, admin, outcome_manager, creator) = create_test_env();
+        let staker = Address::generate(&env);
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+
+        client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
+        env.ledger().set_timestamp(1000);
+
+        let stake_token = env.register_contract(None, MockToken);
+        client.whitelist_token(&stake_token);
+        let token_address = Address::generate(&env);
+        let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let call = create_call_with_default_condition(
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &3000u64,
+            &token_address,
+            &pair_id,
+            &metadata_hash,
+            &2,
+        );
+
+        env.cost_estimate().budget().reset_limits(50_000, 1_024);
+        client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1u32);
+    }
+
+    #[test]
+    fn test_get_calls_paginated_stays_within_budget() {
+        let (env, client, _admin, _om) = setup();
+        env.ledger().set_timestamp(1000);
+
+        let creator = Address::generate(&env);
+        let stake_token = env.register_contract(None, MockToken);
+        client.whitelist_token(&stake_token);
+        let token_address = Address::generate(&env);
+        let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
+
+        for _ in 0..10u32 {
+            create_call_with_default_condition(
+                &client,
+                &creator,
+                &stake_token,
+                &100_000_000_i128,
+                &3000u64,
+                &token_address,
+                &pair_id,
+                &metadata_hash,
+                &2,
+            );
+        }
+
+        let usage = measure_budget(
+            &env,
+            GET_CALLS_PAGINATED_BUDGET_CPU,
+            GET_CALLS_PAGINATED_BUDGET_MEM,
+            || {
+                let results = client.get_calls_paginated(&1u64, &10u32);
+                assert_eq!(results.len(), 10);
+            },
+        );
+
+        std::println!(
+            "call_registry::get_calls_paginated cpu={} mem={}",
+            usage.cpu,
+            usage.mem
+        );
+        assert!(usage.cpu <= GET_CALLS_PAGINATED_BUDGET_CPU);
+        assert!(usage.mem <= GET_CALLS_PAGINATED_BUDGET_MEM);
+    }
+
+    #[test]
+    fn test_get_call_stakers_stays_within_budget() {
+        let (env, admin, outcome_manager, creator) = create_test_env();
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+
+        client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
+        env.ledger().set_timestamp(1000);
+
+        let stake_token = env.register_contract(None, MockToken);
+        client.whitelist_token(&stake_token);
+        let token_address = Address::generate(&env);
+        let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
+        let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
+        let call = create_call_with_default_condition(
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &3000u64,
+            &token_address,
+            &pair_id,
+            &metadata_hash,
+            &2,
+        );
+
+        for _ in 0..50u32 {
+            let staker = Address::generate(&env);
+            client.stake_on_call(&staker, &call.id, &TEST_MIN_STAKE, &1u32);
+        }
+
+        let usage = measure_budget(
+            &env,
+            GET_CALL_STAKERS_BUDGET_CPU,
+            GET_CALL_STAKERS_BUDGET_MEM,
+            || {
+                let stakers = client.get_call_stakers(&call.id);
+                assert_eq!(stakers.len(), 50);
+            },
+        );
+
+        std::println!(
+            "call_registry::get_call_stakers cpu={} mem={}",
+            usage.cpu,
+            usage.mem
+        );
+        assert!(usage.cpu <= GET_CALL_STAKERS_BUDGET_CPU);
+        assert!(usage.mem <= GET_CALL_STAKERS_BUDGET_MEM);
+    }
+
+}
+
+// ── Native XLM staking tests ──────────────────────────────────────────────────
+//
+// These tests exercise the full XLM staking path:
+//   create_call with XLM sentinel, stake_on_call with XLM, void refund in XLM,
+//   release_escrow payout in XLM, and mixed XLM + USDC calls in separate markets.
+
+mod native_xlm {
+    use super::*;
+    use crate::types::ConditionType;
+    use crate::{CallRegistry, CallRegistryClient, NATIVE_XLM_SENTINEL};
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger as _},
+        token::StellarAssetClient,
+        Address, Bytes, BytesN, Env, IntoVal,
+    };
+
+    const MIN_STAKE: i128 = 1_000_000; // 0.1 XLM (7 decimals)
+    const STAKE_AMOUNT: i128 = 10_000_000; // 1 XLM
+
+    /// Register a real Stellar Asset Contract for native XLM and return its address.
+    /// In the test environment `register_stellar_asset_contract_v2` (or the
+    /// single-arg form) gives us a proper SAC we can mint from.
+    // REPLACE register_xlm_sac entirely:
+    fn register_xlm_sac(env: &Env) -> Address {
+        // For testing, we create a Stellar Asset Contract with a generated admin.
+        // This SAC will represent native XLM in the test environment.
+        let token_admin = Address::generate(env);
+        env.register_stellar_asset_contract(token_admin)
+    }
+
+    /// Mint `amount` of `token` to `to` using the StellarAssetClient.
+    fn mint(env: &Env, token: &Address, to: &Address, amount: i128) {
+        StellarAssetClient::new(env, token).mint(to, &amount);
+    }
+
+    /// Spin up a registry and return (env, client, admin, outcome_manager, xlm_address).
+    /// The XLM SAC is registered at the sentinel address so the contract
+    /// recognises it as native XLM.
+    fn setup_with_xlm() -> (Env, CallRegistryClient<'static>, Address, Address, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.ledger().set_timestamp(1_000);
+
+        let admin = Address::generate(&env);
+        let outcome_manager = Address::generate(&env);
+
+        let contract_id = env.register(CallRegistry, ());
+        let client = CallRegistryClient::new(&env, &contract_id);
+
+        client.initialize(&admin, &outcome_manager, &MIN_STAKE);
+
+        // Register a SAC at the sentinel address so token::StellarAssetClient
+        // can resolve transfers in the test environment.
+        let xlm_addr = register_xlm_sac(&env);
+        client.set_xlm_sac_address(&xlm_addr);
+        assert!(
+            client.is_native_xlm_address(&xlm_addr),
+            "xlm sentinel not registered"
+        );
+        (env, client, admin, outcome_manager, xlm_addr)
+    }
+
+    // ── helper to create a call with XLM ─────────────────────────────────────
+
+    fn create_xlm_call(
+        env: &Env,
+        client: &CallRegistryClient<'_>,
+        creator: &Address,
+        xlm_sentinel: &Address,
+    ) -> crate::types::Call {
+        let token_address = Address::generate(env);
+        let pair_id = Bytes::from_slice(env, b"XLM/USD");
+        let metadata_hash = BytesN::from_array(env, &[0u8; 32]);
+        let ipfs_cid = Bytes::from_slice(env, b"QmXxxx");
+
+        client.create_call(
+            creator,
+            &crate::types::CallInitArgs {
+                stake_token: xlm_sentinel.clone(),
+                stake_amount: STAKE_AMOUNT,
+                start_price: 100_000_000_i128, // start_price
+                end_ts: 10_000u64,             // end_ts
+                token_address,
+                pair_id,
+                ipfs_cid,
+                metadata_hash,
+                condition: ConditionType::TargetAbove(105_000_000_i128),
+                outcome_count: 2u32,
+            },
+        )
+    }
+
+    // ── Tests ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_native_xlm_address_helper() {
+        let (_env, client, _admin, _om, xlm_sac) = setup_with_xlm();
+        assert_eq!(client.native_xlm_address(), xlm_sac);
+        assert!(client.is_native_xlm_address(&xlm_sac));
+    }
+
+    #[test]
+    fn test_create_call_with_native_xlm_succeeds() {
+        let (env, client, _admin, _om, xlm_sac) = setup_with_xlm();
+        let sentinel = xlm_sac.clone();
+        let creator = Address::generate(&env);
+
+        let call = create_xlm_call(&env, &client, &creator, &sentinel);
+
+        assert_eq!(call.stake_token, sentinel);
+        assert_eq!(call.stake_amount, STAKE_AMOUNT);
+    }
+
+    #[test]
+    fn test_create_call_with_xlm_emits_xlm_call_created_event() {
+        let (env, client, _admin, _om, xlm_sac) = setup_with_xlm();
+        let creator = Address::generate(&env);
+        let sentinel = xlm_sac.clone();
+
+        create_xlm_call(&env, &client, &creator, &sentinel);
+
+        let events = env.events().all();
+        let has_xlm_event = events.iter().any(|e| {
+            e.1 == soroban_sdk::vec![
+                &env,
+                "call_registry".into_val(&env),
+                "xlm_call_created".into_val(&env),
+            ]
+        });
+        assert!(has_xlm_event, "xlm_call_created event should be emitted");
+    }
+
+    #[test]
+    fn test_create_call_with_xlm_does_not_emit_sac_call_created() {
+        let (env, client, _admin, _om, xlm_sac) = setup_with_xlm();
+        let creator = Address::generate(&env);
+        let sentinel = xlm_sac.clone();
+
+        create_xlm_call(&env, &client, &creator, &sentinel);
+
+        let events = env.events().all();
+        let has_sac_event = events.iter().any(|e| {
+            e.1 == soroban_sdk::vec![
+                &env,
+                "call_registry".into_val(&env),
+                "call_created".into_val(&env),
+            ]
+        });
+        assert!(
+            !has_sac_event,
+            "generic call_created should NOT be emitted for XLM calls"
+        );
+    }
+
+    #[test]
+    fn test_stake_on_call_with_native_xlm_succeeds() {
+        let (env, client, _admin, _om, xlm_sac) = setup_with_xlm();
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let sentinel = xlm_sac.clone();
+
+        // Mint XLM to staker
+        mint(&env, &xlm_sac, &staker, STAKE_AMOUNT * 10);
+
+        let call = create_xlm_call(&env, &client, &creator, &sentinel);
+        client.stake_on_call(&staker, &call.id, &STAKE_AMOUNT, &1u32);
+
+        let updated = client.get_call(&call.id);
+        let up_total = updated.outcome_stakes.get(1u32).unwrap_or(0);
+        assert_eq!(up_total, STAKE_AMOUNT);
+    }
+
+    #[test]
+    fn test_stake_on_call_with_xlm_emits_xlm_stake_added_event() {
+        let (env, client, _admin, _om, xlm_sac) = setup_with_xlm();
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let sentinel = xlm_sac.clone();
+
+        mint(&env, &xlm_sac, &staker, STAKE_AMOUNT * 10);
+
+        let call = create_xlm_call(&env, &client, &creator, &sentinel);
+        client.stake_on_call(&staker, &call.id, &STAKE_AMOUNT, &2u32);
+
+        let events = env.events().all();
+        let has_xlm_event = events.iter().any(|e| {
+            e.1 == soroban_sdk::vec![
+                &env,
+                "call_registry".into_val(&env),
+                "xlm_stake_added".into_val(&env),
+            ]
+        });
+        assert!(has_xlm_event, "xlm_stake_added event should be emitted");
+    }
+
+    #[test]
+    fn test_void_refund_in_native_xlm_emits_xlm_event() {
+        let (env, client, _admin, _om, xlm_sac) = setup_with_xlm();
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let sentinel = xlm_sac.clone();
+
+        mint(&env, &xlm_sac, &staker, STAKE_AMOUNT * 10);
+
+        let call = create_xlm_call(&env, &client, &creator, &sentinel);
+        client.stake_on_call(&staker, &call.id, &STAKE_AMOUNT, &1u32);
+        client.void_call(&call.id);
+        client.claim_void_refund(&staker, &call.id);
+
+        let events = env.events().all();
+        let has_xlm_refund = events.iter().any(|e| {
+            e.1 == soroban_sdk::vec![
+                &env,
+                "call_registry".into_val(&env),
+                "xlm_void_refund".into_val(&env),
+            ]
+        });
+        assert!(has_xlm_refund, "xlm_void_refund event should be emitted");
+    }
+
+    #[test]
+    fn test_void_refund_in_native_xlm_does_not_emit_sac_event() {
+        let (env, client, _admin, _om, xlm_sac) = setup_with_xlm();
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let sentinel = xlm_sac.clone();
+
+        mint(&env, &xlm_sac, &staker, STAKE_AMOUNT * 10);
+
+        let call = create_xlm_call(&env, &client, &creator, &sentinel);
+        client.stake_on_call(&staker, &call.id, &STAKE_AMOUNT, &1u32);
+        client.void_call(&call.id);
+        client.claim_void_refund(&staker, &call.id);
+
+        let events = env.events().all();
+        let has_sac_refund = events.iter().any(|e| {
+            e.1 == soroban_sdk::vec![
+                &env,
+                "call_registry".into_val(&env),
+                "void_refund_claimed".into_val(&env),
+            ]
+        });
+        assert!(
+            !has_sac_refund,
+            "generic void_refund_claimed should NOT fire for XLM calls"
+        );
+    }
+
+    #[test]
+    fn test_release_escrow_in_native_xlm_emits_xlm_event() {
+        let (env, client, _admin, outcome_manager, xlm_sac) = setup_with_xlm();
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let winner = Address::generate(&env);
+        let sentinel = xlm_sac.clone();
+
+        mint(&env, &xlm_sac, &staker, STAKE_AMOUNT * 10);
+
+        let call = create_xlm_call(&env, &client, &creator, &sentinel);
+        client.stake_on_call(&staker, &call.id, &STAKE_AMOUNT, &1u32);
+
+        // Fast-forward past end_ts then resolve
+        env.ledger().set_timestamp(10_001);
+        client.resolve_call(&call.id, &1u32, &110_000_000_i128);
+
+        client.release_escrow(&call.id, &winner, &STAKE_AMOUNT);
+
+        let events = env.events().all();
+        let has_xlm_escrow = events.iter().any(|e| {
+            e.1 == soroban_sdk::vec![
+                &env,
+                "call_registry".into_val(&env),
+                "xlm_escrow_released".into_val(&env),
+            ]
+        });
+        assert!(
+            has_xlm_escrow,
+            "xlm_escrow_released event should be emitted"
+        );
+    }
+
+    #[test]
+    fn test_xlm_sentinel_not_counted_as_whitelisted_sac_token() {
+        let (_env, client, _admin, _om, xlm_sac) = setup_with_xlm();
+        let sentinel = xlm_sac.clone();
+
+        // The sentinel is NOT in the whitelist map — it's handled separately.
+        // is_token_whitelisted should return false for the XLM sentinel.
+        assert!(
+            !client.is_token_whitelisted(&sentinel),
+            "XLM sentinel should not appear in the SAC whitelist"
+        );
+    }
+
+    #[test]
+    fn test_xlm_arithmetic_7_decimals_consistency() {
+        // XLM has 7 decimal places: 1 XLM = 10_000_000 stroops
+        // Verify the contract accepts and round-trips amounts in stroops correctly.
+        let (env, client, _admin, _om, xlm_sac) = setup_with_xlm();
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let sentinel = xlm_sac.clone();
+
+        let one_xlm: i128 = 10_000_000; // 1 XLM in stroops
+        let half_xlm: i128 = 5_000_000; // 0.5 XLM
+        let quarter_xlm: i128 = 2_500_000; // 0.25 XLM
+
+        // Set min_stake to 0.1 XLM (1_000_000 stroops) — already set in setup
+        mint(&env, &xlm_sac, &staker, one_xlm * 100);
+
+        let call = create_xlm_call(&env, &client, &creator, &sentinel);
+
+        // Stake 0.5 XLM on position 1 and 0.25 XLM on position 2
+        client.stake_on_call(&staker, &call.id, &half_xlm, &1u32);
+        client.stake_on_call(&staker, &call.id, &quarter_xlm, &2u32);
+
+        let updated = client.get_call(&call.id);
+        assert_eq!(updated.outcome_stakes.get(1u32).unwrap_or(0), half_xlm);
+        assert_eq!(updated.outcome_stakes.get(2u32).unwrap_or(0), quarter_xlm);
+
+        // Staker's individual recorded stake should match
+        let up_stake = client.get_staker_stake(&call.id, &staker, &1u32);
+        let down_stake = client.get_staker_stake(&call.id, &staker, &2u32);
+        assert_eq!(up_stake, half_xlm);
+        assert_eq!(down_stake, quarter_xlm);
+    }
+
+}
+
+// ── SEP-10 tests ─────────────────────────────────────────────────────────────
+
+mod sep10_tests {
+    use super::*;
+    use crate::{CallRegistry, CallRegistryClient};
+    use ed25519_dalek::{Signer, SigningKey};
+    use soroban_sdk::{testutils::Ledger as _, Address, Bytes, BytesN, Env};
+
+    fn build_message_native(valid_until: u32, home_domain: &[u8]) -> std::vec::Vec<u8> {
+        let mut msg = std::vec::Vec::new();
+        msg.extend_from_slice(b"BACKit:SEP10:");
+        msg.extend_from_slice(&valid_until.to_be_bytes());
+        msg.extend_from_slice(b":");
+        msg.extend_from_slice(home_domain);
+        msg
+    }
+
+    fn make_signing_key(seed_byte: u8) -> SigningKey {
+        let mut seed = [0u8; 32];
+        seed[0] = seed_byte;
+        SigningKey::from_bytes(&seed)
+    }
+
+    fn pubkey_to_soroban(env: &Env, signing_key: &SigningKey) -> BytesN<32> {
+        BytesN::from_array(env, &signing_key.verifying_key().to_bytes())
+    }
+
+    fn sign(
+        env: &Env,
+        signing_key: &SigningKey,
+        valid_until: u32,
+        home_domain: &[u8],
+    ) -> BytesN<64> {
+        let msg = build_message_native(valid_until, home_domain);
+        let sig = signing_key.sign(&msg);
+        BytesN::from_array(env, &sig.to_bytes())
+    }
+
+    fn setup() -> (Env, CallRegistryClient<'static>, Address, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(CallRegistry, ());
+        let client = CallRegistryClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let outcome_manager = Address::generate(&env);
+        client.initialize(&admin, &outcome_manager, &0i128);
+        (env, client, admin, outcome_manager)
+    }
+
+    #[test]
+    fn test_verify_sep10_token_valid() {
+        let (env, client, _, _) = setup();
+        let signing_key = make_signing_key(1);
+        let valid_until: u32 = 1000;
+        let home_domain = b"example.com";
+
+        env.ledger().set_sequence_number(500);
+
+        let pubkey = pubkey_to_soroban(&env, &signing_key);
+        let token = sign(&env, &signing_key, valid_until, home_domain);
+        let domain_bytes = Bytes::from_slice(&env, home_domain);
+
+        assert!(client.verify_sep10_token(&pubkey, &token, &valid_until, &domain_bytes));
+    }
+
+    #[test]
+    fn test_verify_sep10_token_expired() {
+        let (env, client, _, _) = setup();
+        let signing_key = make_signing_key(2);
+        let valid_until: u32 = 100;
+        let home_domain = b"example.com";
+
+        env.ledger().set_sequence_number(200);
+
+        let pubkey = pubkey_to_soroban(&env, &signing_key);
+        let token = sign(&env, &signing_key, valid_until, home_domain);
+        let domain_bytes = Bytes::from_slice(&env, home_domain);
+
+        assert!(!client.verify_sep10_token(&pubkey, &token, &valid_until, &domain_bytes));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_verify_sep10_token_wrong_pubkey() {
+        let (env, client, _, _) = setup();
+        let signing_key = make_signing_key(3);
+        let wrong_key = make_signing_key(99);
+        let valid_until: u32 = 1000;
+        let home_domain = b"example.com";
+
+        env.ledger().set_sequence_number(1);
+
+        let token = sign(&env, &signing_key, valid_until, home_domain);
+        let wrong_pubkey = pubkey_to_soroban(&env, &wrong_key);
+        let domain_bytes = Bytes::from_slice(&env, home_domain);
+
+        client.verify_sep10_token(&wrong_pubkey, &token, &valid_until, &domain_bytes);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_verify_sep10_token_tampered() {
+        let (env, client, _, _) = setup();
+        let signing_key = make_signing_key(4);
+        let valid_until: u32 = 1000;
+        let home_domain = b"example.com";
+
+        env.ledger().set_sequence_number(1);
+
+        let pubkey = pubkey_to_soroban(&env, &signing_key);
+        let mut sig_bytes = signing_key
+            .sign(&build_message_native(valid_until, home_domain))
+            .to_bytes();
+        sig_bytes[0] ^= 0xFF;
+        let tampered_token = BytesN::from_array(&env, &sig_bytes);
+        let domain_bytes = Bytes::from_slice(&env, home_domain);
+
+        client.verify_sep10_token(&pubkey, &tampered_token, &valid_until, &domain_bytes);
+    }
+
+    #[test]
+    fn test_link_sep10_domain_stores_and_emits() {
+        let (env, client, _, _) = setup();
+        let signing_key = make_signing_key(5);
+        let user = Address::generate(&env);
+        let valid_until: u32 = 1000;
+        let home_domain = b"trader.stellar";
+
+        env.ledger().set_sequence_number(1);
+
+        let pubkey = pubkey_to_soroban(&env, &signing_key);
+        let token = sign(&env, &signing_key, valid_until, home_domain);
+        let domain_bytes = Bytes::from_slice(&env, home_domain);
+
+        client.link_sep10_domain(&user, &pubkey, &token, &valid_until, &domain_bytes);
+
+        assert_eq!(client.get_sep10_home_domain(&user), Some(domain_bytes));
+    }
+
+    #[test]
+    fn test_link_sep10_domain_expired_returns_error() {
+        let (env, client, _, _) = setup();
+        let signing_key = make_signing_key(6);
+        let user = Address::generate(&env);
+        let valid_until: u32 = 50;
+        let home_domain = b"expired.stellar";
+
+        env.ledger().set_sequence_number(100);
+
+        let pubkey = pubkey_to_soroban(&env, &signing_key);
+        let token = sign(&env, &signing_key, valid_until, home_domain);
+        let domain_bytes = Bytes::from_slice(&env, home_domain);
+
+        let result =
+            client.try_link_sep10_domain(&user, &pubkey, &token, &valid_until, &domain_bytes);
+        assert!(result.is_err());
+        assert_eq!(client.get_sep10_home_domain(&user), None);
+    }
+
+    #[test]
+    fn test_get_sep10_home_domain_none_before_link() {
+        let (env, client, _, _) = setup();
+        let user = Address::generate(&env);
+        assert_eq!(client.get_sep10_home_domain(&user), None);
     }
 }

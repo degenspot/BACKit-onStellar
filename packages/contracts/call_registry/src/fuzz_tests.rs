@@ -1,14 +1,14 @@
 #![cfg(test)]
+#![allow(deprecated)]
+#![allow(unused)]
 
 use soroban_sdk::{
     contract, contractimpl,
     testutils::{Address as _, Ledger as _},
-    Address, Bytes, Env,
+    Address, Bytes, BytesN, Env,
 };
 
-use crate::{
-    types::ConditionType, CallRegistry, CallRegistryClient,
-};
+use crate::{types::ConditionType, CallRegistry, CallRegistryClient};
 
 #[contract]
 pub struct MockToken;
@@ -25,12 +25,12 @@ fn setup_fuzz_env() -> (Env, CallRegistryClient<'static>, Address, Address, Addr
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, CallRegistry);
+    let contract_id = env.register(CallRegistry, ());
     let client = CallRegistryClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     let outcome_manager = Address::generate(&env);
-    let stake_token = env.register_contract(None, MockToken);
+    let stake_token = env.register(MockToken, ());
 
     client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
     client.whitelist_token(&stake_token);
@@ -47,19 +47,22 @@ fn create_test_call(
 ) -> u64 {
     let token_address = Address::generate(env);
     let pair_id = Bytes::from_slice(env, b"USDC/XLM");
-    let ipfs_cid = Bytes::from_slice(env, b"QmTest");
+    let metadata_hash = BytesN::from_array(env, &[0u8; 32]);
 
     let call = client.create_call(
         creator,
-        stake_token,
-        &100_000_000_i128,
-        &TEST_START_PRICE,
-        &end_ts,
-        &token_address,
-        &pair_id,
-        &ipfs_cid,
-        &ConditionType::TargetAbove(100_000_000_i128),
-        &2,
+        &crate::types::CallInitArgs {
+            stake_token: stake_token.clone(),
+            stake_amount: 100_000_000_i128,
+            start_price: TEST_START_PRICE,
+            end_ts: end_ts,
+            token_address: token_address.clone(),
+            pair_id: pair_id.clone(),
+            ipfs_cid: Bytes::from_slice(env, b"QmXxxx"),
+            metadata_hash: metadata_hash.clone(),
+            condition: ConditionType::TargetAbove(100_000_000_i128),
+            outcome_count: 2,
+        },
     );
 
     call.id
@@ -101,7 +104,11 @@ fn test_fuzz_stake_random_amounts_no_overflow() {
         let position = if amount % 2 == 0 { 1 } else { 2 };
 
         let result = client.try_stake_on_call(&staker, &call_id, &amount, &position);
-        assert!(result.is_ok(), "stake with amount {} should not panic", amount);
+        assert!(
+            result.is_ok(),
+            "stake with amount {} should not panic",
+            amount
+        );
 
         let updated_call = client.get_call(&call_id);
         if position == 1 {
@@ -150,11 +157,13 @@ fn test_fuzz_invariant_total_stake_equals_sum() {
 
     let call = client.get_call(&call_id);
     assert_eq!(
-        call.outcome_stakes.get(1).unwrap_or(0), expected_up,
+        call.outcome_stakes.get(1).unwrap_or(0),
+        expected_up,
         "outcome 1 (up) should equal sum of all up stakes"
     );
     assert_eq!(
-        call.outcome_stakes.get(2).unwrap_or(0), expected_down,
+        call.outcome_stakes.get(2).unwrap_or(0),
+        expected_down,
         "outcome 2 (down) should equal sum of all down stakes"
     );
 
@@ -305,27 +314,25 @@ fn test_fuzz_extreme_timestamp_near_max() {
     let creator = Address::generate(&env);
     let token_address = Address::generate(&env);
     let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
-    let ipfs_cid = Bytes::from_slice(&env, b"QmTest");
+    let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
 
-    let extreme_timestamps = [
-        u64::MAX - 1,
-        u64::MAX - 100,
-        u64::MAX - 1000,
-        u64::MAX / 2,
-    ];
+    let extreme_timestamps = [u64::MAX - 1, u64::MAX - 100, u64::MAX - 1000, u64::MAX / 2];
 
     for &end_ts in &extreme_timestamps {
         let call = client.create_call(
             &creator,
-            &stake_token,
-            &100_000_000,
-            &TEST_START_PRICE,
-            &end_ts,
-            &token_address,
-            &pair_id,
-            &ipfs_cid,
-            &ConditionType::TargetAbove(100_000_000),
-            &2,
+            &crate::types::CallInitArgs {
+                stake_token: stake_token.clone(),
+                stake_amount: 100_000_000,
+                start_price: TEST_START_PRICE,
+                end_ts,
+                token_address: token_address.clone(),
+                pair_id: pair_id.clone(),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: metadata_hash.clone(),
+                condition: ConditionType::TargetAbove(100_000_000),
+                outcome_count: 2,
+            },
         );
 
         let staker = Address::generate(&env);
@@ -353,8 +360,14 @@ fn test_fuzz_invariant_no_negative_stakes() {
         client.stake_on_call(&staker, &call_id, &amount, &position);
 
         let call = client.get_call(&call_id);
-        assert!(call.outcome_stakes.get(1).unwrap_or(0) >= 0, "up stakes must never be negative");
-        assert!(call.outcome_stakes.get(2).unwrap_or(0) >= 0, "down stakes must never be negative");
+        assert!(
+            call.outcome_stakes.get(1).unwrap_or(0) >= 0,
+            "up stakes must never be negative"
+        );
+        assert!(
+            call.outcome_stakes.get(2).unwrap_or(0) >= 0,
+            "down stakes must never be negative"
+        );
 
         let stake = client.get_staker_stake(&call_id, &staker, &position);
         assert!(stake >= 0, "individual stake must never be negative");
@@ -388,7 +401,11 @@ fn test_fuzz_negative_stake_always_fails() {
     for &amount in &negative_amounts {
         let staker = Address::generate(&env);
         let result = client.try_stake_on_call(&staker, &call_id, &amount, &1);
-        assert!(result.is_err(), "staking negative amount {} should fail", amount);
+        assert!(
+            result.is_err(),
+            "staking negative amount {} should fail",
+            amount
+        );
     }
 }
 
@@ -424,11 +441,7 @@ fn test_fuzz_arithmetic_no_overflow_with_max_values() {
     let creator = Address::generate(&env);
     let call_id = create_test_call(&env, &client, &creator, &stake_token, 5000);
 
-    let large_amounts = [
-        i128::MAX / 2,
-        i128::MAX / 4,
-        i128::MAX / 8,
-    ];
+    let large_amounts = [i128::MAX / 2, i128::MAX / 4, i128::MAX / 8];
 
     for &amount in &large_amounts {
         let staker = Address::generate(&env);

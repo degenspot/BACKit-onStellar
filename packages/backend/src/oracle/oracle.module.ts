@@ -17,6 +17,7 @@ import { OracleHealthLog } from './entities/oracle-health-log.entity';
 import { OracleHealthService } from './oracle-health.service';
 import { OracleHealthController } from './oracle-health.controller';
 import { IpfsService } from '../storage/ipfs.service';
+import { Token } from '../token/entities/token.entity';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { IpfsService } from '../storage/ipfs.service';
       PriceDeviationLog,
       OraclePriceEntity,
       OracleHealthLog,
+      Token,
     ]),
     forwardRef(() => CallsModule),
   ],

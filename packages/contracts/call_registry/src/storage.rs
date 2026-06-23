@@ -1,5 +1,5 @@
-use crate::types::{Call, ContractConfig, GlobalStats, CreatorStats, StorageStats};
-use soroban_sdk::{contracttype, Address, Env};
+use crate::types::{Call, ContractConfig, CreatorStats, GlobalStats, StorageStats};
+use soroban_sdk::{contracttype, Address, Bytes, Env};
 
 // ~120 days in ledgers (5s per ledger): 120 * 24 * 3600 / 5 = 2_073_600
 pub const PERSISTENT_LIFETIME_THRESHOLD: u32 = 1_036_800; // ~60 days
@@ -17,13 +17,16 @@ pub enum DataKey {
     GlobalStakerSeen(Address),
     Call(u64),
     CallStakers(u64),
+    CallStakerSeen(u64, Address),
     StakerCalls(Address),
+    StakerCallSeen(Address, u64),
     CreatorStats(Address),
     UserStake(u64, Address, u32),
     UpStakerCount(u64),
     DownStakerCount(u64),
     VoidRefundClaimed(u64, Address),
     InstanceEntryCount,
+    Sep10Domain(Address),
 }
 
 /// Store contract configuration
@@ -93,6 +96,21 @@ pub fn call_exists(env: &Env, call_id: u64) -> bool {
 /// Track which calls a staker has participated in
 pub fn add_staker_call(env: &Env, staker: &Address, call_id: u64) {
     let key = DataKey::StakerCalls(staker.clone());
+    let seen_key = DataKey::StakerCallSeen(staker.clone(), call_id);
+
+    if env.storage().persistent().has(&seen_key) {
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+        env.storage().persistent().extend_ttl(
+            &seen_key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+        return;
+    }
 
     let mut call_ids: soroban_sdk::Vec<u64> = env
         .storage()
@@ -100,12 +118,16 @@ pub fn add_staker_call(env: &Env, staker: &Address, call_id: u64) {
         .get(&key)
         .unwrap_or_else(|| soroban_sdk::Vec::new(env));
 
-    if !call_ids.iter().any(|id| id == call_id) {
-        call_ids.push_back(call_id);
-        env.storage().persistent().set(&key, &call_ids);
-    }
+    call_ids.push_back(call_id);
+    env.storage().persistent().set(&key, &call_ids);
+    env.storage().persistent().set(&seen_key, &true);
     env.storage().persistent().extend_ttl(
         &key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
+    env.storage().persistent().extend_ttl(
+        &seen_key,
         PERSISTENT_LIFETIME_THRESHOLD,
         PERSISTENT_BUMP_AMOUNT,
     );
@@ -131,19 +153,39 @@ pub fn get_staker_calls(env: &Env, staker: &Address) -> soroban_sdk::Vec<u64> {
 
 pub fn add_call_staker(env: &Env, call_id: u64, staker: &Address) {
     let key = DataKey::CallStakers(call_id);
+    let seen_key = DataKey::CallStakerSeen(call_id, staker.clone());
+
+    if env.storage().persistent().has(&seen_key) {
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+        env.storage().persistent().extend_ttl(
+            &seen_key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+        return;
+    }
+
     let mut stakers: soroban_sdk::Vec<Address> = env
         .storage()
         .persistent()
         .get(&key)
         .unwrap_or_else(|| soroban_sdk::Vec::new(env));
 
-    if !stakers.iter().any(|existing| existing == *staker) {
-        stakers.push_back(staker.clone());
-        env.storage().persistent().set(&key, &stakers);
-    }
+    stakers.push_back(staker.clone());
+    env.storage().persistent().set(&key, &stakers);
+    env.storage().persistent().set(&seen_key, &true);
 
     env.storage().persistent().extend_ttl(
         &key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
+    env.storage().persistent().extend_ttl(
+        &seen_key,
         PERSISTENT_LIFETIME_THRESHOLD,
         PERSISTENT_BUMP_AMOUNT,
     );
@@ -164,6 +206,30 @@ pub fn get_call_stakers(env: &Env, call_id: u64) -> soroban_sdk::Vec<Address> {
         );
     }
     result
+}
+
+pub fn get_call_stakers_bounded(
+    env: &Env,
+    call_id: u64,
+    start: u32,
+    limit: u32,
+) -> soroban_sdk::Vec<Address> {
+    let stakers = get_call_stakers(env, call_id);
+    let mut bounded = soroban_sdk::Vec::new(env);
+    if limit == 0 {
+        return bounded;
+    }
+
+    let total = stakers.len();
+    let mut index = start;
+    let end = start.saturating_add(limit).min(total);
+    while index < end {
+        if let Some(staker) = stakers.get(index) {
+            bounded.push_back(staker);
+        }
+        index += 1;
+    }
+    bounded
 }
 
 pub fn get_global_stats(env: &Env) -> GlobalStats {
@@ -345,4 +411,21 @@ pub fn get_storage_stats(env: &Env) -> StorageStats {
         instance_entry_count,
         estimated_instance_bytes: instance_entry_count * 128,
     }
+}
+
+/// Persist a verified SEP-10 home_domain for a user.
+pub fn set_sep10_domain(env: &Env, user: &Address, domain: &Bytes) {
+    let key = DataKey::Sep10Domain(user.clone());
+    env.storage().persistent().set(&key, domain);
+    env.storage().persistent().extend_ttl(
+        &key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
+}
+
+/// Retrieve a user's verified SEP-10 home_domain, if any.
+pub fn get_sep10_domain(env: &Env, user: &Address) -> Option<Bytes> {
+    let key = DataKey::Sep10Domain(user.clone());
+    env.storage().persistent().get(&key)
 }

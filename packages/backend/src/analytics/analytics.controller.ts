@@ -148,13 +148,18 @@ export class PlatformAnalyticsController {
 
   @Get('platform')
   @ApiOperation({ summary: 'Platform-wide aggregate metrics (5 min cache)' })
-  @ApiResponse({ status: HttpStatus.OK, description: 'Platform metrics returned' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Platform metrics returned',
+  })
   getPlatformAnalytics() {
     return this.analyticsService.getPlatformAnalytics();
   }
 
   @Get('platform/trends')
-  @ApiOperation({ summary: 'Daily trend datapoints for calls, users, stake volume' })
+  @ApiOperation({
+    summary: 'Daily trend datapoints for calls, users, stake volume',
+  })
   @ApiQuery({ name: 'period', enum: ['7d', '14d', '30d'], required: false })
   @ApiResponse({ status: HttpStatus.OK, description: 'Trend data returned' })
   getPlatformTrends(@Query('period') period = '7d') {

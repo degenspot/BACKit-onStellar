@@ -10,7 +10,8 @@ async function errors(cls: any, plain: object) {
   return validate(plainToInstance(cls, plain));
 }
 
-const VALID_STELLAR = 'GBZNLMUQMIN3VGUJISCHKMMTNMDSYFZLHFB5BKRH2HZ7ZBYXUQYXQZWX';
+const VALID_STELLAR =
+  'GBZNLMUQMIN3VGUJISCHKMMTNMDSYFZLHFB5BKRH2HZ7ZBYXUQYXQZWX';
 
 // ─── 1. CreateCallDto ─────────────────────────────────────────────────────────
 describe('CreateCallDto validation (endpoint: POST /calls)', () => {
@@ -28,22 +29,30 @@ describe('CreateCallDto validation (endpoint: POST /calls)', () => {
   it('rejects missing title', async () => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { title: _, ...rest } = base;
-    expect((await errors(CreateCallDto, rest)).some(e => e.property === 'title')).toBe(true);
+    expect(
+      (await errors(CreateCallDto, rest)).some((e) => e.property === 'title'),
+    ).toBe(true);
   });
 
   it('rejects title longer than 200 chars', async () => {
-    const errs = await errors(CreateCallDto, { ...base, title: 'a'.repeat(201) });
-    expect(errs.some(e => e.property === 'title')).toBe(true);
+    const errs = await errors(CreateCallDto, {
+      ...base,
+      title: 'a'.repeat(201),
+    });
+    expect(errs.some((e) => e.property === 'title')).toBe(true);
   });
 
   it('rejects invalid Stellar creatorAddress', async () => {
-    const errs = await errors(CreateCallDto, { ...base, creatorAddress: 'not-stellar' });
-    expect(errs.some(e => e.property === 'creatorAddress')).toBe(true);
+    const errs = await errors(CreateCallDto, {
+      ...base,
+      creatorAddress: 'not-stellar',
+    });
+    expect(errs.some((e) => e.property === 'creatorAddress')).toBe(true);
   });
 
   it('rejects negative stakeAmount', async () => {
     const errs = await errors(CreateCallDto, { ...base, stakeAmount: -5 });
-    expect(errs.some(e => e.property === 'stakeAmount')).toBe(true);
+    expect(errs.some((e) => e.property === 'stakeAmount')).toBe(true);
   });
 
   it('accepts a fully valid payload', async () => {
@@ -59,21 +68,23 @@ describe('QueryCallsDto validation (endpoint: GET /calls/feed, GET /calls/search
 
   it('rejects invalid sort value', async () => {
     const errs = await errors(QueryCallsDto, { sort: 'oldest' });
-    expect(errs.some(e => e.property === 'sort')).toBe(true);
+    expect(errs.some((e) => e.property === 'sort')).toBe(true);
   });
 
   it('rejects page below 1', async () => {
     const errs = await errors(QueryCallsDto, { page: 0 });
-    expect(errs.some(e => e.property === 'page')).toBe(true);
+    expect(errs.some((e) => e.property === 'page')).toBe(true);
   });
 
   it('rejects limit above 100', async () => {
     const errs = await errors(QueryCallsDto, { limit: 101 });
-    expect(errs.some(e => e.property === 'limit')).toBe(true);
+    expect(errs.some((e) => e.property === 'limit')).toBe(true);
   });
 
   it('accepts valid sort=trending with pagination', async () => {
-    expect(await errors(QueryCallsDto, { sort: 'trending', page: 2, limit: 50 })).toHaveLength(0);
+    expect(
+      await errors(QueryCallsDto, { sort: 'trending', page: 2, limit: 50 }),
+    ).toHaveLength(0);
   });
 });
 
@@ -81,7 +92,7 @@ describe('QueryCallsDto validation (endpoint: GET /calls/feed, GET /calls/search
 describe('AnalyticsQueryDto validation (endpoint: GET /users/:address/analytics)', () => {
   it('rejects an unknown range value', async () => {
     const errs = await errors(AnalyticsQueryDto, { range: 'weekly' });
-    expect(errs.some(e => e.property === 'range')).toBe(true);
+    expect(errs.some((e) => e.property === 'range')).toBe(true);
   });
 
   it('accepts range=7d', async () => {
@@ -97,16 +108,18 @@ describe('AnalyticsQueryDto validation (endpoint: GET /users/:address/analytics)
 describe('FollowDto validation (endpoint: POST /users/:address/follow)', () => {
   it('rejects missing followerAddress', async () => {
     const errs = await errors(FollowDto, {});
-    expect(errs.some(e => e.property === 'followerAddress')).toBe(true);
+    expect(errs.some((e) => e.property === 'followerAddress')).toBe(true);
   });
 
   it('rejects non-string followerAddress', async () => {
     const errs = await errors(FollowDto, { followerAddress: 123 });
-    expect(errs.some(e => e.property === 'followerAddress')).toBe(true);
+    expect(errs.some((e) => e.property === 'followerAddress')).toBe(true);
   });
 
   it('accepts a valid followerAddress', async () => {
-    expect(await errors(FollowDto, { followerAddress: VALID_STELLAR })).toHaveLength(0);
+    expect(
+      await errors(FollowDto, { followerAddress: VALID_STELLAR }),
+    ).toHaveLength(0);
   });
 });
 
@@ -114,15 +127,24 @@ describe('FollowDto validation (endpoint: POST /users/:address/follow)', () => {
 describe('GetNotificationsDto validation (endpoint: GET /notifications)', () => {
   it('rejects missing userId', async () => {
     const errs = await errors(GetNotificationsDto, {});
-    expect(errs.some(e => e.property === 'userId')).toBe(true);
+    expect(errs.some((e) => e.property === 'userId')).toBe(true);
   });
 
   it('rejects limit below 1', async () => {
-    const errs = await errors(GetNotificationsDto, { userId: 'user1', limit: 0 });
-    expect(errs.some(e => e.property === 'limit')).toBe(true);
+    const errs = await errors(GetNotificationsDto, {
+      userId: 'user1',
+      limit: 0,
+    });
+    expect(errs.some((e) => e.property === 'limit')).toBe(true);
   });
 
   it('accepts valid payload with all fields', async () => {
-    expect(await errors(GetNotificationsDto, { userId: 'user1', limit: 10, offset: 0 })).toHaveLength(0);
+    expect(
+      await errors(GetNotificationsDto, {
+        userId: 'user1',
+        limit: 10,
+        offset: 0,
+      }),
+    ).toHaveLength(0);
   });
 });

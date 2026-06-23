@@ -11,11 +11,13 @@ import { usePlatformConfig } from "@/contexts/PlatformConfigContext";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { SearchBar } from "@/components/SearchBar";
+import { useTranslation } from "react-i18next";
 
 export function NavBar() {
     const { publicKey } = useWalletContext();
     const { config } = usePlatformConfig();
     const router = useRouter();
+    const { t, i18n } = useTranslation();
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
 
@@ -97,9 +99,16 @@ export function NavBar() {
                     </button>
 
                     {config && (
-                        <div className="text-sm text-gray-300 mr-4">Fee: {config.feePercent}%</div>
+                        <div className="text-sm text-gray-300 mr-4">{t('nav.fee', { percent: config.feePercent })}</div>
                     )}
-
+                    <select
+                        className="bg-transparent text-slate-200 border border-white/10 rounded-lg p-1 text-sm outline-none cursor-pointer"
+                        value={i18n.resolvedLanguage || 'en'}
+                        onChange={(e) => i18n.changeLanguage(e.target.value)}
+                    >
+                        <option value="en" className="bg-[#080b14]">🇺🇸 EN</option>
+                        <option value="es" className="bg-[#080b14]">🇪🇸 ES</option>
+                    </select>
                     {publicKey && <NotificationBell userId={publicKey} />}
                     <ConnectButton />
                 </div>

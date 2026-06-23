@@ -56,7 +56,9 @@ export class OracleController {
   @Get('calls/:callId/outcomes')
   @ApiOperation({ summary: 'Get outcomes for a specific oracle call' })
   @ApiParam({ name: 'callId', description: 'Oracle call ID' })
-  async getOutcomesForCall(@Param('callId', ParseIntPipe) callId: number): Promise<OracleOutcome[]> {
+  async getOutcomesForCall(
+    @Param('callId', ParseIntPipe) callId: number,
+  ): Promise<OracleOutcome[]> {
     const outcomes = await this.oracleService.getOutcomesForCall(callId);
     if (!outcomes || outcomes.length === 0) {
       throw new NotFoundException(`No outcomes found for call ${callId}`);
@@ -65,9 +67,14 @@ export class OracleController {
   }
 
   @Get('calls/:callId/evidence')
-  @ApiOperation({ summary: 'Get IPFS evidence CID and gateway link for a resolved call' })
+  @ApiOperation({
+    summary: 'Get IPFS evidence CID and gateway link for a resolved call',
+  })
   @ApiParam({ name: 'callId', description: 'Oracle call ID' })
-  @ApiResponse({ status: 200, description: 'Evidence CID and IPFS gateway URL' })
+  @ApiResponse({
+    status: 200,
+    description: 'Evidence CID and IPFS gateway URL',
+  })
   @ApiResponse({ status: 404, description: 'No evidence found' })
   async getEvidence(@Param('callId', ParseIntPipe) callId: number) {
     const outcomes = await this.oracleService.getOutcomesForCall(callId);
@@ -84,10 +91,21 @@ export class OracleController {
     };
   }
 
+  @Get('calls/:callId/price-sources')
+  @ApiOperation({ summary: 'Get all price sources queried and their values' })
+  @ApiParam({ name: 'callId', description: 'Oracle call ID' })
+  async getPriceSources(@Param('callId', ParseIntPipe) callId: number) {
+    return this.oracleService.getPriceSources(callId);
+  }
+
   @Get('health')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Oracle module health check' })
   getHealth() {
-    return { status: 'healthy', timestamp: new Date().toISOString(), module: 'oracle-worker' };
+    return {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      module: 'oracle-worker',
+    };
   }
 }

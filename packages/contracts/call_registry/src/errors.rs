@@ -34,4 +34,6 @@ pub enum CallRegistryError {
     FeeTooHigh = 14,
     /// Staking attempted within the cutoff window before `end_ts`.
     StakingCutoffActive = 15,
+    /// The SEP-10 token's `valid_until` ledger sequence has passed.
+    Sep10TokenExpired = 16,
 }

@@ -1,0 +1,103 @@
+{
+  "nav": {
+    "connectWallet": "Conectar Billetera",
+    "connected": "● Conectado",
+    "fee": "Tarifa: {{percent}}%",
+    "search": "Buscar",
+    "shortcuts": "Atajos de teclado",
+    "home": "Volver al inicio"
+  },
+  "hero": {
+    "badge": "EN VIVO — Mercados de Predicción en Stellar",
+    "title1": "Predice Con",
+    "title2": "Tus Amigos.",
+    "title3": "Ganen Juntos.",
+    "subtitle": "Mercados de predicción social donde tus llamadas ganan rendimientos reales. Apuesta con convicción, compite en la clasificación y liquida instantáneamente en la cadena.",
+    "launchApp": "Iniciar Aplicación",
+    "howItWorks": "Cómo Funciona"
+  },
+  "stats": {
+    "totalVolume": "Volumen Total",
+    "activePredictors": "Predictores Activos",
+    "avgWinRate": "Tasa Promedio de Éxito",
+    "chainsSupported": "Cadenas Soportadas"
+  },
+  "mockCard": {
+    "trending": "LLAMADA EN TENDENCIA",
+    "odds": "Probabilidades de +{{odds}}x",
+    "title": "BTC llega a $75k antes de Abril",
+    "author": "por @{{username}} · {{backers}} apoyos",
+    "pool": "Bote: ${{amount}}",
+    "closes": "Cierra en: {{time}}"
+  },
+  "howItWorks": {
+    "tagline": "EL PROCESO",
+    "title": "Tres pasos a la luna.",
+    "step1": {
+      "title": "Haz tu Llamada",
+      "desc": "Navega por mercados en vivo o crea tu propia predicción. Cualquier token, cualquier resultado. Pon tu convicción en juego."
+    },
+    "step2": {
+      "title": "Apuesta y Compite",
+      "desc": "Respalda tu llamada con XLM o cualquier token compatible. Los amigos pueden apoyarte o apostar en tu contra — mercados sociales en su máxima expresión."
+    },
+    "step3": {
+      "title": "Gana y Obtén Rendimientos",
+      "desc": "Los mercados se liquidan instantáneamente en la cadena. Los ganadores reclaman recompensas automáticamente. Tu reputación crece con cada llamada correcta."
+    }
+  },
+  "features": {
+    "tagline": "CONSTRUIDO DIFERENTE",
+    "title": "Todo lo que necesitas para ganar.",
+    "multiChain": {
+      "title": "Multicadena",
+      "desc": "Opera a través de Stellar, Ethereum, Solana y Avalanche desde una única interfaz unificada.",
+      "badge": "4 Cadenas"
+    },
+    "socialFeed": {
+      "title": "Feed Social",
+      "desc": "Sigue a los mejores predictores, copia llamadas y construye tu reputación en la clasificación.",
+      "badge": "En Vivo"
+    },
+    "instantSettlement": {
+      "title": "Liquidación Instantánea",
+      "desc": "Los contratos inteligentes de Soroban liquidan mercados en segundos. Sin esperas, sin disputas.",
+      "badge": "<2s"
+    },
+    "reputationScore": {
+      "title": "Puntuación de Reputación",
+      "desc": "Tu historial está en la cadena. Construye credibilidad, desbloquea límites de apuesta más altos.",
+      "badge": "En cadena"
+    },
+    "realYield": {
+      "title": "Rendimiento Real",
+      "desc": "Los predictores ganadores ganan de la parte perdedora. Sin comisión para la casa — puro de igual a igual.",
+      "badge": "0% Tarifa*"
+    },
+    "createMarkets": {
+      "title": "Crear Mercados",
+      "desc": "Cualquiera puede lanzar un mercado de predicción sobre cualquier resultado. Sin permisos e imparable.",
+      "badge": "Abierto"
+    }
+  },
+  "leaderboard": {
+    "tagline": "CLASIFICACIONES SOCIALES",
+    "title": "Mejores Predictores de la Semana",
+    "calls": "{{count}} llamadas",
+    "winRate": "{{rate}}% TE"
+  },
+  "cta": {
+    "title1": "Tu próxima llamada",
+    "title2": "podría cambiarlo todo.",
+    "desc": "Únete a miles de predictores que ya están ganando en BACKit. Conecta tu billetera y haz tu primera llamada en menos de 60 segundos.",
+    "button": "Conectar Billetera e Iniciar",
+    "footnote": "No se necesita cuenta. Sin custodia. Tus claves, tus llamadas."
+  },
+  "footer": {
+    "copyright": "© 2025 BACKit. Impulsado por Stellar Soroban.",
+    "viewSample": "Ver Perfil de Muestra",
+    "docs": "Documentación",
+    "discord": "Discord",
+    "twitter": "Twitter"
+  }
+}

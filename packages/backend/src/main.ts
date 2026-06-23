@@ -1,25 +1,17 @@
 import { NestFactory } from '@nestjs/core';
-import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
+import { Logger } from 'nestjs-pino';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.useLogger(app.get(Logger)); // Use pino logger
 
   app.enableCors({
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     credentials: true,
   });
-
-  // URI-based API versioning: /api/v1/... (defaultVersion covers all unversioned routes)
-  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-
-  // Global exception filter — standardised { statusCode, error, message, timestamp, path }
-  app.useGlobalFilters(new GlobalExceptionFilter());
-
-  // Global exception filter — standardised { statusCode, error, message, timestamp, path }
-  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Global validation pipe
   app.useGlobalPipes(
@@ -88,20 +80,33 @@ async function bootstrap() {
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
   await app.listen(port);
 
-  Logger.log(`🚀 Backend running on http://localhost:${port}`, 'Bootstrap');
-  Logger.log(
-    `📚 Swagger docs at http://localhost:${port}/api/docs`,
+  const logger = app.get(Logger);
+
+  logger.log(`🚀 Backend running on http://localhost:${port}`, 'Bootstrap');
+  logger.log(
+    `📚 Swagger documentation available at http://localhost:${port}/api/docs`,
     'Bootstrap',
   );
-  Logger.log(`💚 Health check at http://localhost:${port}/health`, 'Bootstrap');
-  Logger.log(
+  logger.log(
+    `📊 API JSON spec available at http://localhost:${port}/api/docs-json`,
+    'Bootstrap',
+  );
+  logger.log(
+    `💚 Health check available at http://localhost:${port}/health`,
+    'Bootstrap',
+  );
+  logger.log(
+    `🔌 WebSocket gateway available at ws://localhost:${port}/ws`,
+    'Bootstrap',
+  );
+  logger.log(
     `🌍 Environment: ${process.env.NODE_ENV || 'development'}`,
     'Bootstrap',
   );
 }
 
-bootstrap().catch((error) => {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-  Logger.error(`Failed to start: ${error.message}`, error.stack, 'Bootstrap');
+bootstrap().catch((error: unknown) => {
+  const err = error as Error;
+  console.error(`Failed to start application: ${err.message}`, err.stack);
   process.exit(1);
 });

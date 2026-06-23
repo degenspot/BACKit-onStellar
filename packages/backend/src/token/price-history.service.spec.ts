@@ -32,7 +32,11 @@ describe('PriceHistoryService', () => {
       await service.recordPrice('XLM-issuer');
 
       expect(mockRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ tokenPair: 'XLM-issuer', price: 0.12, source: 'dexscreener' }),
+        expect.objectContaining({
+          tokenPair: 'XLM-issuer',
+          price: 0.12,
+          source: 'dexscreener',
+        }),
       );
       expect(mockRepo.save).toHaveBeenCalled();
     });
@@ -54,7 +58,9 @@ describe('PriceHistoryService', () => {
 
   describe('getHistory', () => {
     it('queries with correct period window and returns results', async () => {
-      const rows = [{ timestamp: new Date(), price: 0.1, source: 'dexscreener' }];
+      const rows = [
+        { timestamp: new Date(), price: 0.1, source: 'dexscreener' },
+      ];
       mockRepo.find.mockResolvedValue(rows);
 
       const result = await service.getHistory('XLM-issuer', '1h');

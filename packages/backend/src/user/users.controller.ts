@@ -1,4 +1,6 @@
 ﻿import {
+/// <reference types="multer" />
+import {
   Controller,
   Post,
   Get,
@@ -12,11 +14,24 @@
   Query,
   DefaultValuePipe,
   ParseIntPipe,
+  UseInterceptors,
+  UploadedFile,
+  ParseFilePipeBuilder,
+  Patch,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiConsumes,
+} from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { FollowDto } from './dto/follow.dto';
+import { CreateProfileDto, UpdateProfileDto } from './dto/profile.dto';
 
 @ApiTags('users')
 @Controller('users')
@@ -75,6 +90,60 @@ export class UsersController {
   ) {
     return this.usersService.getFollowing(address, page, limit);
   }
+
+  // ─── profile creation and update ──────────────────────────────────────────
+
+  @Post('profile')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create user profile' })
+  @ApiConsumes('multipart/form-data')
+  @ApiResponse({ status: 201, description: 'Profile created successfully.' })
+  @ApiResponse({ status: 400, description: 'Invalid request.' })
+  @ApiResponse({ status: 409, description: 'Profile already exists.' })
+  @UseInterceptors(FileInterceptor('avatar'))
+  @UsePipes(new ValidationPipe({ whitelist: true }))
+  async createProfile(
+    @Body() createProfileDto: CreateProfileDto,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addFileTypeValidator({ fileType: /(jpg|jpeg|png|webp)$/ })
+        .addMaxSizeValidator({ maxSize: 2 * 1024 * 1024 })
+        .build({
+          errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+          fileIsRequired: false,
+        }),
+    )
+    avatarFile?: Express.Multer.File,
+  ) {
+    return this.usersService.createProfile(createProfileDto, avatarFile);
+  }
+
+  @Patch('profile')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update user profile' })
+  @ApiConsumes('multipart/form-data')
+  @ApiResponse({ status: 200, description: 'Profile updated successfully.' })
+  @ApiResponse({ status: 400, description: 'Invalid request.' })
+  @ApiResponse({ status: 404, description: 'Profile not found.' })
+  @UseInterceptors(FileInterceptor('avatar'))
+  @UsePipes(new ValidationPipe({ whitelist: true }))
+  async updateProfile(
+    @Body() updateProfileDto: UpdateProfileDto,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addFileTypeValidator({ fileType: /(jpg|jpeg|png|webp)$/ })
+        .addMaxSizeValidator({ maxSize: 2 * 1024 * 1024 })
+        .build({
+          errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+          fileIsRequired: false,
+        }),
+    )
+    avatarFile?: Express.Multer.File,
+  ) {
+    return this.usersService.updateProfile(updateProfileDto, avatarFile);
+  }
+
+  // ─── NEW: profile with badges ─────────────────────────────────────────────
 
   @Get(':address')
   @UseInterceptors(CacheInterceptor)

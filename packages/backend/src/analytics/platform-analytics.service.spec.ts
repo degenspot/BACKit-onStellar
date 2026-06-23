@@ -4,7 +4,10 @@ import { DataSource } from 'typeorm';
 const mockCallRepo = { createQueryBuilder: jest.fn() } as any;
 const mockStakeRepo = { createQueryBuilder: jest.fn() } as any;
 const mockDataSource = { query: jest.fn() } as unknown as DataSource;
-const mockCacheManager = { get: jest.fn().mockResolvedValue(null), set: jest.fn() } as any;
+const mockCacheManager = {
+  get: jest.fn().mockResolvedValue(null),
+  set: jest.fn(),
+} as any;
 const mockTokensService = {} as any;
 const mockCoinGeckoService = {} as any;
 
@@ -16,7 +19,7 @@ describe('AnalyticsService – platform analytics', () => {
     service = new AnalyticsService(
       mockCallRepo,
       mockStakeRepo,
-      mockStakeRepo,       // stakeLedgerRepository
+      mockStakeRepo, // stakeLedgerRepository
       mockDataSource,
       mockCacheManager,
       mockTokensService,
@@ -27,8 +30,16 @@ describe('AnalyticsService – platform analytics', () => {
   describe('getPlatformAnalytics', () => {
     it('returns aggregated platform stats', async () => {
       (mockDataSource.query as jest.Mock)
-        .mockResolvedValueOnce([{ total_calls_created: '10', total_calls_resolved: '5', avg_call_duration_hours: '2' }])
-        .mockResolvedValueOnce([{ total_stake_volume: '1000', total_unique_users: '50' }])
+        .mockResolvedValueOnce([
+          {
+            total_calls_created: '10',
+            total_calls_resolved: '5',
+            avg_call_duration_hours: '2',
+          },
+        ])
+        .mockResolvedValueOnce([
+          { total_stake_volume: '1000', total_unique_users: '50' },
+        ])
         .mockResolvedValueOnce([{ total_unique_users: '50' }])
         .mockResolvedValueOnce([]);
 
@@ -40,8 +51,15 @@ describe('AnalyticsService – platform analytics', () => {
     });
 
     it('returns cached result on second call', async () => {
-      (mockDataSource.query as jest.Mock)
-        .mockResolvedValue([{ total_calls_created: '1', total_calls_resolved: '0', avg_call_duration_hours: '0', total_stake_volume: '0', total_unique_users: '0' }]);
+      (mockDataSource.query as jest.Mock).mockResolvedValue([
+        {
+          total_calls_created: '1',
+          total_calls_resolved: '0',
+          avg_call_duration_hours: '0',
+          total_stake_volume: '0',
+          total_unique_users: '0',
+        },
+      ]);
 
       await service.getPlatformAnalytics();
       await service.getPlatformAnalytics();

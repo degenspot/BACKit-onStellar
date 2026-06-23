@@ -32,7 +32,10 @@
     "react-markdown": "^10.1.0",
     "swr": "^2.2.0",
     "tailwind-merge": "^2.2.0",
-    "zod": "^4.3.5"
+    "zod": "^4.3.5",
+    "i18next": "^23.10.1",
+    "react-i18next": "^14.1.0",
+    "i18next-browser-languagedetector": "^7.2.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.0",

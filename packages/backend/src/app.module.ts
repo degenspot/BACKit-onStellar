@@ -14,6 +14,7 @@ import { UsersModule } from './user/users.module';
 import { AuthModule } from './auth/auth.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { LoggerModule } from './common/logger/logger.module';
 
 function buildCacheConfig() {
   if (process.env.REDIS_URL) {
@@ -35,6 +36,8 @@ function buildCacheConfig() {
       isGlobal: true,
       ...buildCacheConfig(),
     }),
+    CacheModule.register({ isGlobal: true }),
+    LoggerModule,
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DB_HOST || process.env.POSTGRES_HOST || 'localhost',
