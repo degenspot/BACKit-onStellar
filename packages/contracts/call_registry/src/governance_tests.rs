@@ -6,7 +6,7 @@ use soroban_sdk::{
     Address, Env, Symbol,
 };
 
-fn setup_env() -> (Env, Address, Address, crate::CallRegistryClient) {
+fn setup_env() -> (Env, Address, Address, crate::CallRegistryClient<'static>) {
     let env = Env::default();
     env.mock_all_auths();
 
