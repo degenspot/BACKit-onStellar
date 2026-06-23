@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Bytes, BytesN, Map};
+use soroban_sdk::{contracttype, Address, Bytes, BytesN, Map, Symbol, Val};
 
 /// Describes the price-movement condition that determines the winning outcome.
 ///
@@ -141,6 +141,17 @@ pub struct ContractConfig {
     pub staking_cutoff_secs: u64,
     /// Wasm hash for the share token contract (if enabled)
     pub share_wasm_hash: Option<BytesN<32>>,
+
+    // ── Governance parameters ──────────────────────────────────────────────
+    /// Minimum cumulative stake volume a user must have to create a proposal.
+    /// Default: 0 (any staker may propose).
+    pub proposal_threshold: i128,
+    /// Percentage of total platform stake volume required for a proposal to pass,
+    /// expressed in basis points (e.g. 500 = 5%). Default: 500.
+    pub governance_quorum_bps: u32,
+    /// Default voting window in ledgers. Used for informational purposes;
+    /// each proposal sets its own `voting_end_ledger`.
+    pub voting_period_ledgers: u32,
 }
 
 /// Contract-wide aggregated statistics for dashboards.
@@ -190,6 +201,53 @@ pub struct StorageStats {
     pub call_count: u64,
     /// Number of entries currently tracked in instance storage.
     pub instance_entry_count: u32,
-    /// Rough byte estimate for instance storage (entry_count × 128 bytes).
+    /// Rough estimate of instance storage bytes used (entry_count × 128 B).
     pub estimated_instance_bytes: u32,
+}
+
+// ── Governance types ──────────────────────────────────────────────────────────
+
+/// Lifecycle state of a governance proposal.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum ProposalStatus {
+    /// Voting is open.
+    Active,
+    /// Passed quorum and has been applied.
+    Executed,
+    /// Did not pass (insufficient votes or quorum not met).
+    Rejected,
+}
+
+/// An on-chain governance proposal to change a contract parameter.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct GovernanceProposal {
+    /// Unique monotonically-increasing proposal identifier.
+    pub id: u64,
+    /// Address that created this proposal.
+    pub proposer: Address,
+    /// The name of the parameter to change (e.g. `Symbol::new(env, "fee_bps")`).
+    pub parameter: Symbol,
+    /// The proposed new value, encoded as a generic `Val`.
+    pub new_value: Val,
+    /// The ledger sequence number after which `execute_proposal` may be called.
+    pub voting_end_ledger: u32,
+    /// Current lifecycle state.
+    pub status: ProposalStatus,
+    /// Accumulated yes-vote weight (sum of voters' stake volumes).
+    pub yes_votes: i128,
+    /// Accumulated no-vote weight (sum of voters' stake volumes).
+    pub no_votes: i128,
+    /// Total platform stake volume snapshotted at proposal creation; used to
+    /// calculate the quorum threshold at execution time.
+    pub total_volume_snapshot: i128,
+}
+
+/// Vote tallies stored separately for efficient incremental updates.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProposalVotes {
+    pub yes: i128,
+    pub no: i128,
 }
