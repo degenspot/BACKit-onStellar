@@ -356,3 +356,61 @@ pub fn emit_sep10_verified(env: &Env, user: &Address, home_domain: &soroban_sdk:
         (user.clone(), home_domain.clone()),
     );
 }
+
+// ── Governance events ─────────────────────────────────────────────────────────
+
+/// Emitted when a new governance proposal is created.
+pub fn emit_proposal_created(
+    env: &Env,
+    proposal_id: u64,
+    proposer: &Address,
+    parameter: &Symbol,
+    voting_end_ledger: u32,
+    total_volume_snapshot: i128,
+) {
+    env.events().publish(
+        ("call_registry", "proposal_created"),
+        (
+            proposal_id,
+            proposer.clone(),
+            parameter.clone(),
+            voting_end_ledger,
+            total_volume_snapshot,
+        ),
+    );
+}
+
+/// Emitted when a staker casts a governance vote.
+pub fn emit_vote_cast(
+    env: &Env,
+    proposal_id: u64,
+    voter: &Address,
+    support: bool,
+    vote_power: i128,
+) {
+    env.events().publish(
+        ("call_registry", "vote_cast"),
+        (proposal_id, voter.clone(), support, vote_power),
+    );
+}
+
+/// Emitted when a governance proposal is executed (passed and applied).
+pub fn emit_proposal_executed(
+    env: &Env,
+    proposal_id: u64,
+    parameter: &Symbol,
+    yes_votes: i128,
+) {
+    env.events().publish(
+        ("call_registry", "proposal_executed"),
+        (proposal_id, parameter.clone(), yes_votes),
+    );
+}
+
+/// Emitted when a governance proposal is rejected (failed to reach quorum).
+pub fn emit_proposal_rejected(env: &Env, proposal_id: u64, yes_votes: i128, no_votes: i128) {
+    env.events().publish(
+        ("call_registry", "proposal_rejected"),
+        (proposal_id, yes_votes, no_votes),
+    );
+}
