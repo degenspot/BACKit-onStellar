@@ -1371,7 +1371,7 @@ impl CallRegistry {
         env: Env,
         proposer: Address,
         parameter: Symbol,
-        new_value: soroban_sdk::Val,
+        new_value: i128,
         voting_end_ledger: u32,
     ) -> Result<u64, CallRegistryError> {
         governance::propose_change(&env, proposer, parameter, new_value, voting_end_ledger)
