@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::types::{CallInitArgs, ConditionType, ProposalStatus};
+use crate::types::ProposalStatus;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
     Address, Env, Symbol,
@@ -12,344 +12,198 @@ fn setup_env() -> (Env, Address, Address, crate::CallRegistryClient<'static>) {
 
     let contract_id = env.register_contract(None, crate::CallRegistry);
     let client = crate::CallRegistryClient::new(&env, &contract_id);
-    // use client for calls
     let admin = Address::generate(&env);
     let outcome_manager = Address::generate(&env);
     (env, admin, outcome_manager, client)
 }
 
+fn override_config(env: &Env, admin: &Address, outcome_manager: &Address, quorum_bps: u32, threshold: i128) {
+    use crate::storage::*;
+    use crate::types::*;
+    use soroban_sdk::Map;
+
+    let config = ContractConfig {
+        admin: admin.clone(),
+        outcome_manager: outcome_manager.clone(),
+        fee_bps: 0,
+        max_stake_per_user: 0,
+        whitelisted_tokens: Map::new(env),
+        min_stake: 1,
+        metadata_version: 0,
+        paused: false,
+        staking_cutoff_secs: 0,
+        share_wasm_hash: None,
+        proposal_threshold: threshold,
+        governance_quorum_bps: quorum_bps,
+        voting_period_ledgers: 1000,
+    };
+    set_config(env, &config);
+}
+
+fn init_stake_volume(env: &Env, user: &Address, user_volume: i128, total_volume: i128) {
+    crate::storage::accumulate_user_stake_volume(env, user, user_volume);
+    let mut gs = crate::storage::get_global_stats(env);
+    gs.total_stake_volume = total_volume;
+    env.storage().instance().set(&crate::storage::DataKey::GlobalStats, &gs);
+}
+
 #[test]
 fn test_propose_and_vote_and_execute() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let (env, admin, outcome_manager, client) = setup_env();
+    client.initialize(&admin, &outcome_manager, &1);
+    override_config(&env, &admin, &outcome_manager, 500, 0);
 
-    let contract_id = env.register_contract(None, crate::CallRegistry);
-    let admin = Address::generate(&env);
-    let outcome_manager = Address::generate(&env);
+    let staker = Address::generate(&env);
+    init_stake_volume(&env, &staker, 10_000_000, 10_000_000);
 
-    env.as_contract(&contract_id, || {
-        use crate::storage::*;
-        use crate::types::*;
-        use soroban_sdk::Map;
+    let current_ledger = env.ledger().sequence();
+    let voting_end = current_ledger + 2000;
 
-        // Init config with governance defaults
-        let config = ContractConfig {
-            admin: admin.clone(),
-            outcome_manager: outcome_manager.clone(),
-            fee_bps: 0,
-            max_stake_per_user: 0,
-            whitelisted_tokens: Map::new(&env),
-            min_stake: 1,
-            metadata_version: 0,
-            paused: false,
-            staking_cutoff_secs: 0,
-            share_wasm_hash: None,
-            proposal_threshold: 0,
-            governance_quorum_bps: 500,
-            voting_period_ledgers: 1000,
-        };
-        set_config(&env, &config);
+    let proposal_id = client.propose_change(
+        &staker,
+        &Symbol::new(&env, "fee_bps"),
+        &200i128,
+        &voting_end,
+    );
+    assert_eq!(proposal_id, 1);
 
-        // Give a staker some stake volume
-        let staker = Address::generate(&env);
-        accumulate_user_stake_volume(&env, &staker, 10_000_000);
-        // total_stake_volume in global stats
-        let mut gs = get_global_stats(&env);
-        gs.total_stake_volume = 10_000_000;
-        env.storage().instance().set(&DataKey::GlobalStats, &gs);
+    client.vote(&staker, &proposal_id, &true);
 
-        let current_ledger = env.ledger().sequence();
-        let voting_end = current_ledger + 2000;
+    let dupe = client.try_vote(&staker, &proposal_id, &true);
+    assert_eq!(dupe, Err(Ok(crate::errors::CallRegistryError::AlreadyVoted)));
 
-        // propose_change
-        let new_val: i128 = 200;
-        let result = crate::governance::propose_change(
-            &env,
-            staker.clone(),
-            Symbol::new(&env, "fee_bps"),
-            new_val,
-            voting_end,
-        );
-        assert!(result.is_ok());
-        let proposal_id = result.unwrap();
-        assert_eq!(proposal_id, 1);
+    let early = client.try_execute_proposal(&proposal_id);
+    assert_eq!(early, Err(Ok(crate::errors::CallRegistryError::VotingNotEnded)));
 
-        // vote yes
-        let vote_result = crate::governance::vote(&env, staker.clone(), proposal_id, true);
-        assert!(vote_result.is_ok());
-
-        // Cannot vote twice
-        let dupe = crate::governance::vote(&env, staker.clone(), proposal_id, true);
-        assert_eq!(dupe, Err(crate::errors::CallRegistryError::AlreadyVoted));
-
-        // Cannot execute before deadline
-        let early = crate::governance::execute_proposal(&env, proposal_id);
-        assert_eq!(
-            early,
-            Err(crate::errors::CallRegistryError::VotingNotEnded)
-        );
-
-        // Advance ledger past voting_end
-        env.ledger().set(LedgerInfo {
-            timestamp: 0,
-            protocol_version: 22,
-            sequence_number: voting_end + 1,
-            network_id: [0u8; 32],
-            base_reserve: 5_000_000,
-            min_temp_entry_ttl: 1,
-            min_persistent_entry_ttl: 1,
-            max_entry_ttl: 6_312_000,
-        });
-
-        let exec_result = crate::governance::execute_proposal(&env, proposal_id);
-        assert!(exec_result.is_ok());
-
-        // Verify config was updated
-        let updated_config = get_config(&env).unwrap();
-        assert_eq!(updated_config.fee_bps, 200);
-
-        // Proposal status should be Executed
-        let proposal = get_proposal(&env, proposal_id).unwrap();
-        assert_eq!(proposal.status, ProposalStatus::Executed);
+    env.ledger().set(LedgerInfo {
+        timestamp: 0,
+        protocol_version: 22,
+        sequence_number: voting_end + 1,
+        network_id: [0u8; 32],
+        base_reserve: 5_000_000,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 6_312_000,
     });
+
+    let exec_result = client.try_execute_proposal(&proposal_id);
+    assert!(exec_result.is_ok());
+
+    let updated_config = client.get_config().unwrap();
+    assert_eq!(updated_config.fee_bps, 200);
+
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(proposal.status, ProposalStatus::Executed);
 }
 
 #[test]
 fn test_proposal_rejected_insufficient_votes() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let (env, admin, outcome_manager, client) = setup_env();
+    client.initialize(&admin, &outcome_manager, &1);
+    override_config(&env, &admin, &outcome_manager, 5000, 0);
 
-    let contract_id = env.register_contract(None, crate::CallRegistry);
-    let admin = Address::generate(&env);
-    let outcome_manager = Address::generate(&env);
+    let proposer = Address::generate(&env);
+    init_stake_volume(&env, &proposer, 100, 1_000_000);
 
-    env.as_contract(&contract_id, || {
-        use crate::storage::*;
-        use crate::types::*;
-        use soroban_sdk::Map;
+    let current_ledger = env.ledger().sequence();
+    let voting_end = current_ledger + 2000;
 
-        let config = ContractConfig {
-            admin: admin.clone(),
-            outcome_manager: outcome_manager.clone(),
-            fee_bps: 0,
-            max_stake_per_user: 0,
-            whitelisted_tokens: Map::new(&env),
-            min_stake: 1,
-            metadata_version: 0,
-            paused: false,
-            staking_cutoff_secs: 0,
-            share_wasm_hash: None,
-            proposal_threshold: 0,
-            governance_quorum_bps: 5000, // 50% quorum — very hard to reach
-            voting_period_ledgers: 1000,
-        };
-        set_config(&env, &config);
+    let proposal_id = client.propose_change(
+        &proposer,
+        &Symbol::new(&env, "fee_bps"),
+        &300i128,
+        &voting_end,
+    );
 
-        let proposer = Address::generate(&env);
-        accumulate_user_stake_volume(&env, &proposer, 100);
-        let mut gs = get_global_stats(&env);
-        gs.total_stake_volume = 1_000_000; // proposer's 100 is way below 50% quorum
-        env.storage().instance().set(&DataKey::GlobalStats, &gs);
+    client.vote(&proposer, &proposal_id, &true);
 
-        let current_ledger = env.ledger().sequence();
-        let voting_end = current_ledger + 2000;
-
-        let new_val: i128 = 300;
-        let proposal_id = crate::governance::propose_change(
-            &env,
-            proposer.clone(),
-            Symbol::new(&env, "fee_bps"),
-            new_val,
-            voting_end,
-        )
-        .unwrap();
-
-        // vote yes with tiny power — well below quorum
-        crate::governance::vote(&env, proposer.clone(), proposal_id, true).unwrap();
-
-        // Advance ledger
-        env.ledger().set(LedgerInfo {
-            timestamp: 0,
-            protocol_version: 22,
-            sequence_number: voting_end + 1,
-            network_id: [0u8; 32],
-            base_reserve: 5_000_000,
-            min_temp_entry_ttl: 1,
-            min_persistent_entry_ttl: 1,
-            max_entry_ttl: 6_312_000,
-        });
-
-        let exec_result = crate::governance::execute_proposal(&env, proposal_id);
-        assert_eq!(exec_result, Err(crate::errors::CallRegistryError::QuorumNotMet));
-
-        let proposal = get_proposal(&env, proposal_id).unwrap();
-        assert_eq!(proposal.status, ProposalStatus::Rejected);
+    env.ledger().set(LedgerInfo {
+        timestamp: 0,
+        protocol_version: 22,
+        sequence_number: voting_end + 1,
+        network_id: [0u8; 32],
+        base_reserve: 5_000_000,
+        min_temp_entry_ttl: 1,
+        min_persistent_entry_ttl: 1,
+        max_entry_ttl: 6_312_000,
     });
+
+    let exec_result = client.try_execute_proposal(&proposal_id);
+    assert_eq!(exec_result, Err(Ok(crate::errors::CallRegistryError::QuorumNotMet)));
+
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert_eq!(proposal.status, ProposalStatus::Rejected);
 }
 
 #[test]
 fn test_non_staker_cannot_propose() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let (env, admin, outcome_manager, client) = setup_env();
+    client.initialize(&admin, &outcome_manager, &1);
+    override_config(&env, &admin, &outcome_manager, 500, 1_000);
 
-    let contract_id = env.register_contract(None, crate::CallRegistry);
-    let admin = Address::generate(&env);
-    let outcome_manager = Address::generate(&env);
+    let non_staker = Address::generate(&env);
 
-    env.as_contract(&contract_id, || {
-        use crate::storage::*;
-        use crate::types::*;
-        use soroban_sdk::Map;
+    let current_ledger = env.ledger().sequence();
+    let voting_end = current_ledger + 2000;
 
-        let config = ContractConfig {
-            admin: admin.clone(),
-            outcome_manager: outcome_manager.clone(),
-            fee_bps: 0,
-            max_stake_per_user: 0,
-            whitelisted_tokens: Map::new(&env),
-            min_stake: 1,
-            metadata_version: 0,
-            paused: false,
-            staking_cutoff_secs: 0,
-            share_wasm_hash: None,
-            proposal_threshold: 1_000, // requires at least 1000 stake volume
-            governance_quorum_bps: 500,
-            voting_period_ledgers: 1000,
-        };
-        set_config(&env, &config);
-
-        let non_staker = Address::generate(&env);
-        // non_staker has 0 stake volume
-
-        let current_ledger = env.ledger().sequence();
-        let voting_end = current_ledger + 2000;
-        let new_val: i128 = 100;
-        let result = crate::governance::propose_change(
-            &env,
-            non_staker,
-            Symbol::new(&env, "fee_bps"),
-            new_val,
-            voting_end,
-        );
-        assert_eq!(result, Err(crate::errors::CallRegistryError::InsufficientStake));
-    });
+    let result = client.try_propose_change(
+        &non_staker,
+        &Symbol::new(&env, "fee_bps"),
+        &100i128,
+        &voting_end,
+    );
+    assert_eq!(result, Err(Ok(crate::errors::CallRegistryError::InsufficientStake)));
 }
 
 #[test]
 fn test_non_staker_cannot_vote() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let (env, admin, outcome_manager, client) = setup_env();
+    client.initialize(&admin, &outcome_manager, &1);
+    override_config(&env, &admin, &outcome_manager, 500, 0);
 
-    let contract_id = env.register_contract(None, crate::CallRegistry);
-    let admin = Address::generate(&env);
-    let outcome_manager = Address::generate(&env);
+    let proposer = Address::generate(&env);
+    init_stake_volume(&env, &proposer, 10_000, 10_000);
 
-    env.as_contract(&contract_id, || {
-        use crate::storage::*;
-        use crate::types::*;
-        use soroban_sdk::Map;
+    let current_ledger = env.ledger().sequence();
+    let voting_end = current_ledger + 2000;
 
-        let config = ContractConfig {
-            admin: admin.clone(),
-            outcome_manager: outcome_manager.clone(),
-            fee_bps: 0,
-            max_stake_per_user: 0,
-            whitelisted_tokens: Map::new(&env),
-            min_stake: 1,
-            metadata_version: 0,
-            paused: false,
-            staking_cutoff_secs: 0,
-            share_wasm_hash: None,
-            proposal_threshold: 0,
-            governance_quorum_bps: 500,
-            voting_period_ledgers: 1000,
-        };
-        set_config(&env, &config);
+    let proposal_id = client.propose_change(
+        &proposer,
+        &Symbol::new(&env, "fee_bps"),
+        &50i128,
+        &voting_end,
+    );
 
-        let proposer = Address::generate(&env);
-        accumulate_user_stake_volume(&env, &proposer, 10_000);
-        let mut gs = get_global_stats(&env);
-        gs.total_stake_volume = 10_000;
-        env.storage().instance().set(&DataKey::GlobalStats, &gs);
-
-        let current_ledger = env.ledger().sequence();
-        let voting_end = current_ledger + 2000;
-        let new_val: i128 = 50;
-        let proposal_id = crate::governance::propose_change(
-            &env,
-            proposer,
-            Symbol::new(&env, "fee_bps"),
-            new_val,
-            voting_end,
-        )
-        .unwrap();
-
-        let non_staker = Address::generate(&env);
-        let result = crate::governance::vote(&env, non_staker, proposal_id, true);
-        assert_eq!(result, Err(crate::errors::CallRegistryError::InsufficientStake));
-    });
+    let non_staker = Address::generate(&env);
+    let result = client.try_vote(&non_staker, &proposal_id, &true);
+    assert_eq!(result, Err(Ok(crate::errors::CallRegistryError::InsufficientStake)));
 }
 
 #[test]
 fn test_get_active_proposals() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let (env, admin, outcome_manager, client) = setup_env();
+    client.initialize(&admin, &outcome_manager, &1);
+    override_config(&env, &admin, &outcome_manager, 500, 0);
 
-    let contract_id = env.register_contract(None, crate::CallRegistry);
-    let admin = Address::generate(&env);
-    let outcome_manager = Address::generate(&env);
+    let proposer = Address::generate(&env);
+    init_stake_volume(&env, &proposer, 10_000, 10_000);
 
-    env.as_contract(&contract_id, || {
-        use crate::storage::*;
-        use crate::types::*;
-        use soroban_sdk::Map;
+    let current_ledger = env.ledger().sequence();
+    let voting_end = current_ledger + 2000;
 
-        let config = ContractConfig {
-            admin: admin.clone(),
-            outcome_manager: outcome_manager.clone(),
-            fee_bps: 0,
-            max_stake_per_user: 0,
-            whitelisted_tokens: Map::new(&env),
-            min_stake: 1,
-            metadata_version: 0,
-            paused: false,
-            staking_cutoff_secs: 0,
-            share_wasm_hash: None,
-            proposal_threshold: 0,
-            governance_quorum_bps: 500,
-            voting_period_ledgers: 1000,
-        };
-        set_config(&env, &config);
+    client.propose_change(
+        &proposer,
+        &Symbol::new(&env, "fee_bps"),
+        &100i128,
+        &voting_end,
+    );
+    client.propose_change(
+        &proposer,
+        &Symbol::new(&env, "min_stake"),
+        &200i128,
+        &voting_end,
+    );
 
-        let proposer = Address::generate(&env);
-        accumulate_user_stake_volume(&env, &proposer, 10_000);
-        let mut gs = get_global_stats(&env);
-        gs.total_stake_volume = 10_000;
-        env.storage().instance().set(&DataKey::GlobalStats, &gs);
-
-        let current_ledger = env.ledger().sequence();
-        let voting_end = current_ledger + 2000;
-
-        let val1: i128 = 100;
-        let val2: i128 = 200;
-        crate::governance::propose_change(
-            &env,
-            proposer.clone(),
-            Symbol::new(&env, "fee_bps"),
-            val1,
-            voting_end,
-        )
-        .unwrap();
-        crate::governance::propose_change(
-            &env,
-            proposer.clone(),
-            Symbol::new(&env, "min_stake"),
-            val2,
-            voting_end,
-        )
-        .unwrap();
-
-        let active = crate::governance::get_active_proposals(&env);
-        assert_eq!(active.len(), 2);
-    });
+    let active = client.get_active_proposals();
+    assert_eq!(active.len(), 2);
 }
