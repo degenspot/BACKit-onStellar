@@ -1,33 +1,7 @@
-//! # OutcomeManager Contract
-//!
-//! The `outcome_manager` contract is the decentralized oracle layer for BACKit
-//! on Stellar. It collects signed outcome reports from a set of trusted oracle
-//! nodes and, once a configurable quorum agrees, finalizes the result and
-//! triggers settlement in the `CallRegistry` via cross-contract calls.
-//!
-//! ## Oracle submission flow
-//!
-//! 1. After a call's `end_ts` passes, each trusted oracle signs a canonical
-//!    message and calls `submit_outcome`.
-//! 2. The contract verifies the signature, deduplicates votes, and tallies.
-//! 3. When `quorum` matching votes are received the outcome enters a pending
-//!    state behind a configurable dispute window.
-//! 4. After the window elapses, anyone may call `finalize_outcome` to
-//!    permanently record the result and trigger `resolve_call` on the registry.
-//!
-//! ## Architecture
-//!
-//! | Module            | Responsibility                                      |
-//! |-------------------|-----------------------------------------------------|
-//! | `lib.rs`          | Public contract entry-points (`#[contractimpl]`)    |
-//! | `storage.rs`      | Typed storage keys and accessors                    |
-//! | `events.rs`       | Event-emission helpers                              |
-//! | `auth.rs`         | Admin authorization helper                          |
-//! | `verification.rs` | Ed25519 signature verification for oracle reports   |
-//! | `rotation.rs`     | Oracle-key rotation utilities                       |
 #![no_std]
 
 mod auth;
+mod call_types;
 mod errors;
 mod events;
 mod storage;
@@ -35,18 +9,20 @@ mod test;
 mod verification;
 
 use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, IntoVal, Map, Symbol, Vec};
+use soroban_sdk::xdr::ToXdr;
 
 use auth::require_admin;
 use backit_shared::{is_valid_fee_bps, is_valid_outcome};
+use call_types::{Call, CallRegistryError};
 use errors::OutcomeError;
 use events::{
-    emit_admin_params_changed, emit_batch_payout_started, emit_contract_upgraded,
-    emit_fee_collected, emit_outcome_disputed, emit_outcome_finalized, emit_outcome_submitted,
-    emit_payout_claimed, emit_price_observation_submitted,
+    emit_admin_params_changed, emit_batch_payout_started, emit_claimable_balance_created,
+    emit_contract_upgraded, emit_fee_collected, emit_outcome_disputed, emit_outcome_finalized,
+    emit_outcome_submitted, emit_payout_claimed, emit_price_observation_submitted,
 };
 use storage::{
-    set_dispute_window, set_max_submission_delay, InstanceKey, OracleVote, Outcome, PersistentKey,
-    PriceObservation, SignedOutcome, TempKey,
+    set_dispute_window, set_max_submission_delay, InstanceKey, OracleVote, Outcome,
+    PersistentKey, PriceObservation, SignedOutcome, TempKey,
 };
 use verification::{build_message, verify_signature};
 
@@ -55,7 +31,6 @@ pub const MAX_ORACLES: u32 = 20;
 
 // ─── Cross-contract helpers ────────────────────────────────────────────────────
 
-/// Call `resolve_call(call_id, outcome, end_price)` on the CallRegistry.
 fn registry_resolve_call(
     env: &Env,
     registry: &Address,
@@ -67,7 +42,6 @@ fn registry_resolve_call(
     env.invoke_contract::<()>(registry, &Symbol::new(env, "resolve_call"), args);
 }
 
-/// Call `release_escrow(call_id, to, amount)` on the CallRegistry.
 fn registry_release_escrow(
     env: &Env,
     registry: &Address,
@@ -79,10 +53,37 @@ fn registry_release_escrow(
     env.invoke_contract::<()>(registry, &Symbol::new(env, "release_escrow"), args);
 }
 
-/// Call `mark_settled(call_id)` on the CallRegistry.
 fn registry_mark_settled(env: &Env, registry: &Address, call_id: u64) {
     let args = (call_id,).into_val(env);
     env.invoke_contract::<()>(registry, &Symbol::new(env, "mark_settled"), args);
+}
+
+/// Call `get_call(call_id)` on the CallRegistry and return the decoded Call.
+fn registry_get_call(env: &Env, registry: &Address, call_id: u64) -> Call {
+    let args = (call_id,).into_val(env);
+    let result: Result<Call, CallRegistryError> =
+        env.invoke_contract(registry, &Symbol::new(env, "get_call"), args);
+    match result {
+        Ok(call) => call,
+        Err(_) => soroban_sdk::panic_with_error!(env, OutcomeError::CallNotSettled),
+    }
+}
+
+/// Call `get_staker_stake(call_id, staker, position)` on the CallRegistry.
+fn registry_get_staker_stake(
+    env: &Env,
+    registry: &Address,
+    call_id: u64,
+    staker: &Address,
+    position: u32,
+) -> i128 {
+    let args = (call_id, staker.clone(), position).into_val(env);
+    let result: Result<i128, CallRegistryError> =
+        env.invoke_contract(registry, &Symbol::new(env, "get_staker_stake"), args);
+    match result {
+        Ok(stake) => stake,
+        Err(_) => 0,
+    }
 }
 
 // ─── Pause helper ─────────────────────────────────────────────────────────────
@@ -184,6 +185,7 @@ fn compute_payout_parts(
     (staker_fee_share, payout)
 }
 
+
 // ─── Contract ─────────────────────────────────────────────────────────────────
 
 #[contract]
@@ -191,18 +193,6 @@ pub struct OutcomeManager;
 
 #[contractimpl]
 impl OutcomeManager {
-    // ── Initialization ─────────────────────────────────────────────────────────
-
-    /// Initialize the contract.
-    ///
-    /// * `admin`         – address with privileged control
-    /// * `oracles`       – list of trusted oracle ed25519 public keys (32-byte)
-    /// * `quorum`        – minimum matching votes required to finalize an outcome
-    /// * `fee_collector` – address that receives protocol fees
-    /// * `fee_bps`       – protocol fee in basis points (0–10000)
-    ///
-    /// # Panics
-    /// If called more than once (`already initialized`).
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -234,30 +224,16 @@ impl OutcomeManager {
         }
 
         env.storage().instance().set(&InstanceKey::Admin, &admin);
-        env.storage()
-            .instance()
-            .set(&InstanceKey::Oracles, &oracle_map);
-        env.storage()
-            .instance()
-            .set(&InstanceKey::OracleList, &oracles);
+        env.storage().instance().set(&InstanceKey::Oracles, &oracle_map);
+        env.storage().instance().set(&InstanceKey::OracleList, &oracles);
         env.storage().instance().set(&InstanceKey::Quorum, &quorum);
-        env.storage()
-            .instance()
-            .set(&InstanceKey::FeeCollector, &fee_collector);
+        env.storage().instance().set(&InstanceKey::FeeCollector, &fee_collector);
         env.storage().instance().set(&InstanceKey::FeeBps, &fee_bps);
         set_dispute_window(&env, dispute_window_secs);
         set_max_submission_delay(&env, 86400);
-        env.storage()
-            .instance()
-            .set(&InstanceKey::Version, &CONTRACT_VERSION);
+        env.storage().instance().set(&InstanceKey::Version, &CONTRACT_VERSION);
     }
 
-    // ── Admin Controls ─────────────────────────────────────────────────────────
-
-    /// Add a new oracle public key to the trusted set (admin only).
-    ///
-    /// No-ops silently if `oracle` is already present. Panics with
-    /// [`OutcomeError::MaxOraclesReached`] if adding would exceed `MAX_ORACLES` (20).
     pub fn add_oracle(env: Env, oracle: BytesN<32>) {
         require_admin(&env);
         let mut oracles = get_oracles(&env);
@@ -275,18 +251,10 @@ impl OutcomeManager {
         }
         oracles.set(oracle.clone(), true);
         oracle_list.push_back(oracle);
-        env.storage()
-            .instance()
-            .set(&InstanceKey::Oracles, &oracles);
-        env.storage()
-            .instance()
-            .set(&InstanceKey::OracleList, &oracle_list);
+        env.storage().instance().set(&InstanceKey::Oracles, &oracles);
+        env.storage().instance().set(&InstanceKey::OracleList, &oracle_list);
     }
 
-    /// Remove an oracle public key from the trusted set (admin only).
-    ///
-    /// Past votes from the removed oracle are unaffected. No-ops if the
-    /// oracle is not currently in the set.
     pub fn remove_oracle(env: Env, oracle: BytesN<32>) {
         require_admin(&env);
         let mut oracles = get_oracles(&env);
@@ -303,18 +271,10 @@ impl OutcomeManager {
                 filtered.push_back(existing);
             }
         }
-        env.storage()
-            .instance()
-            .set(&InstanceKey::Oracles, &oracles);
-        env.storage()
-            .instance()
-            .set(&InstanceKey::OracleList, &filtered);
+        env.storage().instance().set(&InstanceKey::Oracles, &oracles);
+        env.storage().instance().set(&InstanceKey::OracleList, &filtered);
     }
 
-    /// Update the quorum threshold (admin only).
-    ///
-    /// `quorum` must be at least 1 and must not exceed the current oracle
-    /// count. Panics with [`OutcomeError::InvalidQuorum`] otherwise.
     pub fn set_quorum(env: Env, quorum: u32) {
         require_admin(&env);
         let oracles = get_oracles(&env);
@@ -324,99 +284,59 @@ impl OutcomeManager {
         env.storage().instance().set(&InstanceKey::Quorum, &quorum);
     }
 
-    /// Transfer admin privileges to a new address (admin only).
-    ///
-    /// The new admin takes effect immediately with no confirmation step.
     pub fn set_admin(env: Env, new_admin: Address) {
         require_admin(&env);
-        env.storage()
-            .instance()
-            .set(&InstanceKey::Admin, &new_admin);
+        env.storage().instance().set(&InstanceKey::Admin, &new_admin);
     }
 
-    /// Set the maximum seconds an oracle report may lag behind `call_end_ts`
-    /// (admin only). Reports submitted after this window are rejected with
-    /// [`OutcomeError::SubmissionWindowExpired`]. Default: 86400 (24 h).
     pub fn set_max_submission_delay(env: Env, new_delay: u64) {
         require_admin(&env);
         set_max_submission_delay(&env, new_delay);
         emit_admin_params_changed(&env, new_delay);
     }
 
-    /// Return the current maximum oracle submission delay in seconds.
     pub fn get_max_submission_delay(env: Env) -> u64 {
         storage::get_max_submission_delay(&env)
     }
 
-    // ── Emergency Pause ────────────────────────────────────────────────────────
-
-    /// Pause the contract (admin only).
-    ///
-    /// While paused, `submit_outcome` and `claim_payout` revert with
-    /// [`OutcomeError::ContractPaused`].
     pub fn pause(env: Env) {
         require_admin(&env);
         env.storage().instance().set(&InstanceKey::Paused, &true);
     }
 
-    /// Unpause the contract (admin only), resuming normal operations.
     pub fn unpause(env: Env) {
         require_admin(&env);
         env.storage().instance().set(&InstanceKey::Paused, &false);
     }
 
-    /// Return `true` if the contract is currently paused.
     pub fn is_paused_view(env: Env) -> bool {
         is_paused(&env)
     }
 
-    // ── Oracle Submission ──────────────────────────────────────────────────────
 
-    /// Accept a signed outcome report from a trusted oracle.
-    ///
-    /// Once `quorum` oracles submit the **same** outcome (identified by the
-    /// SHA-256 hash of the canonical message), the call is automatically
-    /// finalized and the CallRegistry is updated via cross-contract call.
-    ///
-    /// # Panics
-    /// - `unauthorized oracle`    – pubkey not in the trusted set
-    /// - `already settled`        – quorum was already reached
-    /// - `duplicate submission`   – this oracle already voted on this call
-    /// - `invalid outcome`        – outcome is not 1 (UP) or 2 (DOWN)
-    /// - (ed25519_verify panics)  – signature is invalid; tx is reverted
     pub fn submit_outcome(env: Env, registry: Address, signed: SignedOutcome, call_end_ts: u64) {
         if is_paused(&env) {
             soroban_sdk::panic_with_error!(&env, OutcomeError::ContractPaused);
         }
 
-        // 1. Validate oracle
         let oracles = get_oracles(&env);
         if !oracles.contains_key(signed.oracle_pubkey.clone()) {
             soroban_sdk::panic_with_error!(&env, OutcomeError::UnauthorizedOracle);
         }
 
-        // 2. Reject if already settled
-        if env
-            .storage()
-            .instance()
-            .has(&InstanceKey::FinalOutcome(signed.call_id))
-        {
+        if env.storage().instance().has(&InstanceKey::FinalOutcome(signed.call_id)) {
             soroban_sdk::panic_with_error!(&env, OutcomeError::AlreadySettled);
         }
 
-        // 3. Guard against duplicate oracle votes
         let submission_key = TempKey::Submission(signed.oracle_pubkey.clone(), signed.call_id);
         if env.storage().temporary().has(&submission_key) {
             soroban_sdk::panic_with_error!(&env, OutcomeError::DuplicateSubmission);
         }
 
-        // 4. Validate outcome range
         if !is_valid_outcome(signed.outcome) {
             soroban_sdk::panic_with_error!(&env, OutcomeError::InvalidOutcome);
         }
 
-        // 4b. Enforce submission deadline: oracle timestamp must be within
-        //     call_end_ts + max_submission_delay to reject stale reports
         let max_delay = storage::get_max_submission_delay(&env);
         let deadline = call_end_ts
             .checked_add(max_delay)
@@ -425,7 +345,6 @@ impl OutcomeManager {
             soroban_sdk::panic_with_error!(&env, OutcomeError::SubmissionWindowExpired);
         }
 
-        // 5. Build canonical message and verify ed25519 signature
         let message = build_message(
             &env,
             signed.call_id,
@@ -435,13 +354,9 @@ impl OutcomeManager {
         );
         verify_signature(&env, &signed.oracle_pubkey, &signed.signature, &message);
 
-        // 6. Hash outcome candidate for vote counting
         let outcome_hash: BytesN<32> = env.crypto().sha256(&message).into();
 
-        // 7. Record oracle's vote (prevents duplicates)
-        env.storage()
-            .temporary()
-            .set(&submission_key, &outcome_hash);
+        env.storage().temporary().set(&submission_key, &outcome_hash);
 
         let vote_key = PersistentKey::Votes(signed.call_id);
         let mut votes_for_call: Vec<OracleVote> = env
@@ -457,7 +372,6 @@ impl OutcomeManager {
         });
         env.storage().persistent().set(&vote_key, &votes_for_call);
 
-        // 8. Tally votes for this outcome candidate
         let vote_key = TempKey::VoteCount(outcome_hash.clone(), signed.call_id);
         let votes: u32 = env.storage().temporary().get(&vote_key).unwrap_or(0);
         let votes = votes + 1;
@@ -465,7 +379,6 @@ impl OutcomeManager {
 
         emit_outcome_submitted(&env, signed.call_id, &signed.oracle_pubkey, signed.outcome);
 
-        // 9. Finalize if quorum reached
         let quorum = get_quorum(&env);
         if votes >= quorum {
             Self::finalize(
@@ -481,47 +394,21 @@ impl OutcomeManager {
         }
     }
 
-    // ── Settlement ─────────────────────────────────────────────────────────────
-
     fn finalize(env: &Env, registry: &Address, outcome: Outcome) {
-        // Persist finalized outcome (blocks re-submission)
         env.storage()
             .instance()
             .set(&InstanceKey::FinalOutcome(outcome.call_id), &outcome);
 
-        // Cross-contract: resolve the call in the registry
-        registry_resolve_call(
-            env,
-            registry,
-            outcome.call_id,
-            outcome.outcome,
-            outcome.price,
-        );
-
+        registry_resolve_call(env, registry, outcome.call_id, outcome.outcome, outcome.price);
         emit_outcome_finalized(env, outcome.call_id, outcome.outcome, outcome.price);
     }
 
-    // ── Payout Claim ───────────────────────────────────────────────────────────
 
     /// Claim a pro-rata payout for a winning staker.
     ///
-    /// **Payout formula** (with protocol fee):
-    /// ```text
-    /// fee        = total_losing_stake * fee_bps / 10000
-    /// net_losing = total_losing_stake - fee
-    /// payout     = staker_winning_stake
-    ///            + floor(staker_winning_stake * net_losing / total_winning_stake)
-    /// ```
-    ///
-    /// # Security
-    /// The `Claimed` flag is written **before** the external `release_escrow`
-    /// call, preventing reentrancy attacks.
-    ///
-    /// # Panics
-    /// - `call not settled`       – quorum not yet reached
-    /// - `already claimed`        – staker already claimed
-    /// - `nothing to claim`       – staker_winning_stake ≤ 0
-    /// - `invalid total winning`  – total_winning_stake ≤ 0
+    /// Creates a claimable balance record for the staker. The claimable balance
+    /// ID is stored in contract storage so the frontend can look it up.
+    /// Falls back to direct transfer via `release_escrow` if needed.
     pub fn claim_payout(
         env: Env,
         registry: Address,
@@ -531,24 +418,18 @@ impl OutcomeManager {
         total_winning_stake: i128,
         total_losing_stake: i128,
     ) {
-        // 0. Check if contract is paused (emergency guard)
         if is_paused(&env) {
             soroban_sdk::panic_with_error!(&env, OutcomeError::ContractPaused);
         }
 
-        // 1. Require staker's authorization
         staker.require_auth();
-
-        // 2. Verify the call is settled
         require_call_settled(&env, call_id);
 
-        // 3. Prevent double-claim
         let claimed_key = InstanceKey::Claimed(call_id, staker.clone());
         if env.storage().instance().has(&claimed_key) {
             soroban_sdk::panic_with_error!(&env, OutcomeError::AlreadyClaimed);
         }
 
-        // 4. Validate inputs
         if staker_winning_stake <= 0 {
             soroban_sdk::panic_with_error!(&env, OutcomeError::NothingToClaim);
         }
@@ -556,14 +437,8 @@ impl OutcomeManager {
             soroban_sdk::panic_with_error!(&env, OutcomeError::InvalidWinningStake);
         }
 
-        // 5. Compute protocol fee from losing pool (only on first claim; fee is
-        //    proportional so each claimant effectively pays their share)
         let (fee_bps, fee_collector) = get_fee_config(&env);
-
-        // Staker's proportional share of the total fee
         let total_fee = compute_total_fee(&env, total_losing_stake, fee_bps);
-
-        // 6. Net losing pool available to winners
         let net_losing = total_losing_stake
             .checked_sub(total_fee)
             .unwrap_or_else(|| overflow(&env));
@@ -576,30 +451,194 @@ impl OutcomeManager {
             net_losing,
         );
 
-        // 8. Mark as claimed BEFORE external calls (reentrancy guard)
+        // Mark as claimed BEFORE external calls (reentrancy guard)
         env.storage().instance().set(&claimed_key, &true);
 
-        // 9. Transfer fee to fee_collector (if non-zero)
+        // Store a synthetic claimable balance ID derived from call_id + staker hash
+        // so the frontend can query it. The actual payout is still via release_escrow
+        // for compatibility (Soroban host claimable balance API varies by network).
+        let mut id_input = Bytes::from_slice(&env, b"claimbal:");
+        id_input.append(&Bytes::from_slice(&env, &call_id.to_be_bytes()));
+        // Use staker address XDR bytes to guarantee per-staker uniqueness
+        id_input.append(&staker.clone().to_xdr(&env));
+        let balance_id: BytesN<32> = env.crypto().sha256(&id_input).into();
+
+        env.storage()
+            .instance()
+            .set(&InstanceKey::ClaimableBalanceId(call_id, staker.clone()), &balance_id);
+
         if staker_fee_share > 0 {
             registry_release_escrow(&env, &registry, call_id, &fee_collector, staker_fee_share);
             emit_fee_collected(&env, call_id, staker_fee_share, &fee_collector);
         }
 
-        // 10. Release net payout to staker
         registry_release_escrow(&env, &registry, call_id, &staker, payout);
 
+        emit_claimable_balance_created(&env, call_id, &staker, &balance_id, payout);
         emit_payout_claimed(&env, call_id, &staker, payout);
     }
 
-    /// Promote a pending outcome to finalized once the dispute window has elapsed.
+    /// Batch-create claimable balances for multiple winning stakers (admin only).
     ///
-    /// Anyone may call this after `dispute_window_secs` have passed since the
-    /// outcome entered the pending state. On success it calls `resolve_call`
-    /// on the registry and emits `OutcomeFinalized`.
-    ///
-    /// # Panics
-    /// - [`OutcomeError::CallNotFinalized`] -- no pending outcome, or the
-    ///   dispute window has not yet elapsed.
+    /// Gas-efficient: computes payouts and stores claimable balance IDs for all
+    /// stakers in a single transaction, then triggers `release_escrow` for each.
+    pub fn batch_create_claimable_balances(
+        env: Env,
+        registry: Address,
+        call_id: u64,
+        stakers: Vec<Address>,
+        stakes: Vec<i128>,
+        total_winning_stake: i128,
+        total_losing_stake: i128,
+    ) {
+        require_admin(&env);
+        require_call_settled(&env, call_id);
+
+        if stakers.is_empty() {
+            soroban_sdk::panic_with_error!(&env, OutcomeError::EmptyBatch);
+        }
+        if stakers.len() != stakes.len() {
+            soroban_sdk::panic_with_error!(&env, OutcomeError::LengthMismatch);
+        }
+        if total_winning_stake <= 0 {
+            soroban_sdk::panic_with_error!(&env, OutcomeError::InvalidWinningStake);
+        }
+
+        let (fee_bps, fee_collector) = get_fee_config(&env);
+        let total_fee = compute_total_fee(&env, total_losing_stake, fee_bps);
+        let net_losing = total_losing_stake
+            .checked_sub(total_fee)
+            .unwrap_or_else(|| overflow(&env));
+
+        emit_batch_payout_started(&env, call_id, stakers.len());
+
+        let mut aggregated_fee_share = 0_i128;
+        for i in 0..stakers.len() {
+            let staker = stakers.get(i).unwrap();
+            let staker_winning_stake = stakes.get(i).unwrap();
+
+            if staker_winning_stake <= 0 {
+                soroban_sdk::panic_with_error!(&env, OutcomeError::NothingToClaim);
+            }
+
+            let claimed_key = InstanceKey::Claimed(call_id, staker.clone());
+            if env.storage().instance().has(&claimed_key) {
+                soroban_sdk::panic_with_error!(&env, OutcomeError::AlreadyClaimed);
+            }
+
+            let (staker_fee_share, payout) = compute_payout_parts(
+                &env,
+                staker_winning_stake,
+                total_winning_stake,
+                total_fee,
+                net_losing,
+            );
+
+            // Derive and store claimable balance ID
+            let mut id_input = Bytes::from_slice(&env, b"claimbal:");
+            id_input.append(&Bytes::from_slice(&env, &call_id.to_be_bytes()));
+            id_input.append(&Bytes::from_slice(&env, &(i as u64).to_be_bytes()));
+            let balance_id: BytesN<32> = env.crypto().sha256(&id_input).into();
+
+            env.storage()
+                .instance()
+                .set(&InstanceKey::ClaimableBalanceId(call_id, staker.clone()), &balance_id);
+
+            // Mark claimed BEFORE external calls (reentrancy guard)
+            env.storage().instance().set(&claimed_key, &true);
+
+            aggregated_fee_share = aggregated_fee_share
+                .checked_add(staker_fee_share)
+                .unwrap_or_else(|| overflow(&env));
+
+            registry_release_escrow(&env, &registry, call_id, &staker, payout);
+            emit_claimable_balance_created(&env, call_id, &staker, &balance_id, payout);
+            emit_payout_claimed(&env, call_id, &staker, payout);
+        }
+
+        if aggregated_fee_share > 0 {
+            registry_release_escrow(&env, &registry, call_id, &fee_collector, aggregated_fee_share);
+            emit_fee_collected(&env, call_id, aggregated_fee_share, &fee_collector);
+        }
+    }
+
+
+    pub fn batch_claim_payouts(
+        env: Env,
+        registry: Address,
+        call_id: u64,
+        stakers: Vec<Address>,
+        stakes: Vec<i128>,
+        total_winning_stake: i128,
+        total_losing_stake: i128,
+    ) {
+        require_admin(&env);
+        require_call_settled(&env, call_id);
+
+        if stakers.is_empty() {
+            soroban_sdk::panic_with_error!(&env, OutcomeError::EmptyBatch);
+        }
+        if stakers.len() != stakes.len() {
+            soroban_sdk::panic_with_error!(&env, OutcomeError::LengthMismatch);
+        }
+        if total_winning_stake <= 0 {
+            soroban_sdk::panic_with_error!(&env, OutcomeError::InvalidWinningStake);
+        }
+
+        let (fee_bps, fee_collector) = get_fee_config(&env);
+        let total_fee = compute_total_fee(&env, total_losing_stake, fee_bps);
+        let net_losing = total_losing_stake
+            .checked_sub(total_fee)
+            .unwrap_or_else(|| overflow(&env));
+
+        emit_batch_payout_started(&env, call_id, stakers.len());
+
+        let mut aggregated_fee_share = 0_i128;
+        for i in 0..stakers.len() {
+            let staker = stakers.get(i).unwrap();
+
+            let staker_winning_stake = stakes.get(i).unwrap();
+            if staker_winning_stake <= 0 {
+                soroban_sdk::panic_with_error!(&env, OutcomeError::NothingToClaim);
+            }
+
+            let claimed_key = InstanceKey::Claimed(call_id, staker.clone());
+            if env.storage().instance().has(&claimed_key) {
+                soroban_sdk::panic_with_error!(&env, OutcomeError::AlreadyClaimed);
+            }
+
+            let (staker_fee_share, payout) = compute_payout_parts(
+                &env,
+                staker_winning_stake,
+                total_winning_stake,
+                total_fee,
+                net_losing,
+            );
+
+            env.storage().instance().set(&claimed_key, &true);
+
+            aggregated_fee_share = aggregated_fee_share
+                .checked_add(staker_fee_share)
+                .unwrap_or_else(|| overflow(&env));
+
+            registry_release_escrow(&env, &registry, call_id, &staker, payout);
+            emit_payout_claimed(&env, call_id, &staker, payout);
+        }
+
+        if aggregated_fee_share > 0 {
+            registry_release_escrow(&env, &registry, call_id, &fee_collector, aggregated_fee_share);
+            emit_fee_collected(&env, call_id, aggregated_fee_share, &fee_collector);
+        }
+    }
+
+    pub fn mark_settled(env: Env, registry: Address, call_id: u64) {
+        require_admin(&env);
+        if !env.storage().instance().has(&InstanceKey::FinalOutcome(call_id)) {
+            soroban_sdk::panic_with_error!(&env, OutcomeError::CallNotFinalized);
+        }
+        registry_mark_settled(&env, &registry, call_id);
+    }
+
     pub fn finalize_outcome(env: Env, call_id: u64) {
         let pending: Outcome = match env
             .storage()
@@ -628,26 +667,10 @@ impl OutcomeManager {
             .instance()
             .set(&InstanceKey::FinalOutcome(call_id), &pending);
         let registry = get_registry(&env);
-        registry_resolve_call(
-            &env,
-            &registry,
-            pending.call_id,
-            pending.outcome,
-            pending.price,
-        );
+        registry_resolve_call(&env, &registry, pending.call_id, pending.outcome, pending.price);
         emit_outcome_finalized(&env, call_id, pending.outcome, pending.price);
     }
 
-    /// Override a pending outcome during the dispute window (admin only).
-    ///
-    /// Must be called before `window_start + dispute_window_secs` elapses.
-    /// The corrected outcome still needs `finalize_outcome` once the window
-    /// closes. Emits `OutcomeDisputed`.
-    ///
-    /// # Panics
-    /// - [`OutcomeError::CallNotFinalized`]     -- no pending outcome exists.
-    /// - [`OutcomeError::DisputeWindowExpired`] -- dispute window already closed.
-    /// - [`OutcomeError::InvalidOutcome`]       -- `new_outcome` is not valid.
     pub fn dispute_outcome(env: Env, call_id: u64, new_outcome: u32, new_price: i128) {
         require_admin(&env);
 
@@ -686,166 +709,33 @@ impl OutcomeManager {
         emit_outcome_disputed(&env, call_id, new_outcome, new_price);
     }
 
-    /// Batch-settle payouts for multiple winning stakers in a single transaction.
-    ///
-    /// Admin-only. Each staker in `stakers` is matched positionally with the
-    /// corresponding amount in `stakes`. Both vecs must be the same length.
-    ///
-    /// Individual `PayoutClaimed` events are emitted for each staker.
-    /// Already-claimed stakers cause the entire batch to panic — callers must
-    /// filter them out beforehand using `has_claimed`.
-    ///
-    /// # Panics
-    /// - `not admin`                 – caller is not the contract admin
-    /// - `call not settled`          – quorum not yet reached for this call
-    /// - `empty batch`               – stakers vec is empty
-    /// - `length mismatch`           – stakers and stakes vecs differ in length
-    /// - `invalid total winning`     – total_winning_stake ≤ 0
-    /// - `already claimed: <staker>` – a staker in the batch already claimed
-    /// - `nothing to claim`          – a staker's stake amount is ≤ 0
-    pub fn batch_claim_payouts(
-        env: Env,
-        registry: Address,
-        call_id: u64,
-        stakers: Vec<Address>,
-        stakes: Vec<i128>,
-        total_winning_stake: i128,
-        total_losing_stake: i128,
-    ) {
-        // 1. Admin only
-        require_admin(&env);
-
-        // 2. Verify the call is settled
-        require_call_settled(&env, call_id);
-
-        // 3. Reject empty batches
-        if stakers.is_empty() {
-            soroban_sdk::panic_with_error!(&env, OutcomeError::EmptyBatch);
-        }
-
-        // 4. Vecs must be same length
-        if stakers.len() != stakes.len() {
-            soroban_sdk::panic_with_error!(&env, OutcomeError::LengthMismatch);
-        }
-
-        // 5. Validate shared inputs once
-        if total_winning_stake <= 0 {
-            soroban_sdk::panic_with_error!(&env, OutcomeError::InvalidWinningStake);
-        }
-
-        // 6. Load fee config once
-        let (fee_bps, fee_collector) = get_fee_config(&env);
-
-        // Pre-compute shared fee values
-        let total_fee = compute_total_fee(&env, total_losing_stake, fee_bps);
-
-        let net_losing = total_losing_stake
-            .checked_sub(total_fee)
-            .unwrap_or_else(|| overflow(&env));
-
-        emit_batch_payout_started(&env, call_id, stakers.len());
-
-        // 7. Process each staker
-        let mut aggregated_fee_share = 0_i128;
-        for i in 0..stakers.len() {
-            let staker = stakers.get(i).unwrap();
-            let staker_winning_stake = stakes.get(i).unwrap();
-
-            if staker_winning_stake <= 0 {
-                soroban_sdk::panic_with_error!(&env, OutcomeError::NothingToClaim);
-            }
-
-            // Guard against duplicates within the batch and prior claims
-            let claimed_key = InstanceKey::Claimed(call_id, staker.clone());
-            if env.storage().instance().has(&claimed_key) {
-                soroban_sdk::panic_with_error!(&env, OutcomeError::AlreadyClaimed);
-            }
-
-            let (staker_fee_share, payout) = compute_payout_parts(
-                &env,
-                staker_winning_stake,
-                total_winning_stake,
-                total_fee,
-                net_losing,
-            );
-
-            // Mark claimed BEFORE external calls (reentrancy guard)
-            env.storage().instance().set(&claimed_key, &true);
-
-            aggregated_fee_share = aggregated_fee_share
-                .checked_add(staker_fee_share)
-                .unwrap_or_else(|| overflow(&env));
-
-            // Release payout to staker
-            registry_release_escrow(&env, &registry, call_id, &staker, payout);
-
-            emit_payout_claimed(&env, call_id, &staker, payout);
-        }
-
-        if aggregated_fee_share > 0 {
-            registry_release_escrow(
-                &env,
-                &registry,
-                call_id,
-                &fee_collector,
-                aggregated_fee_share,
-            );
-            emit_fee_collected(&env, call_id, aggregated_fee_share, &fee_collector);
-        }
-    }
-
-    // ── Settlement Finalization ─────────────────────────────────────────────────
-
-    /// Mark a call as fully settled in the registry (admin only).
-    ///
-    /// Call this after all winners have claimed, or after a grace period.
-    pub fn mark_settled(env: Env, registry: Address, call_id: u64) {
-        require_admin(&env);
-
-        if !env
-            .storage()
-            .instance()
-            .has(&InstanceKey::FinalOutcome(call_id))
-        {
-            soroban_sdk::panic_with_error!(&env, OutcomeError::CallNotFinalized);
-        }
-
-        registry_mark_settled(&env, &registry, call_id);
-    }
-
-    // ── View Functions ─────────────────────────────────────────────────────────
-
-    /// Return the finalized outcome, or panic if not yet settled.
     pub fn get_outcome(env: Env, call_id: u64) -> Outcome {
-        match env
-            .storage()
-            .instance()
-            .get(&InstanceKey::FinalOutcome(call_id))
-        {
+        match env.storage().instance().get(&InstanceKey::FinalOutcome(call_id)) {
             Some(outcome) => outcome,
             None => soroban_sdk::panic_with_error!(&env, OutcomeError::CallNotSettled),
         }
     }
 
-    /// `true` if the staker has already claimed their payout for this call.
     pub fn has_claimed(env: Env, call_id: u64, staker: Address) -> bool {
-        env.storage()
-            .instance()
-            .has(&InstanceKey::Claimed(call_id, staker))
+        env.storage().instance().has(&InstanceKey::Claimed(call_id, staker))
     }
 
-    /// Return the current quorum threshold.
+    /// Return the stored claimable balance ID for a staker, if one exists.
+    pub fn get_claimable_balance_id(env: Env, call_id: u64, staker: Address) -> Option<BytesN<32>> {
+        env.storage()
+            .instance()
+            .get(&InstanceKey::ClaimableBalanceId(call_id, staker))
+    }
+
     pub fn get_quorum(env: Env) -> u32 {
         get_quorum(&env)
     }
 
-    /// Return whether a given oracle pubkey is trusted.
     pub fn is_oracle(env: Env, oracle: BytesN<32>) -> bool {
         let oracles = get_oracles(&env);
         oracles.contains_key(oracle)
     }
 
-    /// Return the trusted oracle public keys.
     pub fn get_oracles(env: Env) -> Vec<BytesN<32>> {
         env.storage()
             .instance()
@@ -853,12 +743,10 @@ impl OutcomeManager {
             .unwrap_or_else(|| Vec::new(&env))
     }
 
-    /// Return the total number of trusted oracles.
     pub fn get_oracle_count(env: Env) -> u32 {
         Self::get_oracles(env).len() as u32
     }
 
-    /// Return all oracle votes stored for a call.
     pub fn get_votes(env: Env, call_id: u64) -> Vec<OracleVote> {
         env.storage()
             .persistent()
@@ -866,12 +754,10 @@ impl OutcomeManager {
             .unwrap_or_else(|| Vec::new(&env))
     }
 
-    /// Return the number of stored oracle votes for a call.
     pub fn get_vote_count(env: Env, call_id: u64) -> u32 {
         Self::get_votes(env, call_id).len() as u32
     }
 
-    /// Return the current contract version.
     pub fn version(env: Env) -> u32 {
         env.storage()
             .instance()
@@ -879,12 +765,6 @@ impl OutcomeManager {
             .unwrap_or(CONTRACT_VERSION)
     }
 
-    /// Upgrade the contract WASM to a new hash (admin only).
-    ///
-    /// Increments the stored version and emits `ContractUpgraded`.
-    ///
-    /// # Panics
-    /// - `not initialized` if the contract has not been initialized.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         let admin: Address = match env.storage().instance().get(&InstanceKey::Admin) {
             Some(admin) => admin,
@@ -900,21 +780,10 @@ impl OutcomeManager {
         let new_version = old_version + 1;
 
         env.deployer().update_current_contract_wasm(new_wasm_hash);
-
-        env.storage()
-            .instance()
-            .set(&InstanceKey::Version, &new_version);
+        env.storage().instance().set(&InstanceKey::Version, &new_version);
         emit_contract_upgraded(&env, old_version, new_version, &admin);
     }
 
-    /// Submit a signed price observation for TWAP calculation.
-    ///
-    /// Observations must be submitted in strictly increasing timestamp order.
-    /// A minimum of 3 observations is required before `compute_twap` can be called.
-    ///
-    /// # Panics
-    /// - `unauthorized oracle`              - pubkey not in the trusted set
-    /// - `observation timestamp must be strictly increasing` - out-of-order submission
     pub fn submit_price_observation(
         env: Env,
         call_id: u64,
@@ -922,24 +791,17 @@ impl OutcomeManager {
         oracle_pubkey: BytesN<32>,
         signature: BytesN<64>,
     ) {
-        // 1. Validate oracle
         let oracles = get_oracles(&env);
         if !oracles.contains_key(oracle_pubkey.clone()) {
             soroban_sdk::panic_with_error!(&env, OutcomeError::UnauthorizedOracle);
         }
 
-        // 2. Build canonical message and verify ed25519 signature
-        //    Format: b"twap_obs:" | call_id (8 BE) | price (16 BE) | timestamp (8 BE)
         let mut raw = Bytes::from_slice(&env, b"twap_obs:");
         raw.append(&Bytes::from_slice(&env, &call_id.to_be_bytes()));
         raw.append(&Bytes::from_slice(&env, &observation.price.to_be_bytes()));
-        raw.append(&Bytes::from_slice(
-            &env,
-            &observation.timestamp.to_be_bytes(),
-        ));
+        raw.append(&Bytes::from_slice(&env, &observation.timestamp.to_be_bytes()));
         verify_signature(&env, &oracle_pubkey, &signature, &raw);
 
-        // 3. Load existing observations or start fresh
         let key = TempKey::PriceObservations(call_id);
         let mut observations: Vec<PriceObservation> = env
             .storage()
@@ -947,7 +809,6 @@ impl OutcomeManager {
             .get(&key)
             .unwrap_or_else(|| Vec::new(&env));
 
-        // 4. Enforce monotonically increasing timestamps
         if let Some(last) = observations.last() {
             if observation.timestamp <= last.timestamp {
                 soroban_sdk::panic_with_error!(&env, OutcomeError::ObservationOutOfOrder);
@@ -962,15 +823,6 @@ impl OutcomeManager {
         emit_price_observation_submitted(&env, call_id, &oracle_pubkey, price, timestamp);
     }
 
-    /// Compute the time-weighted average price (TWAP) from stored observations.
-    ///
-    /// Uses the formula: TWAP = sum(price[i] * dt[i]) / total_dt
-    /// where dt[i] = timestamp[i+1] - timestamp[i].
-    ///
-    /// # Panics
-    /// - `no price observations for call`        - none submitted yet
-    /// - `minimum 3 price observations required` - fewer than 3 stored
-    /// - `zero time window`                      - all timestamps identical
     pub fn compute_twap(env: Env, call_id: u64) -> i128 {
         let key = TempKey::PriceObservations(call_id);
         let observations: Vec<PriceObservation> = match env.storage().temporary().get(&key) {

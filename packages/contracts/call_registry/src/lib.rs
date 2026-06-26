@@ -166,6 +166,7 @@ impl CallRegistry {
             proposal_threshold: 0,
             governance_quorum_bps: 500,
             voting_period_ledgers: 120_960,
+            resolution_grace_period: 604800,
         };
 
         set_config(&env, &config);
@@ -1285,6 +1286,62 @@ impl CallRegistry {
             emit_xlm_void_refund_claimed(&env, call_id, &staker, total_refund);
         } else {
             emit_void_refund_claimed(&env, call_id, &staker, total_refund);
+        }
+    }
+
+    /// Claim a full refund for an expired call that was never resolved/settled.
+    /// Only callable after `end_ts + resolution_grace_period` has passed and the
+    /// call has not been settled. Refunds the exact stake (no penalty, no profit).
+    /// Emits ExpiredRefundClaimed.
+    pub fn claim_expired_refund(env: Env, staker: Address, call_id: u64) {
+        staker.require_auth();
+
+        let call = get_call(&env, call_id).expect("Call not found");
+        let config = get_config(&env).expect("not initialized");
+
+        let current_timestamp = env.ledger().timestamp();
+        let grace_deadline = call.end_ts + config.resolution_grace_period;
+
+        if current_timestamp <= grace_deadline {
+            panic!("Grace period has not elapsed");
+        }
+
+        if call.settled {
+            panic!("Call is already settled");
+        }
+
+        if call.voided {
+            panic!("Call is voided; use claim_void_refund");
+        }
+
+        if is_expired_refund_claimed(&env, call_id, &staker) {
+            panic!("Refund already claimed");
+        }
+
+        let mut total_refund: i128 = 0;
+        for position in 1..=call.outcome_count {
+            total_refund += get_user_stake(&env, call_id, &staker, position);
+        }
+
+        if total_refund <= 0 {
+            panic!("No stake to refund");
+        }
+
+        set_expired_refund_claimed(&env, call_id, &staker);
+        extend_storage_ttl(&env);
+
+        transfer_token(
+            &env,
+            &call.stake_token,
+            &env.current_contract_address(),
+            &staker,
+            total_refund,
+        );
+
+        if is_native_xlm(&env, &call.stake_token) {
+            emit_xlm_expired_refund_claimed(&env, call_id, &staker, total_refund);
+        } else {
+            emit_expired_refund_claimed(&env, call_id, &staker, total_refund);
         }
     }
 

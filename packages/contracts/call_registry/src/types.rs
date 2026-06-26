@@ -152,6 +152,10 @@ pub struct ContractConfig {
     /// Default voting window in ledgers. Used for informational purposes;
     /// each proposal sets its own `voting_end_ledger`.
     pub voting_period_ledgers: u32,
+    /// Grace period in seconds after `end_ts` during which the oracle must
+    /// resolve the call. After this period elapses, stakers can reclaim their
+    /// stakes via `claim_expired_refund`. Default: 604800 (7 days).
+    pub resolution_grace_period: u64,
 }
 
 /// Contract-wide aggregated statistics for dashboards.

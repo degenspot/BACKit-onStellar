@@ -28,6 +28,7 @@ pub enum DataKey {
     UpStakerCount(u64),
     DownStakerCount(u64),
     VoidRefundClaimed(u64, Address),
+    ExpiredRefundClaimed(u64, Address),
     InstanceEntryCount,
     Sep10Domain(Address),
     // ── Governance keys ───────────────────────────────────────────────────
@@ -396,6 +397,23 @@ pub fn is_void_refund_claimed(env: &Env, call_id: u64, staker: &Address) -> bool
     env.storage()
         .instance()
         .has(&DataKey::VoidRefundClaimed(call_id, staker.clone()))
+}
+
+/// Mark that a staker has claimed their expired refund for a call
+pub fn set_expired_refund_claimed(env: &Env, call_id: u64, staker: &Address) {
+    let key = DataKey::ExpiredRefundClaimed(call_id, staker.clone());
+    let is_new = !env.storage().instance().has(&key);
+    env.storage().instance().set(&key, &true);
+    if is_new {
+        inc_instance_entry_count(env, 1);
+    }
+}
+
+/// Check whether a staker has already claimed their expired refund
+pub fn is_expired_refund_claimed(env: &Env, call_id: u64, staker: &Address) -> bool {
+    env.storage()
+        .instance()
+        .has(&DataKey::ExpiredRefundClaimed(call_id, staker.clone()))
 }
 
 // ── Instance entry counter ────────────────────────────────────────────────────

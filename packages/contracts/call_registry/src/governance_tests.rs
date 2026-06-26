@@ -36,6 +36,7 @@ fn override_config(env: &Env, admin: &Address, outcome_manager: &Address, quorum
         proposal_threshold: threshold,
         governance_quorum_bps: quorum_bps,
         voting_period_ledgers: 1000,
+        resolution_grace_period: 0,
     };
     set_config(env, &config);
 }

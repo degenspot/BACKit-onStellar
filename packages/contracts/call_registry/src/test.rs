@@ -1410,6 +1410,94 @@ mod call_registry {
         client.claim_void_refund(&non_staker, &call.id);
     }
 
+    // ── claim_expired_refund ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_claim_expired_refund_before_grace_period_fails() {
+        let (env, client, _admin, _om) = setup();
+        env.ledger().set_timestamp(1000);
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let (call, _stake_token) = make_call(&env, &client, &creator);
+
+        client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
+
+        // call.end_ts = 2000, grace period = 604800, so deadline = 2000 + 604800 = 606800
+        // Set time to 606800 (exactly at deadline, not past it)
+        env.ledger().set_timestamp(606800);
+
+        let result = client.try_claim_expired_refund(&staker, &call.id);
+        assert!(
+            result.is_err(),
+            "should fail when grace period has not elapsed"
+        );
+    }
+
+    #[test]
+    fn test_claim_expired_refund_after_grace_period_succeeds() {
+        let (env, client, _admin, _om) = setup();
+        env.ledger().set_timestamp(1000);
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let (call, _stake_token) = make_call(&env, &client, &creator);
+
+        client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
+
+        // Past grace deadline: end_ts=2000 + grace=604800 = 606800, set to 606801
+        env.ledger().set_timestamp(606801);
+
+        client.claim_expired_refund(&staker, &call.id);
+    }
+
+    #[test]
+    fn test_claim_expired_refund_settled_call_fails() {
+        let (env, client, _admin, outcome_manager) = setup();
+        env.ledger().set_timestamp(1000);
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let (call, _stake_token) = make_call(&env, &client, &creator);
+
+        client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
+
+        // Resolve and settle the call
+        env.ledger().set_timestamp(2001);
+        client.resolve_call(&call.id, &1, &150_000_000_i128);
+        let call_data = client.get_call(&call.id);
+        client.mark_settled(&call.id);
+
+        // Past grace deadline, but call is settled
+        env.ledger().set_timestamp(606801);
+
+        let result = client.try_claim_expired_refund(&staker, &call.id);
+        assert!(
+            result.is_err(),
+            "should fail when call is settled"
+        );
+    }
+
+    #[test]
+    fn test_claim_expired_refund_double_claim_fails() {
+        let (env, client, _admin, _om) = setup();
+        env.ledger().set_timestamp(1000);
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let (call, _stake_token) = make_call(&env, &client, &creator);
+
+        client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
+
+        // Past grace deadline
+        env.ledger().set_timestamp(606801);
+
+        client.claim_expired_refund(&staker, &call.id);
+
+        // Second claim should fail
+        let result = client.try_claim_expired_refund(&staker, &call.id);
+        assert!(
+            result.is_err(),
+            "second claim should fail"
+        );
+    }
+
     // ── 3-outcome market tests ───────────────────────────────────────────────
 
     #[test]

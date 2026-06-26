@@ -325,6 +325,22 @@ pub fn emit_xlm_stake_added(
     );
 }
 
+/// Emitted when a staker claims an expired refund (oracle failed to resolve).
+pub fn emit_expired_refund_claimed(env: &Env, call_id: u64, staker: &Address, amount: i128) {
+    env.events().publish(
+        ("call_registry", "expired_refund_claimed"),
+        (call_id, staker.clone(), amount),
+    );
+}
+
+/// Emitted when an expired refund is paid out in native XLM.
+pub fn emit_xlm_expired_refund_claimed(env: &Env, call_id: u64, staker: &Address, amount: i128) {
+    env.events().publish(
+        ("call_registry", "xlm_expired_refund"),
+        (call_id, staker.clone(), amount),
+    );
+}
+
 /// Emitted when a void refund is paid out in native XLM.
 pub fn emit_xlm_void_refund_claimed(env: &Env, call_id: u64, staker: &Address, amount: i128) {
     env.events().publish(
