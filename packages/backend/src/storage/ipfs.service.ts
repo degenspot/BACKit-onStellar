@@ -79,7 +79,9 @@ export class IpfsService {
       return `ipfs_mock_cid_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
     }
     const apiKey = process.env.PINATA_API_KEY;
-    this.logger.log(`Pinning to Pinata service (ApiKey configured: ${Boolean(apiKey)})`);
+    this.logger.log(
+      `Pinning to Pinata service (ApiKey configured: ${Boolean(apiKey)})`,
+    );
     return `bafy_pinata_${Date.now()}`;
   }
 

@@ -14,7 +14,9 @@ export enum PayoutClaimStatus {
 }
 
 @Entity('payout_claims')
-@Index('IDX_payout_claim_call_staker', ['callId', 'stakerAddress'], { unique: true })
+@Index('IDX_payout_claim_call_staker', ['callId', 'stakerAddress'], {
+  unique: true,
+})
 export class PayoutClaim {
   @PrimaryGeneratedColumn('uuid')
   id: string;

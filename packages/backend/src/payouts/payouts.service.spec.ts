@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PayoutClaim, PayoutClaimStatus } from './entities/payout-claim.entity';
 import { PayoutsService } from './payouts.service';
 
@@ -13,12 +14,17 @@ describe('PayoutsService', () => {
     save: jest.fn(),
   };
 
+  const eventEmitter = {
+    emit: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PayoutsService,
         { provide: getRepositoryToken(PayoutClaim), useValue: repository },
+        { provide: EventEmitter2, useValue: eventEmitter },
       ],
     }).compile();
 
@@ -29,6 +35,7 @@ describe('PayoutsService', () => {
     repository.findOne.mockResolvedValue({
       callId: 'call-1',
       stakerAddress: 'GA1',
+      amount: '100',
       status: PayoutClaimStatus.PENDING,
     });
     repository.save.mockImplementation(async (value: any) => value);
@@ -41,6 +48,12 @@ describe('PayoutsService', () => {
     );
 
     expect(result.status).toBe(PayoutClaimStatus.CLAIMED);
+    expect(eventEmitter.emit).toHaveBeenCalledWith('payout.claimed', {
+      userAddress: 'GA1',
+      callId: 'call-1',
+      amount: 100,
+      txHash: 'tx-hash',
+    });
     expect(result.txHash).toBe('tx-hash');
   });
 

@@ -29,7 +29,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { LoggerModule } from './common/logger/logger.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { StakesModule } from './stakes/stakes.module';
-import { WebhookModule } from './webhooks/webhook.module';
+import { EventStoreModule } from './event-store/event-store.module';
 
 @Module({
   imports: [
@@ -38,6 +38,7 @@ import { WebhookModule } from './webhooks/webhook.module';
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
     LoggerModule,
+    AppThrottlerModule,
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DB_HOST || process.env.POSTGRES_HOST || 'localhost',
@@ -63,18 +64,17 @@ import { WebhookModule } from './webhooks/webhook.module';
     UsersModule,
     BookmarksModule,
     AuthModule,
-    AppThrottlerModule,
+    RelayModule,
     OracleSigningModule,
     GatewaysModule,
     AuditModule,
     ActivityModule,
-    RelayModule,
     FirewallModule,
     LeaderboardModule,
     CommentsModule,
     AlertsModule,
     StakesModule,
-    WebhookModule,
+    EventStoreModule,
   ],
   controllers: [],
   providers: [{ provide: APP_INTERCEPTOR, useClass: LoggingInterceptor }],

@@ -413,4 +413,3 @@ pub fn emit_stake_limit_updated(env: &Env, user: &Address, new_limit: i128) {
         (user.clone(), new_limit),
     );
 }
-

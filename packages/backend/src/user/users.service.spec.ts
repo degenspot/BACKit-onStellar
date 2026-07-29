@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UsersService } from './users.service';
 import { Users } from './entities/users.entity';
 import { Follow } from './entities/follow.entity';
@@ -45,6 +46,10 @@ describe('UsersService', () => {
     del: jest.fn().mockResolvedValue(undefined),
   };
 
+  const eventEmitter = {
+    emit: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
@@ -59,6 +64,7 @@ describe('UsersService', () => {
           useValue: { initializePreferences: jest.fn().mockResolvedValue([]) },
         },
         { provide: IpfsService, useValue: ipfsService },
+        { provide: EventEmitter2, useValue: eventEmitter },
       ],
     }).compile();
 
@@ -97,6 +103,10 @@ describe('UsersService', () => {
 
     const result = await service.follow('A', 'B');
     expect(result.id).toBe('f1');
+    expect(eventEmitter.emit).toHaveBeenCalledWith('user.followed', {
+      followerAddress: 'A',
+      followingAddress: 'B',
+    });
   });
 
   it('returns paginated followers', async () => {

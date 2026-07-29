@@ -18,6 +18,7 @@ jest.mock('../utils/retry', () => {
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { SorobanRpc } from '@stellar/stellar-sdk';
 import { OracleService } from './oracle.service';
 import { OracleCall, OracleCallStatus } from './entities/oracle-call.entity';
@@ -77,6 +78,9 @@ describe('OracleService', () => {
   const signingService = {
     signOutcome: jest.fn().mockReturnValue('sig'),
   };
+  const eventEmitter = {
+    emit: jest.fn(),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -117,6 +121,7 @@ describe('OracleService', () => {
         },
         { provide: PriceFetcherService, useValue: priceFetcherRepo },
         { provide: CoinGeckoService, useValue: coinGeckoRepo },
+        { provide: EventEmitter2, useValue: eventEmitter },
       ],
     }).compile();
 
@@ -230,6 +235,18 @@ describe('OracleService', () => {
         operation: expect.any(String),
         success: true,
       }),
+    );
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'oracle.submitted',
+      expect.objectContaining({
+        callId: 1,
+        observedPrice: '110',
+        outcome: 'YES',
+      }),
+    );
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'call.resolved',
+      expect.objectContaining({ callId: 1, outcome: 'YES', finalPrice: '110' }),
     );
   });
 

@@ -12,7 +12,8 @@ export interface EnvConfig {
 export const validateEnv = (config: Record<string, unknown>): EnvConfig => {
   const port = config.PORT ? parseInt(String(config.PORT), 10) : 3001;
   const nodeEnv = (config.NODE_ENV as string) || 'development';
-  const jwtSecret = (config.JWT_SECRET as string) || 'super-secret-jwt-token-key-32-chars-min!';
+  const jwtSecret =
+    (config.JWT_SECRET as string) || 'super-secret-jwt-token-key-32-chars-min!';
 
   if (config.DATABASE_URL && typeof config.DATABASE_URL !== 'string') {
     console.error('Invalid DATABASE_URL');

@@ -9,7 +9,9 @@ describe('kike-alt Backend Features (#452, #184)', () => {
         getRequest: () => ({ user: { isAdmin: false, role: 'user' } }),
       }),
     };
-    expect(() => guard.canActivate(mockCtxNonAdmin)).toThrow('Admin privileges required');
+    expect(() => guard.canActivate(mockCtxNonAdmin)).toThrow(
+      'Admin privileges required',
+    );
   });
 
   it('AdminGuard permits admin users', () => {

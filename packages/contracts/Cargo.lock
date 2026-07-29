@@ -262,6 +262,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "charity-markets"
+version = "0.0.0"
+dependencies = [
+ "backit-shared",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -303,13 +311,6 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
-]
-
-[[package]]
-name = "cross_chain_oracle_relay"
-version = "0.0.0"
-dependencies = [
- "soroban-sdk",
 ]
 
 [[package]]
@@ -527,6 +528,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f678cf4a922c215c63e0de95eb1ff08a958a81d47e485cf9da1e27bf6305cfa5"
 
 [[package]]
+name = "dutch-auction"
+version = "0.0.0"
+dependencies = [
+ "backit-shared",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -702,13 +711,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "governance"
-version = "0.0.0"
-dependencies = [
- "soroban-sdk",
-]
-
-[[package]]
 name = "group"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -825,6 +827,14 @@ name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
+
+[[package]]
+name = "index-fund"
+version = "0.0.0"
+dependencies = [
+ "backit-shared",
+ "soroban-sdk",
+]
 
 [[package]]
 name = "indexmap"
@@ -1113,6 +1123,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prediction-market-futures"
+version = "0.0.0"
+dependencies = [
+ "backit-shared",
+ "prediction-market",
+ "prediction-market-factory",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "prettyplease"
 version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1197,16 +1217,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.3",
-]
-
-[[package]]
-name = "reputation-nft"
-version = "0.0.0"
-dependencies = [
- "backit-shared",
- "ed25519-dalek",
- "rand",
- "soroban-sdk",
 ]
 
 [[package]]
@@ -1790,6 +1800,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
+name = "tournament"
+version = "0.0.0"
+dependencies = [
+ "backit-shared",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1963,16 +1981,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7837d08f69c77cf6b07689544538e017c1bfcf57e34b4c0ff58e6c2cd3b37091"
 dependencies = [
  "windows-link",
-]
-
-[[package]]
-name = "yield-aggregator"
-version = "0.0.0"
-dependencies = [
- "backit-shared",
- "ed25519-dalek",
- "rand",
- "soroban-sdk",
 ]
 
 [[package]]
