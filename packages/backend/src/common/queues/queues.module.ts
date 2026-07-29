@@ -6,6 +6,7 @@ import {
   QUEUE_IPFS_PINNING,
   QUEUE_NOTIFICATIONS,
   QUEUE_ORACLE_SIGNING,
+  QUEUE_WEBHOOK_DISPATCH,
 } from './queues.constants';
 import { DeadLetterService } from './dead-letter.service';
 import { QueuesStatusService } from './queues.status.service';
@@ -54,6 +55,15 @@ import { AdminQueuesController } from './admin-queues.controller';
         attempts: 3,
         backoff: { type: 'exponential', delay: 500 },
         removeOnComplete: { age: 60 * 60 },
+        removeOnFail: false,
+      },
+    }),
+    BullModule.registerQueue({
+      name: QUEUE_WEBHOOK_DISPATCH,
+      defaultJobOptions: {
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 1000 },
+        removeOnComplete: { age: 60 * 60 * 24 },
         removeOnFail: false,
       },
     }),
