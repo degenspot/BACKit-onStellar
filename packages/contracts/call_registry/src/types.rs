@@ -82,6 +82,7 @@ pub struct CallInitArgs {
     pub metadata_hash: BytesN<32>,
     pub condition: ConditionType,
     pub outcome_count: u32,
+    pub gate: Option<StakingGate>,
 }
 
 /// Represents a prediction call with all its metadata
@@ -132,6 +133,8 @@ pub struct Call {
     pub metadata_version: u32,
     /// Map of outcome indices to the deployed share token contract addresses
     pub share_tokens: Map<u32, Address>,
+    /// Optional staking gate specific to this call
+    pub gate: Option<StakingGate>,
 }
 
 /// Enum representing stake positions on a call
@@ -208,6 +211,8 @@ pub struct ContractConfig {
     /// reputation-weighted stake limit. See `crate::reputation` for the exact
     /// fixed-point formula. Default: 0.
     pub reputation_multiplier: u32,
+    /// Global staking gate that applies to all calls, unless overridden per-call
+    pub global_gate: Option<StakingGate>,
 }
 
 /// Contract-wide aggregated statistics for dashboards.
@@ -259,4 +264,15 @@ pub struct StorageStats {
     pub instance_entry_count: u32,
     /// Rough byte estimate for instance storage (entry_count × 128 bytes).
     pub estimated_instance_bytes: u32,
+}
+
+/// Anti-Sybil Staking Gates.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum StakingGate {
+    None,
+    MinAccountAge(u32),
+    MinXlmBalance(i128),
+    MinTrustlines(u32),
+    HoldsBadge(Address),
 }

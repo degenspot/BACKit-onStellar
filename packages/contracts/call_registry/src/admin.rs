@@ -11,6 +11,7 @@ use crate::events::{
     PARAM_FEE_BPS, PARAM_MAX_STAKE_PER_USER, PARAM_OUTCOME_MANAGER, PARAM_STAKING_CUTOFF,
 };
 use crate::storage::{extend_storage_ttl, get_config, set_config};
+use crate::types::StakingGate;
 
 /// Transfer admin privileges to a new address.
 /// # Authorization
@@ -199,4 +200,13 @@ pub fn set_staking_cutoff(env: Env, new_cutoff: u64) {
         old_cutoff,
         new_cutoff,
     );
+}
+
+/// Set the global staking gate that applies to all calls by default.
+pub fn set_global_gate(env: Env, gate: Option<StakingGate>) {
+    let mut config = get_config(&env).expect("not initialized");
+    config.admin.require_auth();
+    config.global_gate = gate;
+    set_config(&env, &config);
+    extend_storage_ttl(&env);
 }

@@ -29,6 +29,8 @@ pub enum DataKey {
     ExpiredRefundClaimed(u64, Address),
     InstanceEntryCount,
     Sep10Domain(Address),
+    UserFirstInteraction(Address),
+    UserTrustlineCount(Address),
     Locked,
 }
 
@@ -436,6 +438,54 @@ pub fn is_expired_refund_claimed(env: &Env, call_id: u64, staker: &Address) -> b
     env.storage()
         .instance()
         .has(&DataKey::ExpiredRefundClaimed(call_id, staker.clone()))
+}
+
+/// Retrieve the user's first interaction ledger sequence, or store it if not present
+pub fn get_or_set_first_interaction(env: &Env, user: &Address) -> u32 {
+    let key = DataKey::UserFirstInteraction(user.clone());
+    let result: Option<u32> = env.storage().persistent().get(&key);
+    if let Some(ledger) = result {
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+        ledger
+    } else {
+        let current_ledger = env.ledger().sequence();
+        env.storage().persistent().set(&key, &current_ledger);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+        current_ledger
+    }
+}
+
+/// Retrieve the user's trustline count
+pub fn get_trustline_count(env: &Env, user: &Address) -> u32 {
+    let key = DataKey::UserTrustlineCount(user.clone());
+    let result: Option<u32> = env.storage().persistent().get(&key);
+    if result.is_some() {
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+    }
+    result.unwrap_or(0)
+}
+
+/// Admin function to set trustline count for a user (simulating off-chain oracle or similar)
+pub fn set_trustline_count(env: &Env, user: &Address, count: u32) {
+    let key = DataKey::UserTrustlineCount(user.clone());
+    env.storage().persistent().set(&key, &count);
+    env.storage().persistent().extend_ttl(
+        &key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
 }
 
 // ── Instance entry counter ────────────────────────────────────────────────────

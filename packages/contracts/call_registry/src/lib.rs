@@ -86,6 +86,8 @@ mod shares;
 mod storage;
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod test_gating;
 pub mod types;
 mod withdrawal;
 
@@ -203,6 +205,7 @@ impl CallRegistry {
             admin_threshold: 1,
             base_stake_limit: 0,
             reputation_multiplier: 0,
+            global_gate: None,
         };
 
         set_config(&env, &config);
@@ -263,6 +266,7 @@ impl CallRegistry {
             metadata_hash,
             condition,
             outcome_count,
+            gate,
         } = args;
 
         let mut share_tokens = Map::new(&env);
@@ -342,6 +346,7 @@ impl CallRegistry {
             cancelled: false,
             metadata_version: 0,
             share_tokens,
+            gate,
         };
 
         set_call(&env, &call);
@@ -623,6 +628,10 @@ impl CallRegistry {
 
         if call.voided {
             panic!("Call has been voided");
+        }
+
+        if !Self::check_user_qualifies(env.clone(), staker.clone(), call_id) {
+            panic!("User does not qualify for this call's staking gate");
         }
 
         // Validate position is within valid range
@@ -1143,6 +1152,58 @@ impl CallRegistry {
     pub fn get_condition(env: Env, call_id: u64) -> Result<ConditionType, CallRegistryError> {
         let call = get_call(&env, call_id).ok_or(CallRegistryError::CallNotFound)?;
         Ok(call.condition)
+    }
+
+    /// Set the global staking gate that applies to all calls by default.
+    pub fn set_global_gate(env: Env, gate: Option<StakingGate>) {
+        admin::set_global_gate(env, gate);
+    }
+
+    /// Admin function to set trustline count for a user
+    pub fn set_trustline_count(env: Env, user: Address, count: u32) {
+        let config = get_config(&env).expect("not initialized");
+        config.admin.require_auth();
+        storage::set_trustline_count(&env, &user, count);
+    }
+
+    /// Get the effective staking gate for a call
+    pub fn get_call_gate(env: Env, call_id: u64) -> Option<StakingGate> {
+        let call = get_call(&env, call_id).expect("call not found");
+        if call.gate.is_some() {
+            call.gate
+        } else {
+            let config = get_config(&env).expect("not initialized");
+            config.global_gate
+        }
+    }
+
+    /// Check if a user qualifies for a call's staking gate
+    pub fn check_user_qualifies(env: Env, user: Address, call_id: u64) -> bool {
+        let gate = Self::get_call_gate(env.clone(), call_id);
+        match gate {
+            None | Some(StakingGate::None) => true,
+            Some(StakingGate::MinAccountAge(min_age)) => {
+                let first_interaction = storage::get_or_set_first_interaction(&env, &user);
+                let current_ledger = env.ledger().sequence();
+                current_ledger.saturating_sub(first_interaction) >= min_age
+            }
+            Some(StakingGate::MinXlmBalance(min_balance)) => {
+                let sentinel = Address::from_string(&soroban_sdk::String::from_str(
+                    &env,
+                    "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4",
+                ));
+                let balance = token::Client::new(&env, &sentinel).balance(&user);
+                balance >= min_balance
+            }
+            Some(StakingGate::MinTrustlines(min_trustlines)) => {
+                let trustlines = storage::get_trustline_count(&env, &user);
+                trustlines >= min_trustlines
+            }
+            Some(StakingGate::HoldsBadge(nft_address)) => {
+                let balance = token::Client::new(&env, &nft_address).balance(&user);
+                balance > 0
+            }
+        }
     }
 
     /// Return basket conditions for a call.
