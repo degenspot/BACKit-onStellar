@@ -29,6 +29,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { LoggerModule } from './common/logger/logger.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { StakesModule } from './stakes/stakes.module';
+import { GraphqlApiModule } from './graphql-api/graphql-api.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { StakesModule } from './stakes/stakes.module';
     CommentsModule,
     AlertsModule,
     StakesModule,
+    GraphqlApiModule,
   ],
   controllers: [],
   providers: [{ provide: APP_INTERCEPTOR, useClass: LoggingInterceptor }],
