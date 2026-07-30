@@ -5,7 +5,9 @@ mod events;
 mod storage;
 mod types;
 
-pub use types::{MarketEntry, ScoringWeights, Tournament, TournamentStanding, TournamentStatus};
+pub use types::{
+    MarketEntry, ScoringWeights, Tournament, TournamentStanding, TournamentStatus,
+};
 
 #[cfg(test)]
 mod test;
@@ -14,7 +16,9 @@ use soroban_sdk::{contract, contractimpl, Address, Env, Map, String, Vec};
 use storage::*;
 
 use errors::TournamentError;
-use events::{emit_market_entered, emit_tournament_created, emit_tournament_finalized};
+use events::{
+    emit_market_entered, emit_tournament_created, emit_tournament_finalized,
+};
 
 const MAX_SCORE: i128 = 10_000;
 const BPS_DENOMINATOR: u32 = 10_000;
@@ -107,7 +111,12 @@ impl TournamentContract {
         tournament_id
     }
 
-    pub fn enter_market(env: Env, tournament_id: u64, creator: Address, call_id: u64) {
+    pub fn enter_market(
+        env: Env,
+        tournament_id: u64,
+        creator: Address,
+        call_id: u64,
+    ) {
         let factory = get_factory(&env)
             .ok_or(TournamentError::NotInitialized)
             .unwrap_or_else(|e| soroban_sdk::panic_with_error!(&env, e));
@@ -181,7 +190,11 @@ impl TournamentContract {
         set_market_entries(&env, tournament_id, &entries);
     }
 
-    pub fn calculate_score(env: Env, tournament_id: u64, participant: Address) -> i128 {
+    pub fn calculate_score(
+        env: Env,
+        tournament_id: u64,
+        participant: Address,
+    ) -> i128 {
         let tournament = get_tournament(&env, tournament_id)
             .ok_or(TournamentError::TournamentNotFound)
             .unwrap_or_else(|e| soroban_sdk::panic_with_error!(&env, e));
@@ -218,8 +231,7 @@ impl TournamentContract {
         };
 
         let accuracy_score = if entry.resolved_total > 0 {
-            let ratio =
-                (entry.resolved_correct as i128) * MAX_SCORE / (entry.resolved_total as i128);
+            let ratio = (entry.resolved_correct as i128) * MAX_SCORE / (entry.resolved_total as i128);
             ratio
         } else {
             0

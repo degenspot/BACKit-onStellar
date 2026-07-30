@@ -106,11 +106,7 @@ fn with_lock<T>(env: &Env, f: impl FnOnce() -> Result<T, MarketError>) -> Result
 /// #465: Shared checked-arithmetic helper: adds `amount` to `current` and,
 /// if `config.max_stake_per_user` is set, rejects the result if it would
 /// exceed the cap. Returns the updated total on success.
-fn check_max_stake(
-    config: &MarketConfig,
-    current: i128,
-    amount: i128,
-) -> Result<i128, MarketError> {
+fn check_max_stake(config: &MarketConfig, current: i128, amount: i128) -> Result<i128, MarketError> {
     let updated = current.checked_add(amount).ok_or(MarketError::Overflow)?;
     if config.max_stake_per_user > 0 && updated > config.max_stake_per_user {
         return Err(MarketError::InvalidStakeAmount);
@@ -143,9 +139,7 @@ fn apply_stake(
     let updated_staker_stake = check_max_stake(config, current_staker_stake, amount)?;
 
     let current_total = call.outcome_stakes.get(position).unwrap_or(0);
-    let updated_total = current_total
-        .checked_add(amount)
-        .ok_or(MarketError::Overflow)?;
+    let updated_total = current_total.checked_add(amount).ok_or(MarketError::Overflow)?;
 
     call.outcome_stakes.set(position, updated_total);
     outcome_stakers.set(staker.clone(), updated_staker_stake);
@@ -404,7 +398,6 @@ impl PredictionMarket {
             condition,
             settled: false,
             voided: false,
-            unresolvable: false,
             created_at: current_timestamp,
             cancelled: false,
             metadata_version: 0,
@@ -677,11 +670,7 @@ impl PredictionMarket {
     /// caller receives `config.expired_order_refund_bps` of the escrowed
     /// amount as a small reward for the cleanup, and the remainder goes back
     /// to the order's original owner.
-    pub fn refund_expired_order(
-        env: Env,
-        caller: Address,
-        order_id: u64,
-    ) -> Result<(), MarketError> {
+    pub fn refund_expired_order(env: Env, caller: Address, order_id: u64) -> Result<(), MarketError> {
         caller.require_auth();
         with_lock(&env, || {
             let order = get_limit_order(&env, order_id).ok_or(MarketError::OrderNotFound)?;
@@ -699,10 +688,7 @@ impl PredictionMarket {
                 .ok_or(MarketError::Overflow)?
                 .checked_div(10_000)
                 .ok_or(MarketError::Overflow)?;
-            let refund_to_user = order
-                .amount
-                .checked_sub(reward)
-                .ok_or(MarketError::Overflow)?;
+            let refund_to_user = order.amount.checked_sub(reward).ok_or(MarketError::Overflow)?;
 
             if reward > 0 {
                 transfer_token(
@@ -948,7 +934,9 @@ impl PredictionMarket {
     }
 
     /// #497: Get current reserve status (view function).
-    pub fn get_reserve_status(env: Env) -> Result<ReserveVerification, MarketError> {
+    pub fn get_reserve_status(
+        env: Env,
+    ) -> Result<ReserveVerification, MarketError> {
         let _config = get_config(&env).ok_or(MarketError::NotInitialized)?;
         let call = get_call(&env).ok_or(MarketError::CallNotFound)?;
 

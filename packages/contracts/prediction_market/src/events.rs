@@ -80,7 +80,12 @@ pub fn emit_reserve_discrepancy(env: &Env, call_id: u64, discrepancy: i128) {
     );
 }
 
-pub fn emit_early_staker_bonus(env: &Env, call_id: u64, staker: &Address, bonus: i128) {
+pub fn emit_early_staker_bonus(
+    env: &Env,
+    call_id: u64,
+    staker: &Address,
+    bonus: i128,
+) {
     env.events().publish(
         ("prediction_market", "early_staker_bonus"),
         (call_id, staker.clone(), bonus),
@@ -126,14 +131,7 @@ pub fn emit_limit_order_filled(
 ) {
     env.events().publish(
         ("prediction_market", "limit_order_filled"),
-        (
-            order_id,
-            call_id,
-            user.clone(),
-            outcome,
-            amount,
-            filled_price,
-        ),
+        (order_id, call_id, user.clone(), outcome, amount, filled_price),
     );
 }
 

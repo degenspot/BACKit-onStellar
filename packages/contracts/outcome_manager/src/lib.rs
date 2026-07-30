@@ -1,6 +1,5 @@
 #![no_std]
 #![allow(deprecated)]
-#![allow(clippy::too_many_arguments)]
 
 mod auth;
 mod call_types;
@@ -8,19 +7,19 @@ mod errors;
 mod events;
 #[cfg(test)]
 mod fuzz_tests;
-mod rotation;
 mod storage;
 mod test;
+mod rotation;
 mod verification;
 
-pub use storage::{SignedBasketCondition, SignedOutcome};
+pub use storage::SignedOutcome;
 
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, IntoVal, Map, Symbol, Vec};
 
 use auth::require_admin;
 use backit_shared::{is_valid_fee_bps, is_valid_outcome};
-use call_types::{BasketLogic, Call, CallRegistryError, ConditionType, LeafConditionType};
+use call_types::{Call, CallRegistryError};
 use errors::OutcomeError;
 use events::{
     emit_admin_params_changed, emit_batch_payout_started, emit_claimable_balance_created,
@@ -80,16 +79,8 @@ fn registry_mark_settled(env: &Env, registry: &Address, call_id: u64) {
     }
 }
 
-fn registry_mark_unresolvable(env: &Env, registry: &Address, call_id: u64) {
-    let args = (call_id,).into_val(env);
-    let result: Result<Call, CallRegistryError> =
-        env.invoke_contract(registry, &Symbol::new(env, "mark_unresolvable"), args);
-    if result.is_err() {
-        soroban_sdk::panic_with_error!(env, OutcomeError::CallNotSettled);
-    }
-}
-
 /// Call `get_call(call_id)` on the CallRegistry and return the decoded Call.
+#[allow(dead_code)]
 fn registry_get_call(env: &Env, registry: &Address, call_id: u64) -> Call {
     let args = (call_id,).into_val(env);
     let result: Result<Call, CallRegistryError> =
@@ -199,53 +190,6 @@ fn require_call_settled(env: &Env, call_id: u64) {
 /// missing timestamp can never be mistaken for an *elapsed* grace period.
 fn get_settled_at(env: &Env, call_id: u64) -> u64 {
     storage::get_settled_at_opt(env, call_id).unwrap_or_else(|| env.ledger().timestamp())
-}
-
-fn build_basket_message(
-    env: &Env,
-    call_id: u64,
-    condition_index: u32,
-    price: i128,
-    timestamp: u64,
-) -> Bytes {
-    let mut msg = Bytes::from_slice(env, b"BACKit:BasketPrice:");
-    msg.append(&Bytes::from_slice(env, &call_id.to_be_bytes()));
-    msg.append(&Bytes::from_slice(env, b":"));
-    msg.append(&Bytes::from_slice(env, &condition_index.to_be_bytes()));
-    msg.append(&Bytes::from_slice(env, b":"));
-    msg.append(&Bytes::from_slice(env, &price.to_be_bytes()));
-    msg.append(&Bytes::from_slice(env, b":"));
-    msg.append(&Bytes::from_slice(env, &timestamp.to_be_bytes()));
-    msg
-}
-
-fn evaluate_leaf_condition(
-    condition: &LeafConditionType,
-    start_price: i128,
-    end_price: i128,
-) -> bool {
-    match condition {
-        LeafConditionType::TargetAbove(target) => end_price > *target,
-        LeafConditionType::TargetBelow(target) => end_price < *target,
-        LeafConditionType::PercentUp(percent) => {
-            if start_price <= 0 {
-                return false;
-            }
-            end_price * 100 >= start_price * (100 + *percent as i128)
-        }
-        LeafConditionType::PercentDown(percent) => {
-            if start_price <= 0 {
-                return false;
-            }
-            end_price * 100 <= start_price * (100 - *percent as i128)
-        }
-        LeafConditionType::Range(min, max) => {
-            if min > max {
-                return false;
-            }
-            end_price >= *min && end_price <= *max
-        }
-    }
 }
 
 fn get_fee_config(env: &Env) -> (u32, Address) {
@@ -565,138 +509,6 @@ impl OutcomeManager {
     pub fn submit_outcome_for_market(env: Env, signed: SignedOutcome, call_end_ts: u64) {
         let registry = Self::resolve_market_address(env.clone(), signed.call_id);
         Self::submit_outcome(env, registry, signed, call_end_ts);
-    }
-
-    /// Submit per-condition oracle price reports for a basket call via factory routing.
-    pub fn submit_basket_outcome_for_market(
-        env: Env,
-        call_id: u64,
-        submissions: Vec<SignedBasketCondition>,
-        call_end_ts: u64,
-    ) {
-        let registry = Self::resolve_market_address(env.clone(), call_id);
-        Self::submit_basket_outcome(env, registry, call_id, submissions, call_end_ts);
-    }
-
-    /// Submit per-condition oracle price reports for a basket call.
-    ///
-    /// Resolves UP when basket logic evaluates to true, otherwise DOWN.
-    /// If submissions are incomplete after the deadline, marks the call unresolvable.
-    pub fn submit_basket_outcome(
-        env: Env,
-        registry: Address,
-        call_id: u64,
-        submissions: Vec<SignedBasketCondition>,
-        call_end_ts: u64,
-    ) {
-        if is_paused(&env) {
-            soroban_sdk::panic_with_error!(&env, OutcomeError::ContractPaused);
-        }
-
-        validate_market_registry(&env, &registry, call_id);
-
-        if env
-            .storage()
-            .instance()
-            .has(&InstanceKey::FinalOutcome(call_id))
-        {
-            soroban_sdk::panic_with_error!(&env, OutcomeError::AlreadySettled);
-        }
-
-        let call = registry_get_call(&env, &registry, call_id);
-        let basket = match call.condition {
-            ConditionType::Basket(basket) => basket,
-            _ => soroban_sdk::panic_with_error!(&env, OutcomeError::NotBasketCall),
-        };
-
-        let expected_len = basket.conditions.len();
-        let now = env.ledger().timestamp();
-        if submissions.len() != expected_len {
-            if now > call_end_ts {
-                registry_mark_unresolvable(&env, &registry, call_id);
-                return;
-            }
-            soroban_sdk::panic_with_error!(&env, OutcomeError::BasketSubmissionIncomplete);
-        }
-
-        let oracles = get_oracles(&env);
-        let mut seen = Map::<u32, bool>::new(&env);
-        let mut total_weight_true: u32 = 0;
-        let mut representative_price: i128 = 0;
-
-        for submission in submissions.iter() {
-            if submission.call_id != call_id {
-                soroban_sdk::panic_with_error!(&env, OutcomeError::InvalidBasketConditionIndex);
-            }
-            if submission.condition_index >= expected_len {
-                soroban_sdk::panic_with_error!(&env, OutcomeError::InvalidBasketConditionIndex);
-            }
-            if seen.get(submission.condition_index).unwrap_or(false) {
-                soroban_sdk::panic_with_error!(&env, OutcomeError::DuplicateSubmission);
-            }
-            if !oracles.contains_key(submission.oracle_pubkey.clone()) {
-                soroban_sdk::panic_with_error!(&env, OutcomeError::UnauthorizedOracle);
-            }
-
-            let message = build_basket_message(
-                &env,
-                submission.call_id,
-                submission.condition_index,
-                submission.price,
-                submission.timestamp,
-            );
-            verify_signature(
-                &env,
-                &submission.oracle_pubkey,
-                &submission.signature,
-                &message,
-            );
-
-            let cond = basket
-                .conditions
-                .get(submission.condition_index)
-                .unwrap_or_else(|| {
-                    soroban_sdk::panic_with_error!(&env, OutcomeError::InvalidBasketConditionIndex)
-                });
-
-            if evaluate_leaf_condition(&cond.condition, call.start_price, submission.price) {
-                total_weight_true = total_weight_true.saturating_add(cond.weight_bps);
-            }
-
-            if submission.condition_index == 0 {
-                representative_price = submission.price;
-            }
-            seen.set(submission.condition_index, true);
-        }
-
-        if seen.keys().len() != expected_len {
-            if now > call_end_ts {
-                registry_mark_unresolvable(&env, &registry, call_id);
-                return;
-            }
-            soroban_sdk::panic_with_error!(&env, OutcomeError::BasketSubmissionIncomplete);
-        }
-
-        let basket_true = match basket.logic {
-            BasketLogic::AllOf => {
-                total_weight_true
-                    == basket
-                        .conditions
-                        .iter()
-                        .fold(0u32, |acc, c| acc.saturating_add(c.weight_bps))
-            }
-            BasketLogic::AnyOf => total_weight_true > 0,
-            BasketLogic::Weighted(threshold_bps) => total_weight_true > threshold_bps,
-        };
-
-        let outcome = if basket_true { 1u32 } else { 2u32 };
-        let finalized = Outcome {
-            call_id,
-            outcome,
-            price: representative_price,
-            timestamp: now,
-        };
-        Self::finalize(&env, &registry, finalized);
     }
 
     /// Claim payout, resolving the market address from the factory.
@@ -1454,9 +1266,7 @@ impl OutcomeManager {
         let (window_secs, min_observations) = get_twap_config(&env);
         match try_compute_twap(&observations, end_ts, window_secs, min_observations) {
             Some(twap) => twap,
-            None => {
-                soroban_sdk::panic_with_error!(&env, OutcomeError::InsufficientPriceObservations)
-            }
+            None => soroban_sdk::panic_with_error!(&env, OutcomeError::InsufficientPriceObservations),
         }
     }
 
@@ -1525,7 +1335,7 @@ impl OutcomeManager {
         env: Env,
         call_id: u64,
         observation: ResolutionObservation,
-        _signature: BytesN<64>,
+        signature: BytesN<64>,
     ) {
         let oracles = get_oracles(&env);
         if !oracles.contains_key(observation.oracle.clone()) {

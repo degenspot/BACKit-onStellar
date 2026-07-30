@@ -11,9 +11,7 @@ mod test;
 pub use types::{MarketplaceConfig, OracleProvider, OracleRating};
 
 use errors::OracleMarketplaceError;
-use events::{
-    emit_oracle_deregistered, emit_oracle_rated, emit_oracle_registered, emit_oracle_selected,
-};
+use events::{emit_oracle_deregistered, emit_oracle_rated, emit_oracle_registered, emit_oracle_selected};
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Map, Vec};
 use storage::*;
 
@@ -126,8 +124,7 @@ impl OracleMarketplace {
         call_id: u64,
         oracle_pubkey: BytesN<32>,
     ) -> Result<(), OracleMarketplaceError> {
-        let oracle =
-            get_oracle(&env, &oracle_pubkey).ok_or(OracleMarketplaceError::OracleNotFound)?;
+        let oracle = get_oracle(&env, &oracle_pubkey).ok_or(OracleMarketplaceError::OracleNotFound)?;
         if !oracle.is_active {
             return Err(OracleMarketplaceError::OracleNotActive);
         }
@@ -148,8 +145,7 @@ impl OracleMarketplace {
         satisfied: bool,
     ) -> Result<(), OracleMarketplaceError> {
         user.require_auth();
-        let _oracle =
-            get_oracle(&env, &oracle_pubkey).ok_or(OracleMarketplaceError::OracleNotFound)?;
+        let _oracle = get_oracle(&env, &oracle_pubkey).ok_or(OracleMarketplaceError::OracleNotFound)?;
 
         let mut ratings = get_oracle_ratings(&env, &oracle_pubkey);
         if ratings.contains_key(user.clone()) {
@@ -167,8 +163,7 @@ impl OracleMarketplace {
         env: Env,
         oracle_pubkey: BytesN<32>,
     ) -> Result<(u64, u64), OracleMarketplaceError> {
-        let oracle =
-            get_oracle(&env, &oracle_pubkey).ok_or(OracleMarketplaceError::OracleNotFound)?;
+        let oracle = get_oracle(&env, &oracle_pubkey).ok_or(OracleMarketplaceError::OracleNotFound)?;
         Ok((oracle.total_resolved, oracle.total_disputes))
     }
 

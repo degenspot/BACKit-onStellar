@@ -6,9 +6,9 @@ use soroban_sdk::{
     Address, Bytes, BytesN, Env, Vec,
 };
 
-use backit_shared::{OUTCOME_DOWN, OUTCOME_UP};
 use call_registry::{CallRegistry, CallRegistryClient};
 use outcome_manager::{OutcomeManager, OutcomeManagerClient};
+use backit_shared::{OUTCOME_UP, OUTCOME_DOWN};
 
 use call_registry::types::{Call, CallInitArgs, ConditionType};
 
@@ -90,22 +90,12 @@ fn test_full_lifecycle_create_stake_submit_claim() {
     assert_eq!(call.outcome_stakes.get(OUTCOME_DOWN).unwrap_or(0), 0);
 
     let up_call = registry_client.stake_on_call(&staker_up, &1u64, &50_000_000_i128, &OUTCOME_UP);
-    assert_eq!(
-        up_call.outcome_stakes.get(OUTCOME_UP).unwrap_or(0),
-        50_000_000_i128
-    );
+    assert_eq!(up_call.outcome_stakes.get(OUTCOME_UP).unwrap_or(0), 50_000_000_i128);
     assert_eq!(up_call.outcome_stakes.get(OUTCOME_DOWN).unwrap_or(0), 0);
 
-    let down_call =
-        registry_client.stake_on_call(&staker_down, &1u64, &30_000_000_i128, &OUTCOME_DOWN);
-    assert_eq!(
-        down_call.outcome_stakes.get(OUTCOME_UP).unwrap_or(0),
-        50_000_000_i128
-    );
-    assert_eq!(
-        down_call.outcome_stakes.get(OUTCOME_DOWN).unwrap_or(0),
-        30_000_000_i128
-    );
+    let down_call = registry_client.stake_on_call(&staker_down, &1u64, &30_000_000_i128, &OUTCOME_DOWN);
+    assert_eq!(down_call.outcome_stakes.get(OUTCOME_UP).unwrap_or(0), 50_000_000_i128);
+    assert_eq!(down_call.outcome_stakes.get(OUTCOME_DOWN).unwrap_or(0), 30_000_000_i128);
 
     env.ledger().set_timestamp(5100);
 
@@ -243,10 +233,7 @@ fn test_error_paths_double_claiming() {
     let call = registry_client.get_call(&1u64);
     assert_eq!(call.outcome, OUTCOME_UP);
     // Verify stake is preserved in outcome_stakes after resolution
-    assert_eq!(
-        call.outcome_stakes.get(OUTCOME_UP).unwrap_or(0),
-        50_000_000_i128
-    );
+    assert_eq!(call.outcome_stakes.get(OUTCOME_UP).unwrap_or(0), 50_000_000_i128);
 }
 
 #[test]
@@ -421,31 +408,16 @@ fn test_three_outcome_market() {
 
     // Three stakers cover all three outcomes
     let call_after_a = registry_client.stake_on_call(&staker_a, &1u64, &20_000_000_i128, &1u32);
-    assert_eq!(
-        call_after_a.outcome_stakes.get(1u32).unwrap_or(0),
-        20_000_000_i128
-    );
+    assert_eq!(call_after_a.outcome_stakes.get(1u32).unwrap_or(0), 20_000_000_i128);
 
     let call_after_b = registry_client.stake_on_call(&staker_b, &1u64, &30_000_000_i128, &2u32);
-    assert_eq!(
-        call_after_b.outcome_stakes.get(2u32).unwrap_or(0),
-        30_000_000_i128
-    );
+    assert_eq!(call_after_b.outcome_stakes.get(2u32).unwrap_or(0), 30_000_000_i128);
 
     let call_after_c = registry_client.stake_on_call(&staker_c, &1u64, &15_000_000_i128, &3u32);
     // All three outcomes accumulate independently
-    assert_eq!(
-        call_after_c.outcome_stakes.get(1u32).unwrap_or(0),
-        20_000_000_i128
-    );
-    assert_eq!(
-        call_after_c.outcome_stakes.get(2u32).unwrap_or(0),
-        30_000_000_i128
-    );
-    assert_eq!(
-        call_after_c.outcome_stakes.get(3u32).unwrap_or(0),
-        15_000_000_i128
-    );
+    assert_eq!(call_after_c.outcome_stakes.get(1u32).unwrap_or(0), 20_000_000_i128);
+    assert_eq!(call_after_c.outcome_stakes.get(2u32).unwrap_or(0), 30_000_000_i128);
+    assert_eq!(call_after_c.outcome_stakes.get(3u32).unwrap_or(0), 15_000_000_i128);
 
     // Resolve to outcome 3
     env.ledger().set_timestamp(5100);
@@ -457,8 +429,5 @@ fn test_three_outcome_market() {
     let settled = registry_client.get_call(&1u64);
     assert!(settled.settled);
     assert_eq!(settled.outcome, 3u32);
-    assert_eq!(
-        settled.outcome_stakes.get(3u32).unwrap_or(0),
-        15_000_000_i128
-    );
+    assert_eq!(settled.outcome_stakes.get(3u32).unwrap_or(0), 15_000_000_i128);
 }

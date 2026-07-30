@@ -19,15 +19,11 @@ pub fn get_config(env: &Env) -> Option<MarketplaceConfig> {
 }
 
 pub fn set_oracle(env: &Env, pubkey: &BytesN<32>, provider: &OracleProvider) {
-    env.storage()
-        .instance()
-        .set(&DataKey::Oracle(pubkey.clone()), provider);
+    env.storage().instance().set(&DataKey::Oracle(pubkey.clone()), provider);
 }
 
 pub fn get_oracle(env: &Env, pubkey: &BytesN<32>) -> Option<OracleProvider> {
-    env.storage()
-        .instance()
-        .get(&DataKey::Oracle(pubkey.clone()))
+    env.storage().instance().get(&DataKey::Oracle(pubkey.clone()))
 }
 
 pub fn set_oracle_list(env: &Env, list: &Vec<BytesN<32>>) {

@@ -85,9 +85,7 @@ pub fn next_strategy_id(env: &Env) -> u64 {
 }
 
 pub fn set_strategy(env: &Env, id: u64, strategy: &ConditionalStrategy) {
-    env.storage()
-        .instance()
-        .set(&DataKey::Strategy(id), strategy);
+    env.storage().instance().set(&DataKey::Strategy(id), strategy);
 }
 
 pub fn get_strategy(env: &Env, id: u64) -> Option<ConditionalStrategy> {

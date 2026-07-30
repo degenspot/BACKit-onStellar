@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull, DeepPartial } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { SorobanRpc, Contract, xdr } from '@stellar/stellar-sdk';
 import { OracleCall, OracleCallStatus } from './entities/oracle-call.entity';
 import { OracleOutcome } from './entities/oracle-outcome.entity';
@@ -59,6 +60,7 @@ export class OracleService {
     private readonly ipfsService: IpfsService,
     private readonly priceFetcherService: PriceFetcherService,
     private readonly coinGeckoService: CoinGeckoService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   // ─── Core CRUD ────────────────────────────────────────────────────────────
@@ -579,6 +581,22 @@ export class OracleService {
     call.resolvedAt = new Date();
     call.processedAt = new Date();
     await this.oracleCallRepository.save(call);
+
+    const resolvedOutcome =
+      outcome === OracleCallStatus.RESOLVED_YES ? 'YES' : 'NO';
+
+    this.eventEmitter.emit('oracle.submitted', {
+      callId,
+      observedPrice,
+      outcome: resolvedOutcome,
+      horizonPrice: horizonMidpoint,
+    });
+
+    this.eventEmitter.emit('call.resolved', {
+      callId,
+      outcome: resolvedOutcome,
+      finalPrice: observedPrice,
+    });
 
     // Record successful operation in health logs (storing both prices)
     await this.oracleHealthService.recordOperation({

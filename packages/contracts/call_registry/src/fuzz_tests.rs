@@ -323,9 +323,9 @@ fn test_fuzz_extreme_timestamp_near_max() {
     // Boundary timestamps: exact max, one under max, halfway through max, and 1 second in future
     let extreme_timestamps = [
         1000 + 2_592_000,       // exactly at the max duration limit
-        1000 + 2_592_000 - 1,   // one second under the limit
+        1000 + 2_592_000 - 1,  // one second under the limit
         1000 + 2_592_000 - 100, // 100 seconds under the limit
-        1000 + 2_592_000 / 2,   // halfway through the max duration
+        1000 + 2_592_000 / 2,  // halfway through the max duration
     ];
 
     for &end_ts in &extreme_timestamps {

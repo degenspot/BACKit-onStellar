@@ -37,9 +37,7 @@ pub fn set_sponsorship(env: &Env, user: &Address, info: &SponsorshipInfo) {
 }
 
 pub fn get_sponsorship(env: &Env, user: &Address) -> Option<SponsorshipInfo> {
-    env.storage()
-        .instance()
-        .get(&DataKey::Sponsorship(user.clone()))
+    env.storage().instance().get(&DataKey::Sponsorship(user.clone()))
 }
 
 pub fn get_metrics(env: &Env) -> GasStationMetrics {
@@ -54,9 +52,7 @@ pub fn set_metrics(env: &Env, metrics: &GasStationMetrics) {
 }
 
 pub fn is_call_processed(env: &Env, call_id: u64) -> bool {
-    env.storage()
-        .instance()
-        .has(&DataKey::CallProcessed(call_id))
+    env.storage().instance().has(&DataKey::CallProcessed(call_id))
 }
 
 pub fn mark_call_processed(env: &Env, call_id: u64) {

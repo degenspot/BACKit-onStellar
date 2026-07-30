@@ -178,13 +178,7 @@ fn vote_on_dispute_rejects_after_commit_deadline() {
     fund(&h.env, &h.token, &h.admin, &voter, 1_000_000);
 
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &50_000i128,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &50_000i128,
     );
 
     advance(&h.env, 1_001);
@@ -205,20 +199,15 @@ fn reveal_vote_rejects_before_commit_deadline() {
     fund(&h.env, &h.token, &h.admin, &voter, 1_000_000);
 
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &50_000i128,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &50_000i128,
     );
     let s = salt(&h.env, 1);
     let hash = commit_hash(&h.env, ORIGINAL, &s);
-    h.client
-        .vote_on_dispute(&voter, &dispute_id, &hash, &10_000i128);
+    h.client.vote_on_dispute(&voter, &dispute_id, &hash, &10_000i128);
 
-    let result = h.client.try_reveal_vote(&voter, &dispute_id, &ORIGINAL, &s);
+    let result = h
+        .client
+        .try_reveal_vote(&voter, &dispute_id, &ORIGINAL, &s);
     assert_contract_error(result, OracleError::RevealPeriodNotStarted);
 }
 
@@ -231,21 +220,16 @@ fn reveal_vote_rejects_after_reveal_deadline() {
     fund(&h.env, &h.token, &h.admin, &voter, 1_000_000);
 
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &50_000i128,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &50_000i128,
     );
     let s = salt(&h.env, 1);
     let hash = commit_hash(&h.env, ORIGINAL, &s);
-    h.client
-        .vote_on_dispute(&voter, &dispute_id, &hash, &10_000i128);
+    h.client.vote_on_dispute(&voter, &dispute_id, &hash, &10_000i128);
 
     advance(&h.env, 2_001);
-    let result = h.client.try_reveal_vote(&voter, &dispute_id, &ORIGINAL, &s);
+    let result = h
+        .client
+        .try_reveal_vote(&voter, &dispute_id, &ORIGINAL, &s);
     assert_contract_error(result, OracleError::RevealPeriodEnded);
 }
 
@@ -258,22 +242,17 @@ fn reveal_vote_rejects_hash_mismatch() {
     fund(&h.env, &h.token, &h.admin, &voter, 1_000_000);
 
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &50_000i128,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &50_000i128,
     );
     let s = salt(&h.env, 1);
     let hash = commit_hash(&h.env, ORIGINAL, &s);
-    h.client
-        .vote_on_dispute(&voter, &dispute_id, &hash, &10_000i128);
+    h.client.vote_on_dispute(&voter, &dispute_id, &hash, &10_000i128);
 
     advance(&h.env, 1_001);
     // Reveal with a different outcome than committed -> hash mismatch.
-    let result = h.client.try_reveal_vote(&voter, &dispute_id, &DISPUTED, &s);
+    let result = h
+        .client
+        .try_reveal_vote(&voter, &dispute_id, &DISPUTED, &s);
     assert_contract_error(result, OracleError::CommitmentMismatch);
 
     // Also try the correct outcome but a wrong salt.
@@ -290,13 +269,7 @@ fn resolve_dispute_rejects_before_reveal_deadline() {
     let disputer = Address::generate(&h.env);
     fund(&h.env, &h.token, &h.admin, &disputer, 1_000_000);
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &50_000i128,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &50_000i128,
     );
     let result = h.client.try_resolve_dispute(&dispute_id);
     assert_contract_error(result, OracleError::RevealPeriodNotEnded);
@@ -322,36 +295,15 @@ fn honest_majority_wins_disputer_loses_bond() {
 
     let bond = 50_000i128; // 5% of 1_000_000
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &bond,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &bond,
     );
 
     let s1 = salt(&h.env, 1);
     let s2 = salt(&h.env, 2);
     let s3 = salt(&h.env, 3);
-    h.client.vote_on_dispute(
-        &v1,
-        &dispute_id,
-        &commit_hash(&h.env, ORIGINAL, &s1),
-        &30_000,
-    );
-    h.client.vote_on_dispute(
-        &v2,
-        &dispute_id,
-        &commit_hash(&h.env, ORIGINAL, &s2),
-        &70_000,
-    );
-    h.client.vote_on_dispute(
-        &v3,
-        &dispute_id,
-        &commit_hash(&h.env, DISPUTED, &s3),
-        &20_000,
-    );
+    h.client.vote_on_dispute(&v1, &dispute_id, &commit_hash(&h.env, ORIGINAL, &s1), &30_000);
+    h.client.vote_on_dispute(&v2, &dispute_id, &commit_hash(&h.env, ORIGINAL, &s2), &70_000);
+    h.client.vote_on_dispute(&v3, &dispute_id, &commit_hash(&h.env, DISPUTED, &s3), &20_000);
 
     advance(&h.env, 1_001);
     h.client.reveal_vote(&v1, &dispute_id, &ORIGINAL, &s1);
@@ -407,29 +359,13 @@ fn dishonest_majority_disputer_wins() {
 
     let bond = 50_000i128;
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &bond,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &bond,
     );
 
     let s1 = salt(&h.env, 1);
     let s2 = salt(&h.env, 2);
-    h.client.vote_on_dispute(
-        &v1,
-        &dispute_id,
-        &commit_hash(&h.env, DISPUTED, &s1),
-        &80_000,
-    );
-    h.client.vote_on_dispute(
-        &v2,
-        &dispute_id,
-        &commit_hash(&h.env, ORIGINAL, &s2),
-        &40_000,
-    );
+    h.client.vote_on_dispute(&v1, &dispute_id, &commit_hash(&h.env, DISPUTED, &s1), &80_000);
+    h.client.vote_on_dispute(&v2, &dispute_id, &commit_hash(&h.env, ORIGINAL, &s2), &40_000);
 
     advance(&h.env, 1_001);
     h.client.reveal_vote(&v1, &dispute_id, &DISPUTED, &s1);
@@ -444,8 +380,7 @@ fn dishonest_majority_disputer_wins() {
 
     // Disputer gets bond back (50_000) + the losing voters' forfeited stake
     // (v2's 40_000) = 90_000.
-    let disputer_payout =
-        TokenClient::new(&h.env, &h.token).balance(&disputer) - disputer_balance_before;
+    let disputer_payout = TokenClient::new(&h.env, &h.token).balance(&disputer) - disputer_balance_before;
     assert_eq!(disputer_payout, 90_000);
 
     // v1 (correct, sided with disputer) just gets their own stake back.
@@ -477,29 +412,13 @@ fn unrevealed_votes_are_forfeited() {
 
     let bond = 50_000i128;
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &bond,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &bond,
     );
 
     let s1 = salt(&h.env, 1);
     let s2 = salt(&h.env, 2);
-    h.client.vote_on_dispute(
-        &v1,
-        &dispute_id,
-        &commit_hash(&h.env, ORIGINAL, &s1),
-        &50_000,
-    );
-    h.client.vote_on_dispute(
-        &v2,
-        &dispute_id,
-        &commit_hash(&h.env, ORIGINAL, &s2),
-        &30_000,
-    );
+    h.client.vote_on_dispute(&v1, &dispute_id, &commit_hash(&h.env, ORIGINAL, &s1), &50_000);
+    h.client.vote_on_dispute(&v2, &dispute_id, &commit_hash(&h.env, ORIGINAL, &s2), &30_000);
 
     advance(&h.env, 1_001);
     h.client.reveal_vote(&v1, &dispute_id, &ORIGINAL, &s1);
@@ -540,13 +459,7 @@ fn no_voters_resolves_void_and_refunds_bond() {
 
     let bond = 50_000i128;
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &bond,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &bond,
     );
 
     advance(&h.env, 2_001);
@@ -574,21 +487,10 @@ fn all_unrevealed_routes_pool_to_admin() {
 
     let bond = 50_000i128;
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &bond,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &bond,
     );
     let s1 = salt(&h.env, 1);
-    h.client.vote_on_dispute(
-        &v1,
-        &dispute_id,
-        &commit_hash(&h.env, ORIGINAL, &s1),
-        &40_000,
-    );
+    h.client.vote_on_dispute(&v1, &dispute_id, &commit_hash(&h.env, ORIGINAL, &s1), &40_000);
 
     advance(&h.env, 2_001); // skip straight past the reveal deadline, no reveal happens
 
@@ -619,42 +521,20 @@ fn multiple_concurrent_disputes_do_not_interfere() {
 
     // Dispute A: disputer wins.
     let dispute_a = h.client.dispute_outcome(
-        &disputer_a,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &50_000i128,
+        &disputer_a, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &50_000i128,
     );
     // Dispute B: disputer loses.
     let dispute_b = h.client.dispute_outcome(
-        &disputer_b,
-        &2u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &50_000i128,
+        &disputer_b, &2u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &50_000i128,
     );
     assert_ne!(dispute_a, dispute_b);
 
     let sa = salt(&h.env, 10);
     let sb = salt(&h.env, 20);
     // voter_a votes DISPUTED on dispute A (helps disputer_a win).
-    h.client.vote_on_dispute(
-        &voter_a,
-        &dispute_a,
-        &commit_hash(&h.env, DISPUTED, &sa),
-        &100_000,
-    );
+    h.client.vote_on_dispute(&voter_a, &dispute_a, &commit_hash(&h.env, DISPUTED, &sa), &100_000);
     // voter_b votes ORIGINAL on dispute B (helps disputer_b lose).
-    h.client.vote_on_dispute(
-        &voter_b,
-        &dispute_b,
-        &commit_hash(&h.env, ORIGINAL, &sb),
-        &100_000,
-    );
+    h.client.vote_on_dispute(&voter_b, &dispute_b, &commit_hash(&h.env, ORIGINAL, &sb), &100_000);
 
     advance(&h.env, 1_001);
     h.client.reveal_vote(&voter_a, &dispute_a, &DISPUTED, &sa);
@@ -682,13 +562,7 @@ fn double_resolve_rejected() {
     let disputer = Address::generate(&h.env);
     fund(&h.env, &h.token, &h.admin, &disputer, 1_000_000);
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &50_000i128,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &50_000i128,
     );
     advance(&h.env, 2_001);
     h.client.resolve_dispute(&dispute_id);
@@ -704,21 +578,10 @@ fn double_commit_rejected() {
     fund(&h.env, &h.token, &h.admin, &disputer, 1_000_000);
     fund(&h.env, &h.token, &h.admin, &voter, 1_000_000);
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &50_000i128,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &50_000i128,
     );
     let s = salt(&h.env, 1);
-    h.client.vote_on_dispute(
-        &voter,
-        &dispute_id,
-        &commit_hash(&h.env, ORIGINAL, &s),
-        &10_000,
-    );
+    h.client.vote_on_dispute(&voter, &dispute_id, &commit_hash(&h.env, ORIGINAL, &s), &10_000);
     let result = h.client.try_vote_on_dispute(
         &voter,
         &dispute_id,
@@ -736,21 +599,10 @@ fn double_reveal_rejected() {
     fund(&h.env, &h.token, &h.admin, &disputer, 1_000_000);
     fund(&h.env, &h.token, &h.admin, &voter, 1_000_000);
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &50_000i128,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &50_000i128,
     );
     let s = salt(&h.env, 1);
-    h.client.vote_on_dispute(
-        &voter,
-        &dispute_id,
-        &commit_hash(&h.env, ORIGINAL, &s),
-        &10_000,
-    );
+    h.client.vote_on_dispute(&voter, &dispute_id, &commit_hash(&h.env, ORIGINAL, &s), &10_000);
     advance(&h.env, 1_001);
     h.client.reveal_vote(&voter, &dispute_id, &ORIGINAL, &s);
     let result = h.client.try_reveal_vote(&voter, &dispute_id, &ORIGINAL, &s);
@@ -765,18 +617,11 @@ fn reveal_vote_rejects_invalid_outcome() {
     fund(&h.env, &h.token, &h.admin, &disputer, 1_000_000);
     fund(&h.env, &h.token, &h.admin, &voter, 1_000_000);
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &50_000i128,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &50_000i128,
     );
     let s = salt(&h.env, 1);
     // Commit to some third outcome value entirely.
-    h.client
-        .vote_on_dispute(&voter, &dispute_id, &commit_hash(&h.env, 99, &s), &10_000);
+    h.client.vote_on_dispute(&voter, &dispute_id, &commit_hash(&h.env, 99, &s), &10_000);
     advance(&h.env, 1_001);
     let result = h.client.try_reveal_vote(&voter, &dispute_id, &99u32, &s);
     assert_contract_error(result, OracleError::InvalidVoteOutcome);
@@ -794,28 +639,12 @@ fn tie_defaults_to_disputer_losing() {
     fund(&h.env, &h.token, &h.admin, &v2, 1_000_000);
 
     let dispute_id = h.client.dispute_outcome(
-        &disputer,
-        &1u64,
-        &ORIGINAL,
-        &DISPUTED,
-        &1_000_000i128,
-        &h.token,
-        &50_000i128,
+        &disputer, &1u64, &ORIGINAL, &DISPUTED, &1_000_000i128, &h.token, &50_000i128,
     );
     let s1 = salt(&h.env, 1);
     let s2 = salt(&h.env, 2);
-    h.client.vote_on_dispute(
-        &v1,
-        &dispute_id,
-        &commit_hash(&h.env, ORIGINAL, &s1),
-        &50_000,
-    );
-    h.client.vote_on_dispute(
-        &v2,
-        &dispute_id,
-        &commit_hash(&h.env, DISPUTED, &s2),
-        &50_000,
-    );
+    h.client.vote_on_dispute(&v1, &dispute_id, &commit_hash(&h.env, ORIGINAL, &s1), &50_000);
+    h.client.vote_on_dispute(&v2, &dispute_id, &commit_hash(&h.env, DISPUTED, &s2), &50_000);
     advance(&h.env, 1_001);
     h.client.reveal_vote(&v1, &dispute_id, &ORIGINAL, &s1);
     h.client.reveal_vote(&v2, &dispute_id, &DISPUTED, &s2);

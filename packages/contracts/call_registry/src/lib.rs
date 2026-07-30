@@ -77,6 +77,7 @@ mod admin;
 mod duration;
 mod errors;
 mod events;
+mod withdrawal;
 #[cfg(test)]
 mod fuzz_tests;
 mod governance;
@@ -89,7 +90,6 @@ mod test;
 #[cfg(test)]
 mod test_gating;
 pub mod types;
-mod withdrawal;
 
 use backit_shared::{OUTCOME_DOWN, OUTCOME_UP};
 use errors::CallRegistryError;
@@ -122,53 +122,28 @@ fn build_start_price_message(env: &Env, call_id: u64, price: i128) -> Bytes {
     raw
 }
 
-fn evaluate_leaf_condition(
-    condition: &LeafConditionType,
-    start_price: i128,
-    end_price: i128,
-) -> bool {
+fn evaluate_condition_impl(condition: &ConditionType, start_price: i128, end_price: i128) -> bool {
     match condition {
-        LeafConditionType::TargetAbove(target) => end_price > *target,
-        LeafConditionType::TargetBelow(target) => end_price < *target,
-        LeafConditionType::PercentUp(percent) => {
+        ConditionType::TargetAbove(target) => end_price > *target,
+        ConditionType::TargetBelow(target) => end_price < *target,
+        ConditionType::PercentUp(percent) => {
             if start_price <= 0 {
                 return false;
             }
             end_price * 100 >= start_price * (100 + *percent as i128)
         }
-        LeafConditionType::PercentDown(percent) => {
+        ConditionType::PercentDown(percent) => {
             if start_price <= 0 {
                 return false;
             }
             end_price * 100 <= start_price * (100 - *percent as i128)
         }
-        LeafConditionType::Range(min, max) => {
+        ConditionType::Range(min, max) => {
             if min > max {
                 return false;
             }
             end_price >= *min && end_price <= *max
         }
-    }
-}
-
-fn to_leaf_condition(condition: ConditionType) -> Option<LeafConditionType> {
-    match condition {
-        ConditionType::TargetAbove(v) => Some(LeafConditionType::TargetAbove(v)),
-        ConditionType::TargetBelow(v) => Some(LeafConditionType::TargetBelow(v)),
-        ConditionType::PercentUp(v) => Some(LeafConditionType::PercentUp(v)),
-        ConditionType::PercentDown(v) => Some(LeafConditionType::PercentDown(v)),
-        ConditionType::Range(a, b) => Some(LeafConditionType::Range(a, b)),
-        ConditionType::Basket(_) => None,
-    }
-}
-
-fn evaluate_condition_impl(condition: &ConditionType, start_price: i128, end_price: i128) -> bool {
-    match condition {
-        ConditionType::Basket(_) => false,
-        other => match to_leaf_condition(other.clone()) {
-            Some(leaf) => evaluate_leaf_condition(&leaf, start_price, end_price),
-            None => false,
-        },
     }
 }
 
@@ -283,12 +258,6 @@ impl CallRegistry {
             return Err(CallRegistryError::InvalidOutcomeCount);
         }
 
-        if let ConditionType::Basket(ref basket) = condition {
-            if basket.conditions.is_empty() {
-                return Err(CallRegistryError::EmptyBasket);
-            }
-        }
-
         let current_timestamp = env.ledger().timestamp();
         if end_ts <= current_timestamp {
             return Err(CallRegistryError::InvalidEndTime);
@@ -341,7 +310,6 @@ impl CallRegistry {
             condition,
             settled: false,
             voided: false,
-            unresolvable: false,
             created_at: current_timestamp,
             cancelled: false,
             metadata_version: 0,
@@ -530,7 +498,7 @@ impl CallRegistry {
         emit_call_metadata_updated(
             &env,
             call_id,
-            &creator,
+        &creator,
             &old_hash,
             &new_metadata_hash,
             call.metadata_version,
@@ -914,9 +882,6 @@ impl CallRegistry {
 
         if call.voided {
             panic!("Call has been voided");
-        }
-        if call.unresolvable {
-            panic!("Call is unresolvable");
         }
 
         call.outcome = outcome;
@@ -1529,7 +1494,11 @@ impl CallRegistry {
     /// * If the caller is not the call creator.
     /// * If any outcome has been staked on by a third party.
     /// * If the call is already settled or cancelled.
-    pub fn cancel_call(env: Env, creator: Address, call_id: u64) -> Result<(), CallRegistryError> {
+    pub fn cancel_call(
+        env: Env,
+        creator: Address,
+        call_id: u64,
+    ) -> Result<(), CallRegistryError> {
         creator.require_auth();
         reentrancy_guard!(&env);
 
@@ -1599,29 +1568,6 @@ impl CallRegistry {
         extend_storage_ttl(&env);
 
         emit_call_voided(&env, call_id, &config.admin);
-    }
-
-    /// Mark a call as unresolvable (outcome_manager only).
-    ///
-    /// Incomplete basket oracle data after the deadline triggers this path.
-    /// Unresolvable calls are also voided so all stakers can claim refunds.
-    pub fn mark_unresolvable(env: Env, call_id: u64) -> Result<Call, CallRegistryError> {
-        let config = get_config(&env).ok_or(CallRegistryError::NotInitialized)?;
-        config.outcome_manager.require_auth();
-
-        let mut call = get_call(&env, call_id).ok_or(CallRegistryError::CallNotFound)?;
-        if call.settled {
-            return Err(CallRegistryError::CallSettled);
-        }
-        if call.unresolvable {
-            panic!("Call already marked unresolvable");
-        }
-
-        call.unresolvable = true;
-        call.voided = true;
-        set_call(&env, &call);
-        extend_storage_ttl(&env);
-        Ok(call)
     }
 
     /// Claim a full refund for a voided call.
@@ -1811,7 +1757,12 @@ impl CallRegistry {
     /// * `staker`   -- address withdrawing their stake (must sign).
     /// * `call_id`  -- the call to withdraw from.
     /// * `position` -- outcome position (1..=outcome_count).
-    pub fn withdraw_stake(env: Env, staker: Address, call_id: u64, position: u32) -> (i128, i128) {
+    pub fn withdraw_stake(
+        env: Env,
+        staker: Address,
+        call_id: u64,
+        position: u32,
+    ) -> (i128, i128) {
         let config = get_config(&env).expect("not initialized");
         assert!(!config.paused, "Contract is paused");
         if storage::is_locked(&env) {

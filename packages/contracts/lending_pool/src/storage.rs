@@ -35,9 +35,7 @@ pub fn get_total_lp_shares(env: &Env) -> i128 {
 }
 
 pub fn set_total_lp_shares(env: &Env, amount: i128) {
-    env.storage()
-        .instance()
-        .set(&DataKey::TotalLpShares, &amount);
+    env.storage().instance().set(&DataKey::TotalLpShares, &amount);
 }
 
 pub fn get_lp_shares(env: &Env, user: &Address) -> i128 {
@@ -63,9 +61,7 @@ pub fn get_total_deposited(env: &Env) -> i128 {
 }
 
 pub fn set_total_deposited(env: &Env, amount: i128) {
-    env.storage()
-        .instance()
-        .set(&DataKey::TotalDeposited, &amount);
+    env.storage().instance().set(&DataKey::TotalDeposited, &amount);
 }
 
 pub fn get_total_yield_earned(env: &Env) -> i128 {
@@ -89,9 +85,7 @@ pub fn get_total_fees_paid(env: &Env) -> i128 {
 }
 
 pub fn set_total_fees_paid(env: &Env, amount: i128) {
-    env.storage()
-        .instance()
-        .set(&DataKey::TotalFeesPaid, &amount);
+    env.storage().instance().set(&DataKey::TotalFeesPaid, &amount);
 }
 
 // ─── Allocated (locked) capital ──────────────────────────────────────────────

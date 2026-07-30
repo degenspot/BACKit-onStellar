@@ -1123,6 +1123,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prediction-market-futures"
+version = "0.0.0"
+dependencies = [
+ "backit-shared",
+ "prediction-market",
+ "prediction-market-factory",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "prettyplease"
 version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"

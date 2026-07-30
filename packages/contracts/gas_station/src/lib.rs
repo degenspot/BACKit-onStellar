@@ -352,7 +352,9 @@ impl GasStation {
             .checked_div(MAX_BPS as i128)
             .unwrap_or_else(|| overflow(&env));
 
-        let user_amount = payout.checked_sub(cut).unwrap_or_else(|| overflow(&env));
+        let user_amount = payout
+            .checked_sub(cut)
+            .unwrap_or_else(|| overflow(&env));
 
         if user_amount > 0 {
             transfer_token(&env, &xlm_token, &contract_address, &user, user_amount);

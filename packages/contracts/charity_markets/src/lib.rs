@@ -10,7 +10,8 @@ mod test;
 
 use errors::CharityError;
 use events::{
-    emit_charity_call_created, emit_charity_call_resolved, emit_charity_donation, emit_stake_added,
+    emit_charity_call_created, emit_charity_call_resolved, emit_charity_donation,
+    emit_stake_added,
 };
 use soroban_sdk::{contract, contractimpl, token, Address, Env, Map};
 use storage::*;
@@ -25,7 +26,12 @@ pub struct CharityMarkets;
 
 #[contractimpl]
 impl CharityMarkets {
-    pub fn initialize(env: Env, admin: Address, outcome_manager: Address, stake_token: Address) {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        outcome_manager: Address,
+        stake_token: Address,
+    ) {
         if get_admin(&env).is_some() {
             soroban_sdk::panic_with_error!(&env, CharityError::AlreadyInitialized);
         }
@@ -44,8 +50,10 @@ impl CharityMarkets {
         creator.require_auth();
 
         let _admin = get_admin(&env).ok_or(CharityError::NotInitialized)?;
-        let stake_token = get_stake_token(&env).ok_or(CharityError::NotInitialized)?;
-        let outcome_manager = get_outcome_manager(&env).ok_or(CharityError::NotInitialized)?;
+        let stake_token =
+            get_stake_token(&env).ok_or(CharityError::NotInitialized)?;
+        let outcome_manager =
+            get_outcome_manager(&env).ok_or(CharityError::NotInitialized)?;
 
         if charity_split_bps > 10_000 {
             return Err(CharityError::CharitySplitExceedsMax);
@@ -106,13 +114,7 @@ impl CharityMarkets {
         };
 
         set_charity_call(&env, call_id, &charity_call);
-        set_user_stake(
-            &env,
-            call_id,
-            &creator,
-            call_params.creator_outcome,
-            call_params.stake_amount,
-        );
+        set_user_stake(&env, call_id, &creator, call_params.creator_outcome, call_params.stake_amount);
 
         emit_charity_call_created(
             &env,
@@ -135,8 +137,10 @@ impl CharityMarkets {
     ) -> Result<CharityCall, CharityError> {
         staker.require_auth();
 
-        let stake_token = get_stake_token(&env).ok_or(CharityError::NotInitialized)?;
-        let mut call = get_charity_call(&env, call_id).ok_or(CharityError::CallNotFound)?;
+        let stake_token =
+            get_stake_token(&env).ok_or(CharityError::NotInitialized)?;
+        let mut call =
+            get_charity_call(&env, call_id).ok_or(CharityError::CallNotFound)?;
 
         if call.resolved {
             return Err(CharityError::AlreadyResolved);
@@ -159,10 +163,8 @@ impl CharityMarkets {
         let prev_total = call.outcome_stakes.get(outcome).unwrap_or(0);
         call.outcome_stakes.set(outcome, prev_total + amount);
 
-        let mut outcome_stakers: Map<Address, i128> = call
-            .user_stakes
-            .get(outcome)
-            .unwrap_or_else(|| Map::new(&env));
+        let mut outcome_stakers: Map<Address, i128> =
+            call.user_stakes.get(outcome).unwrap_or_else(|| Map::new(&env));
         let prev_staker = outcome_stakers.get(staker.clone()).unwrap_or(0);
         outcome_stakers.set(staker.clone(), prev_staker + amount);
         call.user_stakes.set(outcome, outcome_stakers);
@@ -180,10 +182,12 @@ impl CharityMarkets {
         call_id: u64,
         final_outcome: u32,
     ) -> Result<CharityCall, CharityError> {
-        let outcome_manager = get_outcome_manager(&env).ok_or(CharityError::NotInitialized)?;
+        let outcome_manager =
+            get_outcome_manager(&env).ok_or(CharityError::NotInitialized)?;
         outcome_manager.require_auth();
 
-        let mut call = get_charity_call(&env, call_id).ok_or(CharityError::CallNotFound)?;
+        let mut call =
+            get_charity_call(&env, call_id).ok_or(CharityError::CallNotFound)?;
 
         if call.resolved {
             return Err(CharityError::AlreadyResolved);
@@ -204,7 +208,8 @@ impl CharityMarkets {
             for i in 1..=call.outcome_count {
                 total_pool += call.outcome_stakes.get(i).unwrap_or(0);
             }
-            let winning_total = call.outcome_stakes.get(final_outcome).unwrap_or(0);
+            let winning_total =
+                call.outcome_stakes.get(final_outcome).unwrap_or(0);
 
             if winning_total == 0 {
                 return Err(CharityError::ZeroPool);
@@ -215,7 +220,8 @@ impl CharityMarkets {
             let creator_share_ratio = call.stake_amount * losing_total / winning_total;
             let creator_gross = call.stake_amount + creator_share_ratio;
 
-            let charity_amount = (creator_gross * call.charity_split_bps as i128) / 10_000;
+            let charity_amount =
+                (creator_gross * call.charity_split_bps as i128) / 10_000;
             let creator_payout = creator_gross - charity_amount;
 
             if charity_amount > 0 {
@@ -248,9 +254,7 @@ impl CharityMarkets {
                 if staker == call.creator {
                     continue;
                 }
-                let stake_amt = call
-                    .user_stakes
-                    .get(final_outcome)
+                let stake_amt = call.user_stakes.get(final_outcome)
                     .unwrap_or_else(|| Map::new(&env))
                     .get(staker.clone())
                     .unwrap_or(0);
@@ -267,14 +271,10 @@ impl CharityMarkets {
                 call.stake_amount,
             );
             call.total_donated = call.stake_amount;
-            emit_charity_donation(
-                &env,
-                &call.creator,
-                &call.charity_address,
-                call.stake_amount,
-            );
+            emit_charity_donation(&env, &call.creator, &call.charity_address, call.stake_amount);
 
-            let winning_total = call.outcome_stakes.get(final_outcome).unwrap_or(0);
+            let winning_total =
+                call.outcome_stakes.get(final_outcome).unwrap_or(0);
             if winning_total > 0 {
                 let mut total_pool: i128 = 0;
                 for i in 1..=call.outcome_count {
@@ -294,9 +294,7 @@ impl CharityMarkets {
                     if staker == call.creator {
                         continue;
                     }
-                    let stake_amt = call
-                        .user_stakes
-                        .get(final_outcome)
+                    let stake_amt = call.user_stakes.get(final_outcome)
                         .unwrap_or_else(|| Map::new(&env))
                         .get(staker.clone())
                         .unwrap_or(0);
@@ -318,12 +316,9 @@ impl CharityMarkets {
     }
 
     pub fn get_charity_info(env: Env, call_id: u64) -> Result<(Address, u32, i128), CharityError> {
-        let call = get_charity_call(&env, call_id).ok_or(CharityError::CallNotFound)?;
-        Ok((
-            call.charity_address,
-            call.charity_split_bps,
-            call.total_donated,
-        ))
+        let call =
+            get_charity_call(&env, call_id).ok_or(CharityError::CallNotFound)?;
+        Ok((call.charity_address, call.charity_split_bps, call.total_donated))
     }
 
     pub fn get_charity_call(env: Env, call_id: u64) -> Option<CharityCall> {

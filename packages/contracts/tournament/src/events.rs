@@ -24,7 +24,12 @@ pub fn emit_tournament_created(
     );
 }
 
-pub fn emit_market_entered(env: &Env, tournament_id: u64, creator: &Address, call_id: u64) {
+pub fn emit_market_entered(
+    env: &Env,
+    tournament_id: u64,
+    creator: &Address,
+    call_id: u64,
+) {
     env.events().publish(
         ("tournament", "market_entered"),
         (tournament_id, creator.clone(), call_id),

@@ -152,7 +152,7 @@ fn setup_full_stack<'a>() -> TestSetup<'a> {
         &token,
         &factory_id,
         &outcome_id,
-        &100_000i128,       // min_deposit
+        &100_000i128,      // min_deposit
         &1_000_000_000i128, // max_pool_size
         &1_000_000i128,     // min_allocation_pool_size
     );
@@ -192,12 +192,7 @@ fn deploy_market_with_counter_stake(
     let market_addr = setup.factory.deploy_market(&setup.creator, &args);
     let market = PredictionMarketClient::new(env, &market_addr);
     let call_id = market.get_call_id();
-    market.stake_on_call(
-        &setup.counterparty,
-        &call_id,
-        &counter_stake,
-        &counter_position,
-    );
+    market.stake_on_call(&setup.counterparty, &call_id, &counter_stake, &counter_position);
     (market_addr, call_id)
 }
 
@@ -219,9 +214,7 @@ fn resolve_market(setup: &TestSetup, call_id: u64, outcome: u32, end_ts: u64) {
             end_ts + 1,
         ),
     };
-    setup
-        .outcome_mgr
-        .submit_outcome_for_market(&signed, &end_ts);
+    setup.outcome_mgr.submit_outcome_for_market(&signed, &end_ts);
 }
 
 // ─── Deposit / withdraw cycle ────────────────────────────────────────────────
@@ -418,7 +411,8 @@ fn allocate_capital_skips_non_binary_and_small_edge_markets() {
     // A 3-outcome market: this pool's Kelly-edge math only supports binary
     // markets, so it must be skipped rather than mis-handled.
     let end_ts_1 = env.ledger().timestamp() + 3600;
-    let (_market_1, call_1) = deploy_market_with_counter_stake(&setup, end_ts_1, 1_000_000, 1, 3);
+    let (_market_1, call_1) =
+        deploy_market_with_counter_stake(&setup, end_ts_1, 1_000_000, 1, 3);
 
     // A binary market whose implied probability already matches the oracle
     // estimate exactly — zero edge, below the default 100-bps threshold.
@@ -440,10 +434,7 @@ fn allocate_capital_skips_non_binary_and_small_edge_markets() {
     let results = setup.pool.allocate_capital(&markets);
 
     assert_eq!(results.get(0).unwrap(), AllocationOutcome::SkippedNotBinary);
-    assert_eq!(
-        results.get(1).unwrap(),
-        AllocationOutcome::SkippedEdgeTooSmall
-    );
+    assert_eq!(results.get(1).unwrap(), AllocationOutcome::SkippedEdgeTooSmall);
 
     // Nothing was actually staked.
     let stats = setup.pool.get_pool_stats();
@@ -554,10 +545,7 @@ fn pool_apy_and_lp_share_price_grow_after_net_positive_yield() {
     // as the "new depositor".
     let minted = setup.pool.deposit(&setup.counterparty, &1_217_300i128);
     assert_eq!(minted, 1_000_000);
-    assert_eq!(
-        setup.pool.get_user_lp_shares(&setup.counterparty),
-        1_000_000
-    );
+    assert_eq!(setup.pool.get_user_lp_shares(&setup.counterparty), 1_000_000);
     assert_eq!(setup.pool.get_pool_stats().total_lp_shares, 11_000_000);
 }
 

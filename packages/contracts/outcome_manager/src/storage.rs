@@ -28,18 +28,6 @@ pub struct SignedOutcome {
     pub signature: BytesN<64>,
 }
 
-/// A signed price report for one basket condition.
-#[contracttype]
-#[derive(Clone)]
-pub struct SignedBasketCondition {
-    pub call_id: u64,
-    pub condition_index: u32,
-    pub price: i128,
-    pub timestamp: u64,
-    pub oracle_pubkey: BytesN<32>,
-    pub signature: BytesN<64>,
-}
-
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleVote {
@@ -269,9 +257,7 @@ pub fn set_settled_at(env: &Env, call_id: u64, ts: u64) {
 
 /// Read the settlement timestamp for `call_id`, if recorded.
 pub fn get_settled_at_opt(env: &Env, call_id: u64) -> Option<u64> {
-    env.storage()
-        .instance()
-        .get(&InstanceKey::SettledAt(call_id))
+    env.storage().instance().get(&InstanceKey::SettledAt(call_id))
 }
 
 pub fn set_recovery_grace_period(env: &Env, secs: u64) {

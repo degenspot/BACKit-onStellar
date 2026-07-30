@@ -29,7 +29,9 @@ pub struct IndexConfig {
 // ─── Initialized flag ────────────────────────────────────────────────────────
 
 pub fn set_initialized(env: &Env) {
-    env.storage().instance().set(&DataKey::Initialized, &true);
+    env.storage()
+        .instance()
+        .set(&DataKey::Initialized, &true);
 }
 
 pub fn is_initialized(env: &Env) -> bool {
@@ -110,7 +112,9 @@ pub fn set_constituents(env: &Env, constituents: &Vec<IndexConstituent>) {
 }
 
 pub fn get_constituent(env: &Env, call_id: u64) -> Option<IndexConstituent> {
-    env.storage().instance().get(&DataKey::Constituent(call_id))
+    env.storage()
+        .instance()
+        .get(&DataKey::Constituent(call_id))
 }
 
 pub fn set_constituent(env: &Env, constituent: &IndexConstituent) {

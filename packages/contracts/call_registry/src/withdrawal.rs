@@ -1,8 +1,6 @@
-use crate::events::{emit_stake_withdrawn, emit_xlm_stake_withdrawn};
-use crate::storage::{
-    extend_storage_ttl, get_call, get_config, get_user_stake, set_call, set_user_stake,
-};
 use soroban_sdk::{Address, Env, Map};
+use crate::events::{emit_stake_withdrawn, emit_xlm_stake_withdrawn};
+use crate::storage::{get_call, set_call, get_config, get_user_stake, set_user_stake, extend_storage_ttl};
 
 /// Basis points penalty for early stake withdrawal (default 1000 = 10%).
 pub const DEFAULT_EARLY_EXIT_PENALTY_BPS: u32 = 1000;
@@ -11,7 +9,12 @@ pub const DEFAULT_EARLY_EXIT_PENALTY_BPS: u32 = 1000;
 ///
 /// - `position`: 1..=outcome_count
 /// - Returns `(refunded_amount, penalty)`.
-pub fn execute_withdrawal(env: &Env, staker: Address, call_id: u64, position: u32) -> (i128, i128) {
+pub fn execute_withdrawal(
+    env: &Env,
+    staker: Address,
+    call_id: u64,
+    position: u32,
+) -> (i128, i128) {
     staker.require_auth();
 
     let mut call = get_call(env, call_id).expect("call not found");
@@ -49,8 +52,10 @@ pub fn execute_withdrawal(env: &Env, staker: Address, call_id: u64, position: u3
     let refund = stake - penalty;
 
     // Remove staker's entry from the position map
-    let mut outcome_stakers: Map<Address, i128> =
-        call.stakes.get(position).unwrap_or_else(|| Map::new(env));
+    let mut outcome_stakers: Map<Address, i128> = call
+        .stakes
+        .get(position)
+        .unwrap_or_else(|| Map::new(env));
     outcome_stakers.remove(staker.clone());
     call.stakes.set(position, outcome_stakers);
 
@@ -66,18 +71,12 @@ pub fn execute_withdrawal(env: &Env, staker: Address, call_id: u64, position: u3
 
     // Transfer refund from contract to staker
     if crate::is_native_xlm(env, &call.stake_token) {
-        soroban_sdk::token::StellarAssetClient::new(env, &call.stake_token).transfer(
-            &env.current_contract_address(),
-            &staker,
-            &refund,
-        );
+        soroban_sdk::token::StellarAssetClient::new(env, &call.stake_token)
+            .transfer(&env.current_contract_address(), &staker, &refund);
         emit_xlm_stake_withdrawn(env, call_id, &staker, refund, penalty);
     } else {
-        soroban_sdk::token::Client::new(env, &call.stake_token).transfer(
-            &env.current_contract_address(),
-            &staker,
-            &refund,
-        );
+        soroban_sdk::token::Client::new(env, &call.stake_token)
+            .transfer(&env.current_contract_address(), &staker, &refund);
         emit_stake_withdrawn(env, call_id, &staker, refund, penalty);
     }
 

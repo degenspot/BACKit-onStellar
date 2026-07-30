@@ -9,6 +9,7 @@ import {
 import { Users } from './entities/users.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { RegisterDto } from './dto/register.dto';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -32,6 +33,7 @@ export class UsersService {
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     private readonly preferenceService: NotificationPreferencesService,
     private readonly ipfsService: IpfsService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   private generateReferralCode(): string {
@@ -79,6 +81,10 @@ export class UsersService {
     );
     await this.invalidateUserProfile(followerAddress);
     await this.invalidateUserProfile(followingAddress);
+    this.eventEmitter.emit('user.followed', {
+      followerAddress,
+      followingAddress,
+    });
     return result;
   }
 
@@ -161,6 +167,10 @@ export class UsersService {
           `Failed to initialize notification preferences for ${walletAddress}: ${msg}`,
         );
       });
+    this.eventEmitter.emit('user.registered', {
+      userId: savedUser.id,
+      walletAddress,
+    });
     return savedUser;
   }
 

@@ -2,7 +2,7 @@
 //! These must stay in sync with `call_registry/src/types.rs` and
 //! `call_registry/src/errors.rs`.
 
-use soroban_sdk::{contracterror, contracttype, Address, Bytes, BytesN, Map, Vec};
+use soroban_sdk::{contracterror, contracttype, Address, Bytes, BytesN, Map};
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -24,44 +24,6 @@ pub enum CallRegistryError {
     FeeTooHigh = 14,
     StakingCutoffActive = 15,
     Sep10TokenExpired = 16,
-    ReentrancyDetected = 17,
-    Overflow = 18,
-    EmptyBasket = 19,
-    InvalidCondition = 20,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum BasketLogic {
-    AllOf,
-    AnyOf,
-    Weighted(u32),
-}
-
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum LeafConditionType {
-    TargetAbove(i128),
-    TargetBelow(i128),
-    PercentUp(u32),
-    PercentDown(u32),
-    Range(i128, i128),
-}
-
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct AssetCondition {
-    pub token_address: Address,
-    pub pair_id: Bytes,
-    pub condition: LeafConditionType,
-    pub weight_bps: u32,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct BasketCall {
-    pub conditions: Vec<AssetCondition>,
-    pub logic: BasketLogic,
 }
 
 #[contracttype]
@@ -72,7 +34,6 @@ pub enum ConditionType {
     PercentUp(u32),
     PercentDown(u32),
     Range(i128, i128),
-    Basket(BasketCall),
 }
 
 #[contracttype]
@@ -95,7 +56,6 @@ pub struct Call {
     pub condition: ConditionType,
     pub settled: bool,
     pub voided: bool,
-    pub unresolvable: bool,
     pub created_at: u64,
     pub cancelled: bool,
     pub metadata_version: u32,

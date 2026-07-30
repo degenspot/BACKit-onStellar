@@ -183,9 +183,7 @@ fn resolve_market(setup: &TestSetup, call_id: u64, outcome: u32, end_ts: u64) {
             end_ts + 1,
         ),
     };
-    setup
-        .outcome_mgr
-        .submit_outcome_for_market(&signed, &end_ts);
+    setup.outcome_mgr.submit_outcome_for_market(&signed, &end_ts);
 }
 
 fn assert_contract_error<T, E>(
@@ -205,9 +203,7 @@ fn sponsor_transaction_registers_user_and_updates_metrics() {
     let setup = setup_full_stack();
     let user = Address::generate(&setup.env);
 
-    setup
-        .gas_station
-        .sponsor_transaction(&user, &50i128, &300u32);
+    setup.gas_station.sponsor_transaction(&user, &50i128, &300u32);
 
     let info = setup.gas_station.get_sponsorship(&user).unwrap();
     assert_eq!(info.max_gas_xlm, 50);
@@ -248,9 +244,7 @@ fn sponsor_transaction_rejects_non_positive_gas() {
 fn revoke_sponsorship_deactivates_without_erasing_history() {
     let setup = setup_full_stack();
     let user = Address::generate(&setup.env);
-    setup
-        .gas_station
-        .sponsor_transaction(&user, &50i128, &300u32);
+    setup.gas_station.sponsor_transaction(&user, &50i128, &300u32);
 
     setup.gas_station.revoke_sponsorship(&user);
 
@@ -262,12 +256,7 @@ fn revoke_sponsorship_deactivates_without_erasing_history() {
 #[test]
 fn compute_effective_stake_matches_formula() {
     let setup = setup_full_stack();
-    assert_eq!(
-        setup
-            .gas_station
-            .compute_effective_stake(&1_000i128, &50i128),
-        950
-    );
+    assert_eq!(setup.gas_station.compute_effective_stake(&1_000i128, &50i128), 950);
 }
 
 #[test]
@@ -297,9 +286,7 @@ fn sponsored_stake_win_gas_station_earns_cut_and_user_gets_remainder() {
     let market = PredictionMarketClient::new(env, &market_addr);
 
     // Sponsor the user for up to 50 stroops of gas at a 3% winning cut.
-    setup
-        .gas_station
-        .sponsor_transaction(&user, &50i128, &300u32);
+    setup.gas_station.sponsor_transaction(&user, &50i128, &300u32);
 
     // The user stakes directly, as themselves (the gas station only ever
     // relays the fee off-chain — see module docs — it never becomes an
@@ -349,9 +336,7 @@ fn claim_sponsored_payout_cannot_be_processed_twice_for_same_call() {
     let (market_addr, call_id) = deploy_market(&setup, end_ts);
     let market = PredictionMarketClient::new(env, &market_addr);
 
-    setup
-        .gas_station
-        .sponsor_transaction(&user, &50i128, &300u32);
+    setup.gas_station.sponsor_transaction(&user, &50i128, &300u32);
     market.stake_on_call(&user, &call_id, &1_000i128, &OUTCOME_UP);
     market.stake_on_call(&counterparty, &call_id, &3_000i128, &OUTCOME_DOWN);
     resolve_market(&setup, call_id, OUTCOME_UP, end_ts);
@@ -426,9 +411,7 @@ fn sponsored_stake_loss_gas_station_absorbs_cost_no_deduction() {
     let (market_addr, call_id) = deploy_market(&setup, end_ts);
     let market = PredictionMarketClient::new(env, &market_addr);
 
-    setup
-        .gas_station
-        .sponsor_transaction(&user, &50i128, &300u32);
+    setup.gas_station.sponsor_transaction(&user, &50i128, &300u32);
 
     let user_balance_after_stake_before_resolve;
     market.stake_on_call(&user, &call_id, &1_000i128, &OUTCOME_DOWN);
@@ -455,10 +438,7 @@ fn sponsored_stake_loss_gas_station_absorbs_cost_no_deduction() {
     // they simply don't get their stake back (as normal for prediction
     // markets), and no gas station cut is deducted from a non-existent
     // payout.
-    assert_eq!(
-        token.balance(&user),
-        user_balance_after_stake_before_resolve
-    );
+    assert_eq!(token.balance(&user), user_balance_after_stake_before_resolve);
 
     // The pool's on-chain balance is untouched by the loss — the estimated
     // gas cost was fronted off-chain (see module docs); what the gas
@@ -512,9 +492,7 @@ fn winning_cuts_flow_back_into_the_same_pool_refill_grows() {
     let (market_addr, call_id) = deploy_market(&setup, end_ts);
     let market = PredictionMarketClient::new(env, &market_addr);
 
-    setup
-        .gas_station
-        .sponsor_transaction(&user, &50i128, &1_000u32); // 10%
+    setup.gas_station.sponsor_transaction(&user, &50i128, &1_000u32); // 10%
     market.stake_on_call(&user, &call_id, &1_000i128, &OUTCOME_UP);
     market.stake_on_call(&counterparty, &call_id, &1_000i128, &OUTCOME_DOWN);
     resolve_market(&setup, call_id, OUTCOME_UP, end_ts);
@@ -572,6 +550,8 @@ fn set_admin_transfers_admin_rights() {
 #[test]
 fn initialize_cannot_be_called_twice() {
     let setup = setup_full_stack();
-    let result = setup.gas_station.try_initialize(&setup.admin, &setup.token);
+    let result = setup
+        .gas_station
+        .try_initialize(&setup.admin, &setup.token);
     assert_contract_error(result, GasStationError::AlreadyInitialized);
 }

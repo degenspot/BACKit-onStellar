@@ -1,48 +1,5 @@
 use soroban_sdk::{contracttype, Address, Bytes, BytesN, Map, Vec};
 
-/// Basket aggregation logic used to combine multiple asset conditions.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum BasketLogic {
-    /// Resolves UP only if every condition evaluates to true.
-    AllOf,
-    /// Resolves UP if at least one condition evaluates to true.
-    AnyOf,
-    /// Resolves UP when the sum of true-condition weights is greater than
-    /// `threshold_bps`.
-    Weighted(u32),
-}
-
-/// Non-recursive condition used by each basket leg.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum LeafConditionType {
-    TargetAbove(i128),
-    TargetBelow(i128),
-    PercentUp(u32),
-    PercentDown(u32),
-    Range(i128, i128),
-}
-
-/// One asset-specific condition inside a basket.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct AssetCondition {
-    pub token_address: Address,
-    pub pair_id: Bytes,
-    pub condition: LeafConditionType,
-    /// Weight in basis points used by `BasketLogic::Weighted`.
-    pub weight_bps: u32,
-}
-
-/// Basket call payload containing all conditions and their aggregation logic.
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub struct BasketCall {
-    pub conditions: Vec<AssetCondition>,
-    pub logic: BasketLogic,
-}
-
 /// Describes the price-movement condition that determines the winning outcome.
 ///
 /// All price values use 7 decimal places (e.g. `1_0000000` = 1.0).
@@ -64,8 +21,6 @@ pub enum ConditionType {
     /// Resolves UP when the end price falls within `[min, max]` inclusive.
     /// Both `min` and `max` are absolute prices with 7 decimals.
     Range(i128, i128),
-    /// Multi-asset basket; overall outcome is derived from `BasketLogic`.
-    Basket(BasketCall),
 }
 
 /// Arguments for initializing a new Call
@@ -123,8 +78,6 @@ pub struct Call {
     pub settled: bool,
     /// Whether the call has been voided by admin (triggers full refunds)
     pub voided: bool,
-    /// Whether the call became unresolvable due to incomplete oracle basket data.
-    pub unresolvable: bool,
     /// Creation timestamp
     pub created_at: u64,
     /// Whether the call has been cancelled by its creator

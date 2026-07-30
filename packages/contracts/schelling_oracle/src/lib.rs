@@ -70,7 +70,9 @@ mod types;
 mod test;
 
 use errors::OracleError;
-use events::{emit_dispute_opened, emit_dispute_resolved, emit_vote_committed, emit_vote_revealed};
+use events::{
+    emit_dispute_opened, emit_dispute_resolved, emit_vote_committed, emit_vote_revealed,
+};
 use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env};
 use storage::*;
 use types::{Dispute, DisputeConfig, DisputeResult, VoteCommitment};
@@ -137,10 +139,7 @@ fn checked_sub(a: i128, b: i128) -> Result<i128, OracleError> {
 }
 
 fn compute_min_bond(total_pool_amount: i128, bond_bps: u32) -> Result<i128, OracleError> {
-    checked_div(
-        checked_mul(total_pool_amount, bond_bps as i128)?,
-        BPS_DENOMINATOR,
-    )
+    checked_div(checked_mul(total_pool_amount, bond_bps as i128)?, BPS_DENOMINATOR)
 }
 
 #[contract]
@@ -245,13 +244,7 @@ impl SchellingOracle {
         }
 
         let contract_address = env.current_contract_address();
-        transfer_token(
-            &env,
-            &stake_token,
-            &disputer,
-            &contract_address,
-            bond_amount,
-        );
+        transfer_token(&env, &stake_token, &disputer, &contract_address, bond_amount);
 
         let now = env.ledger().timestamp();
         let commit_deadline = now
@@ -392,13 +385,7 @@ impl SchellingOracle {
         commitment.revealed_outcome = vote_outcome;
         set_commitment(&env, dispute_id, &voter, &commitment);
 
-        emit_vote_revealed(
-            &env,
-            dispute_id,
-            &voter,
-            vote_outcome,
-            commitment.stake_amount,
-        );
+        emit_vote_revealed(&env, dispute_id, &voter, vote_outcome, commitment.stake_amount);
         Ok(())
     }
 
@@ -478,8 +465,8 @@ impl SchellingOracle {
         let mut disputed_total: i128 = 0;
         let mut unrevealed_total: i128 = 0;
         for voter in voters.iter() {
-            let commitment =
-                get_commitment(&env, dispute_id, &voter).ok_or(OracleError::NoCommitmentFound)?;
+            let commitment = get_commitment(&env, dispute_id, &voter)
+                .ok_or(OracleError::NoCommitmentFound)?;
             if !commitment.revealed {
                 unrevealed_total = checked_add(unrevealed_total, commitment.stake_amount)?;
             } else if commitment.revealed_outcome == dispute.original_outcome {
@@ -541,8 +528,7 @@ impl SchellingOracle {
                 for voter in voters.iter() {
                     let commitment = get_commitment(&env, dispute_id, &voter)
                         .ok_or(OracleError::NoCommitmentFound)?;
-                    if commitment.revealed
-                        && commitment.revealed_outcome == dispute.original_outcome
+                    if commitment.revealed && commitment.revealed_outcome == dispute.original_outcome
                     {
                         let share = checked_div(
                             checked_mul(commitment.stake_amount, reward_pool)?,

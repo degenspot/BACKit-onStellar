@@ -6,6 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Observable, throwError } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 import { Request, Response } from 'express';
@@ -39,6 +40,7 @@ export class AuditInterceptor implements NestInterceptor {
   constructor(
     private readonly auditService: AuditService,
     private readonly reflector: Reflector,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -77,6 +79,9 @@ export class AuditInterceptor implements NestInterceptor {
     // ── Request payload snapshot (strip sensitive fields) ─────────────────
     const requestPayload = sanitize(req.body as Record<string, unknown>);
 
+    const ip = req.ip;
+    const userAgent = req.headers['user-agent'];
+
     const startedAt = Date.now();
 
     return next.handle().pipe(
@@ -90,6 +95,16 @@ export class AuditInterceptor implements NestInterceptor {
           responsePayload: sanitize(responseBody),
           httpStatus: res.statusCode,
           status: AuditStatus.SUCCESS,
+        });
+
+        this.eventEmitter.emit('admin.action', {
+          actorId,
+          actionType,
+          targetResource,
+          status: AuditStatus.SUCCESS,
+          httpStatus: res.statusCode,
+          ip,
+          userAgent,
         });
 
         this.logger.debug(
@@ -114,6 +129,17 @@ export class AuditInterceptor implements NestInterceptor {
           httpStatus,
           status: AuditStatus.FAILURE,
           note: err.message,
+        });
+
+        this.eventEmitter.emit('admin.action', {
+          actorId,
+          actionType,
+          targetResource,
+          status: AuditStatus.FAILURE,
+          httpStatus,
+          note: err.message,
+          ip,
+          userAgent,
         });
 
         this.logger.warn(

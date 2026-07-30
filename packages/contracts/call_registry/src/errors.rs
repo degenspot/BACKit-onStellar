@@ -43,10 +43,6 @@ pub enum CallRegistryError {
     /// Raised by the reputation-weighted stake-limit calculations and any
     /// other checked-math call sites in this crate.
     Overflow = 18,
-    /// Basket call was created with zero conditions.
-    EmptyBasket = 19,
-    /// Condition type cannot be converted to a leaf condition.
-    InvalidCondition = 20,
 }
 
 /// Panics with [`CallRegistryError::Overflow`]. Shared helper for checked

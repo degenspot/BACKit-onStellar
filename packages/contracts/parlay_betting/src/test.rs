@@ -289,11 +289,17 @@ fn three_leg_parlay_all_win() {
 
     resolve_market(&setup, call_1, OUTCOME_UP, end_ts_1);
     setup.parlay.advance_parlay(&parlay_id);
-    assert_eq!(setup.parlay.get_parlay(&parlay_id).active_leg_index, 1);
+    assert_eq!(
+        setup.parlay.get_parlay(&parlay_id).active_leg_index,
+        1
+    );
 
     resolve_market(&setup, call_2, OUTCOME_UP, end_ts_2);
     setup.parlay.advance_parlay(&parlay_id);
-    assert_eq!(setup.parlay.get_parlay(&parlay_id).active_leg_index, 2);
+    assert_eq!(
+        setup.parlay.get_parlay(&parlay_id).active_leg_index,
+        2
+    );
 
     resolve_market(&setup, call_3, OUTCOME_UP, end_ts_3);
     setup.parlay.advance_parlay(&parlay_id);
@@ -337,7 +343,10 @@ fn parlay_loses_on_leg_1() {
     assert_eq!(final_parlay.status, ParlayStatus::Lost);
     assert_eq!(final_parlay.total_escrowed, 0);
     // The initial stake was lost to the pool — no refund.
-    assert_eq!(token.balance(&setup.user), user_balance_before - 1_000_000);
+    assert_eq!(
+        token.balance(&setup.user),
+        user_balance_before - 1_000_000
+    );
 }
 
 #[test]

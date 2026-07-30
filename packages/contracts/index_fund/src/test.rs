@@ -3,7 +3,9 @@
 extern crate std;
 
 use soroban_sdk::{
-    testutils::Address as _, token::StellarAssetClient as TokenAdminClient, Address, Env,
+    testutils::Address as _,
+    token::StellarAssetClient as TokenAdminClient,
+    Address, Env,
 };
 
 use crate::{IndexFund, IndexFundClient};
@@ -11,19 +13,12 @@ use crate::{IndexFund, IndexFundClient};
 fn create_test_env() -> (Env, Address, Address, Address) {
     let env = Env::default();
     let admin = Address::generate(&env);
-    let stake_token = env
-        .register_stellar_asset_contract_v2(admin.clone())
-        .address();
+    let stake_token = env.register_stellar_asset_contract_v2(admin.clone()).address();
     let factory = Address::generate(&env);
     (env, admin, stake_token, factory)
 }
 
-fn setup_fund<'a>(
-    env: &'a Env,
-    admin: &'a Address,
-    stake_token: &'a Address,
-    factory: &'a Address,
-) -> IndexFundClient<'a> {
+fn setup_fund<'a>(env: &'a Env, admin: &'a Address, stake_token: &'a Address, factory: &'a Address) -> IndexFundClient<'a> {
     env.mock_all_auths();
     let contract_id = env.register(IndexFund, ());
     let fund = IndexFundClient::new(env, &contract_id);

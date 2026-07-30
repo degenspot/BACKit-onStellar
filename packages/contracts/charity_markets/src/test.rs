@@ -13,13 +13,7 @@ fn create_token<'a>(env: &'a Env, admin: &Address) -> (Address, StellarAssetClie
 
 fn deploy<'a>(
     env: &'a Env,
-) -> (
-    CharityMarketsClient<'a>,
-    Address,
-    Address,
-    Address,
-    StellarAssetClient<'a>,
-) {
+) -> (CharityMarketsClient<'a>, Address, Address, Address, StellarAssetClient<'a>) {
     let admin = Address::generate(env);
     let outcome_manager = Address::generate(env);
     let (stake_token, sac) = create_token(env, &admin);

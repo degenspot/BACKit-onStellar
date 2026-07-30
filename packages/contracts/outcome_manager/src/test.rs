@@ -4,17 +4,13 @@
 extern crate std;
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype,
-    testutils::{Address as _, Ledger as _},
-    Address, Bytes, BytesN, Env, Map, Vec,
+    contract, contractimpl, contracttype, testutils::{Address as _, Ledger as _}, Address, Bytes, BytesN, Env, Map,
+    Vec,
 };
 
-use crate::call_types::{
-    AssetCondition, BasketCall, BasketLogic, Call, CallRegistryError, ConditionType,
-    LeafConditionType,
-};
+use crate::call_types::{Call, CallRegistryError, ConditionType};
 use crate::errors::OutcomeError;
-use crate::storage::{OracleVote, PriceObservation, SignedBasketCondition, SignedOutcome};
+use crate::storage::{OracleVote, PriceObservation, SignedOutcome};
 use crate::{OutcomeManager, OutcomeManagerClient, MAX_ORACLES};
 
 const CLAIM_PAYOUT_BUDGET_CPU: u64 = 10_000_000;
@@ -61,7 +57,6 @@ impl MockRegistry {
             condition: ConditionType::TargetAbove(100),
             settled: false,
             voided: false,
-            unresolvable: false,
             created_at: 0,
             cancelled: false,
             metadata_version: 0,
@@ -108,20 +103,6 @@ impl MockRegistry {
             .instance()
             .set(&MockDataKey::Call(call_id), &call);
         Ok(())
-    }
-
-    pub fn mark_unresolvable(env: Env, call_id: u64) -> Result<Call, CallRegistryError> {
-        let mut call: Call = env
-            .storage()
-            .instance()
-            .get(&MockDataKey::Call(call_id))
-            .unwrap_or_else(|| Self::default_mock_call(&env, call_id));
-        call.unresolvable = true;
-        call.voided = true;
-        env.storage()
-            .instance()
-            .set(&MockDataKey::Call(call_id), &call);
-        Ok(call)
     }
 
     pub fn set_mock_call(env: Env, call_id: u64, call: Call) {
@@ -285,7 +266,6 @@ fn prepare_mock_payout(
         condition: ConditionType::TargetAbove(100),
         settled: true,
         voided: false,
-        unresolvable: false,
         created_at: 500,
         cancelled: false,
         metadata_version: 0,
@@ -342,7 +322,6 @@ fn prepare_mock_batch_payout(
         condition: ConditionType::TargetAbove(100),
         settled: true,
         voided: false,
-        unresolvable: false,
         created_at: 500,
         cancelled: false,
         metadata_version: 0,
@@ -1309,11 +1288,7 @@ fn test_twap_overflow_prevention_large_window() {
     let huge_price = i128::MAX / 2;
     let call_end_ts = 3000u64;
     client.set_twap_config(&2000u64, &3u32);
-    for (price, ts) in [
-        (huge_price, 1_000u64),
-        (huge_price, 2_000),
-        (huge_price, 3_000),
-    ] {
+    for (price, ts) in [(huge_price, 1_000u64), (huge_price, 2_000), (huge_price, 3_000)] {
         let sig = sign_observation(&env, &oracle_secret, call_id, price, ts);
         client.submit_price_observation(
             &call_id,
@@ -1494,9 +1469,7 @@ fn test_is_oracle_active_false_after_effective_ledger() {
     client.schedule_oracle_removal(&oracle_pubkey, &10u32);
 
     // Advance past the effective ledger
-    env.ledger().with_mut(|li| {
-        li.sequence_number = 10;
-    });
+    env.ledger().with_mut(|li| { li.sequence_number = 10; });
 
     assert!(!client.is_oracle_active(&oracle_pubkey));
 }
@@ -1508,9 +1481,7 @@ fn test_execute_oracle_removal_succeeds_after_grace_period() {
 
     client.schedule_oracle_removal(&oracle_pubkey, &10u32);
 
-    env.ledger().with_mut(|li| {
-        li.sequence_number = 10;
-    });
+    env.ledger().with_mut(|li| { li.sequence_number = 10; });
     client.execute_oracle_removal(&oracle_pubkey);
 
     // Oracle must be gone from the active oracle set
@@ -1538,25 +1509,16 @@ fn test_rotation_keys_do_not_collide_with_admin_or_quorum() {
 
     client.schedule_oracle_removal(&oracle_pubkey, &10u32);
 
-    env.ledger().with_mut(|li| {
-        li.sequence_number = 10;
-    });
+    env.ledger().with_mut(|li| { li.sequence_number = 10; });
     client.execute_oracle_removal(&oracle_pubkey);
 
     // Quorum must be unchanged after rotation
-    assert_eq!(
-        client.get_quorum(),
-        quorum_before,
-        "quorum collided with rotation storage"
-    );
+    assert_eq!(client.get_quorum(), quorum_before, "quorum collided with rotation storage");
 
     // Admin functions must still work, proving Admin key is intact
     let (_, extra_pubkey) = gen_keypair(&env);
     client.add_oracle(&extra_pubkey);
-    assert!(
-        client.is_oracle(&extra_pubkey),
-        "admin key corrupted by rotation"
-    );
+    assert!(client.is_oracle(&extra_pubkey), "admin key corrupted by rotation");
 }
 
 // ─── Social Recovery Tests ──────────────────────────────────────────────────
@@ -1797,283 +1759,3 @@ fn test_claim_on_behalf_fails_when_paused() {
     assert_contract_error(result, OutcomeError::ContractPaused);
 }
 
-// ── Basket outcome tests ──────────────────────────────────────────────────────
-
-fn sign_basket_condition(
-    env: &Env,
-    secret: &BytesN<32>,
-    call_id: u64,
-    condition_index: u32,
-    price: i128,
-    timestamp: u64,
-) -> BytesN<64> {
-    use ed25519_dalek::{Signer, SigningKey};
-
-    let mut msg = Bytes::from_slice(env, b"BACKit:BasketPrice:");
-    msg.append(&Bytes::from_slice(env, &call_id.to_be_bytes()));
-    msg.append(&Bytes::from_slice(env, b":"));
-    msg.append(&Bytes::from_slice(env, &condition_index.to_be_bytes()));
-    msg.append(&Bytes::from_slice(env, b":"));
-    msg.append(&Bytes::from_slice(env, &price.to_be_bytes()));
-    msg.append(&Bytes::from_slice(env, b":"));
-    msg.append(&Bytes::from_slice(env, &timestamp.to_be_bytes()));
-
-    let msg_len = msg.len() as usize;
-    let mut buf = [0u8; 128];
-    msg.copy_into_slice(&mut buf[..msg_len]);
-
-    let signing_key = SigningKey::from_bytes(&secret.to_array());
-    BytesN::from_array(env, &signing_key.sign(&buf[..msg_len]).to_bytes())
-}
-
-fn make_basket_condition(env: &Env, target: i128, weight_bps: u32) -> AssetCondition {
-    AssetCondition {
-        token_address: Address::generate(env),
-        pair_id: Bytes::from_slice(env, b"PAIR"),
-        condition: LeafConditionType::TargetAbove(target),
-        weight_bps,
-    }
-}
-
-fn set_mock_basket_call(
-    env: &Env,
-    registry_id: &Address,
-    call_id: u64,
-    logic: BasketLogic,
-    conditions: Vec<AssetCondition>,
-) {
-    let mock_client = MockRegistryClient::new(env, registry_id);
-    let mut outcome_stakes = Map::new(env);
-    outcome_stakes.set(1, 0);
-    outcome_stakes.set(2, 0);
-    let mut stakes = Map::new(env);
-    stakes.set(1, Map::new(env));
-    stakes.set(2, Map::new(env));
-
-    let call = Call {
-        id: call_id,
-        creator: Address::generate(env),
-        stake_token: Address::generate(env),
-        stake_amount: 1,
-        end_ts: 900,
-        token_address: Address::generate(env),
-        pair_id: Bytes::from_slice(env, b"basket"),
-        metadata_hash: BytesN::from_array(env, &[0u8; 32]),
-        outcome_count: 2,
-        outcome_stakes,
-        stakes,
-        outcome: 0,
-        start_price: 100,
-        end_price: 0,
-        condition: ConditionType::Basket(BasketCall { conditions, logic }),
-        settled: false,
-        voided: false,
-        unresolvable: false,
-        created_at: 0,
-        cancelled: false,
-        metadata_version: 0,
-        share_tokens: Map::new(env),
-    };
-    mock_client.set_mock_call(&call_id, &call);
-}
-
-#[test]
-fn test_basket_allof_all_winning() {
-    let env = Env::default();
-    let (_admin, registry_id, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
-    let call_id = 42u64;
-
-    let mut conditions = Vec::new(&env);
-    conditions.push_back(make_basket_condition(&env, 110, 5_000));
-    conditions.push_back(make_basket_condition(&env, 120, 5_000));
-    set_mock_basket_call(&env, &registry_id, call_id, BasketLogic::AllOf, conditions);
-
-    let mut submissions = Vec::new(&env);
-    submissions.push_back(SignedBasketCondition {
-        call_id,
-        condition_index: 0,
-        price: 130,
-        timestamp: 1000,
-        oracle_pubkey: oracle_pubkey.clone(),
-        signature: sign_basket_condition(&env, &oracle_secret, call_id, 0, 130, 1000),
-    });
-    submissions.push_back(SignedBasketCondition {
-        call_id,
-        condition_index: 1,
-        price: 140,
-        timestamp: 1000,
-        oracle_pubkey: oracle_pubkey.clone(),
-        signature: sign_basket_condition(&env, &oracle_secret, call_id, 1, 140, 1000),
-    });
-
-    client.submit_basket_outcome(&registry_id, &call_id, &submissions, &900u64);
-    assert_eq!(client.get_outcome(&call_id).outcome, 1);
-}
-
-#[test]
-fn test_basket_allof_one_losing() {
-    let env = Env::default();
-    let (_admin, registry_id, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
-    let call_id = 43u64;
-
-    let mut conditions = Vec::new(&env);
-    conditions.push_back(make_basket_condition(&env, 110, 5_000));
-    conditions.push_back(make_basket_condition(&env, 120, 5_000));
-    set_mock_basket_call(&env, &registry_id, call_id, BasketLogic::AllOf, conditions);
-
-    let mut submissions = Vec::new(&env);
-    submissions.push_back(SignedBasketCondition {
-        call_id,
-        condition_index: 0,
-        price: 130,
-        timestamp: 1000,
-        oracle_pubkey: oracle_pubkey.clone(),
-        signature: sign_basket_condition(&env, &oracle_secret, call_id, 0, 130, 1000),
-    });
-    submissions.push_back(SignedBasketCondition {
-        call_id,
-        condition_index: 1,
-        price: 100,
-        timestamp: 1000,
-        oracle_pubkey: oracle_pubkey.clone(),
-        signature: sign_basket_condition(&env, &oracle_secret, call_id, 1, 100, 1000),
-    });
-
-    client.submit_basket_outcome(&registry_id, &call_id, &submissions, &900u64);
-    assert_eq!(client.get_outcome(&call_id).outcome, 2);
-}
-
-#[test]
-fn test_basket_anyof_all_winning() {
-    let env = Env::default();
-    let (_admin, registry_id, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
-    let call_id = 44u64;
-
-    let mut conditions = Vec::new(&env);
-    conditions.push_back(make_basket_condition(&env, 110, 5_000));
-    conditions.push_back(make_basket_condition(&env, 120, 5_000));
-    set_mock_basket_call(&env, &registry_id, call_id, BasketLogic::AnyOf, conditions);
-
-    let mut submissions = Vec::new(&env);
-    submissions.push_back(SignedBasketCondition {
-        call_id,
-        condition_index: 0,
-        price: 130,
-        timestamp: 1000,
-        oracle_pubkey: oracle_pubkey.clone(),
-        signature: sign_basket_condition(&env, &oracle_secret, call_id, 0, 130, 1000),
-    });
-    submissions.push_back(SignedBasketCondition {
-        call_id,
-        condition_index: 1,
-        price: 140,
-        timestamp: 1000,
-        oracle_pubkey: oracle_pubkey.clone(),
-        signature: sign_basket_condition(&env, &oracle_secret, call_id, 1, 140, 1000),
-    });
-
-    client.submit_basket_outcome(&registry_id, &call_id, &submissions, &900u64);
-    assert_eq!(client.get_outcome(&call_id).outcome, 1);
-}
-
-#[test]
-fn test_basket_anyof_one_winning() {
-    let env = Env::default();
-    let (_admin, registry_id, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
-    let call_id = 45u64;
-
-    let mut conditions = Vec::new(&env);
-    conditions.push_back(make_basket_condition(&env, 110, 5_000));
-    conditions.push_back(make_basket_condition(&env, 120, 5_000));
-    set_mock_basket_call(&env, &registry_id, call_id, BasketLogic::AnyOf, conditions);
-
-    let mut submissions = Vec::new(&env);
-    submissions.push_back(SignedBasketCondition {
-        call_id,
-        condition_index: 0,
-        price: 100,
-        timestamp: 1000,
-        oracle_pubkey: oracle_pubkey.clone(),
-        signature: sign_basket_condition(&env, &oracle_secret, call_id, 0, 100, 1000),
-    });
-    submissions.push_back(SignedBasketCondition {
-        call_id,
-        condition_index: 1,
-        price: 130,
-        timestamp: 1000,
-        oracle_pubkey: oracle_pubkey.clone(),
-        signature: sign_basket_condition(&env, &oracle_secret, call_id, 1, 130, 1000),
-    });
-
-    client.submit_basket_outcome(&registry_id, &call_id, &submissions, &900u64);
-    assert_eq!(client.get_outcome(&call_id).outcome, 1);
-}
-
-#[test]
-fn test_basket_weighted_resolution() {
-    let env = Env::default();
-    let (_admin, registry_id, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
-    let call_id = 46u64;
-
-    let mut conditions = Vec::new(&env);
-    conditions.push_back(make_basket_condition(&env, 110, 6_000));
-    conditions.push_back(make_basket_condition(&env, 120, 4_000));
-    set_mock_basket_call(
-        &env,
-        &registry_id,
-        call_id,
-        BasketLogic::Weighted(5_000),
-        conditions,
-    );
-
-    let mut submissions = Vec::new(&env);
-    submissions.push_back(SignedBasketCondition {
-        call_id,
-        condition_index: 0,
-        price: 130,
-        timestamp: 1000,
-        oracle_pubkey: oracle_pubkey.clone(),
-        signature: sign_basket_condition(&env, &oracle_secret, call_id, 0, 130, 1000),
-    });
-    submissions.push_back(SignedBasketCondition {
-        call_id,
-        condition_index: 1,
-        price: 100,
-        timestamp: 1000,
-        oracle_pubkey: oracle_pubkey.clone(),
-        signature: sign_basket_condition(&env, &oracle_secret, call_id, 1, 100, 1000),
-    });
-
-    client.submit_basket_outcome(&registry_id, &call_id, &submissions, &900u64);
-    assert_eq!(client.get_outcome(&call_id).outcome, 1);
-}
-
-#[test]
-fn test_basket_incomplete_after_deadline_marks_unresolvable() {
-    let env = Env::default();
-    env.ledger().set_timestamp(1000);
-    let (_admin, registry_id, oracle_secret, oracle_pubkey, client) = setup_single_oracle(&env);
-    let call_id = 47u64;
-
-    let mut conditions = Vec::new(&env);
-    conditions.push_back(make_basket_condition(&env, 110, 5_000));
-    conditions.push_back(make_basket_condition(&env, 120, 5_000));
-    set_mock_basket_call(&env, &registry_id, call_id, BasketLogic::AllOf, conditions);
-
-    let mut submissions = Vec::new(&env);
-    submissions.push_back(SignedBasketCondition {
-        call_id,
-        condition_index: 0,
-        price: 130,
-        timestamp: 1000,
-        oracle_pubkey: oracle_pubkey.clone(),
-        signature: sign_basket_condition(&env, &oracle_secret, call_id, 0, 130, 1000),
-    });
-
-    client.submit_basket_outcome(&registry_id, &call_id, &submissions, &900u64);
-
-    let mock = MockRegistryClient::new(&env, &registry_id);
-    let updated = mock.get_call(&call_id);
-    assert!(updated.unresolvable);
-    assert!(updated.voided);
-}

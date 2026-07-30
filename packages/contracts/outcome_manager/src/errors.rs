@@ -72,10 +72,4 @@ pub enum OutcomeError {
     /// The same oracle submitted a second resolution observation for the
     /// same `call_id` via `submit_resolution_observation`.
     DuplicateOracleObservation = 32,
-    /// Basket submission did not include all required condition indices.
-    BasketSubmissionIncomplete = 33,
-    /// A basket submission referenced an out-of-range condition index.
-    InvalidBasketConditionIndex = 34,
-    /// The target call is not a basket call.
-    NotBasketCall = 35,
 }

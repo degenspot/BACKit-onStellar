@@ -146,12 +146,7 @@ pub fn emit_recovery_claimed(
 ) {
     env.events().publish(
         (symbol_short!("recovery"), symbol_short!("claimed")),
-        (
-            recovery_agent.clone(),
-            original_winner.clone(),
-            call_id,
-            amount,
-        ),
+        (recovery_agent.clone(), original_winner.clone(), call_id, amount),
     );
 }
 

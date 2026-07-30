@@ -74,15 +74,26 @@ pub fn get_market_entries(env: &Env, tournament_id: u64) -> Option<Map<Address, 
         .get(&PersistentKey::MarketEntries(tournament_id))
 }
 
-pub fn set_participant_score(env: &Env, tournament_id: u64, participant: &Address, score: i128) {
-    env.storage().persistent().set(
-        &PersistentKey::ParticipantScores(tournament_id, participant.clone()),
-        &score,
-    );
+pub fn set_participant_score(
+    env: &Env,
+    tournament_id: u64,
+    participant: &Address,
+    score: i128,
+) {
+    env.storage()
+        .persistent()
+        .set(
+            &PersistentKey::ParticipantScores(tournament_id, participant.clone()),
+            &score,
+        );
 }
 
 #[allow(dead_code)]
-pub fn get_participant_score(env: &Env, tournament_id: u64, participant: &Address) -> Option<i128> {
+pub fn get_participant_score(
+    env: &Env,
+    tournament_id: u64,
+    participant: &Address,
+) -> Option<i128> {
     env.storage()
         .persistent()
         .get(&PersistentKey::ParticipantScores(
@@ -92,10 +103,12 @@ pub fn get_participant_score(env: &Env, tournament_id: u64, participant: &Addres
 }
 
 pub fn set_standings(env: &Env, tournament_id: u64, standings: &Vec<TournamentStanding>) {
-    env.storage().persistent().set(
-        &PersistentKey::TournamentStandings(tournament_id),
-        standings,
-    );
+    env.storage()
+        .persistent()
+        .set(
+            &PersistentKey::TournamentStandings(tournament_id),
+            standings,
+        );
 }
 
 pub fn get_standings(env: &Env, tournament_id: u64) -> Option<Vec<TournamentStanding>> {

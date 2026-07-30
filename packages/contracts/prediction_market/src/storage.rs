@@ -83,10 +83,9 @@ pub fn get_user_stake_timestamp(env: &Env, staker: &Address, position: u32) -> u
 }
 
 pub fn set_user_has_withdrawn(env: &Env, staker: &Address, position: u32, withdrawn: bool) {
-    env.storage().instance().set(
-        &DataKey::UserHasWithdrawn(staker.clone(), position),
-        &withdrawn,
-    );
+    env.storage()
+        .instance()
+        .set(&DataKey::UserHasWithdrawn(staker.clone(), position), &withdrawn);
 }
 
 pub fn get_user_has_withdrawn(env: &Env, staker: &Address, position: u32) -> bool {
@@ -104,9 +103,7 @@ pub fn get_early_staker_count(env: &Env) -> u64 {
 }
 
 pub fn set_early_staker_count(env: &Env, count: u64) {
-    env.storage()
-        .instance()
-        .set(&DataKey::EarlyStakerCount, &count);
+    env.storage().instance().set(&DataKey::EarlyStakerCount, &count);
 }
 
 pub fn get_total_early_staker_bonus_paid(env: &Env) -> i128 {
@@ -126,15 +123,9 @@ pub fn set_total_early_staker_bonus_paid(env: &Env, total: i128) {
 
 /// Allocate the next limit order id (monotonically increasing, starts at 1).
 pub fn next_order_id(env: &Env) -> u64 {
-    let counter: u64 = env
-        .storage()
-        .instance()
-        .get(&DataKey::NextOrderId)
-        .unwrap_or(0);
+    let counter: u64 = env.storage().instance().get(&DataKey::NextOrderId).unwrap_or(0);
     let next_id = counter + 1;
-    env.storage()
-        .instance()
-        .set(&DataKey::NextOrderId, &next_id);
+    env.storage().instance().set(&DataKey::NextOrderId, &next_id);
     next_id
 }
 
@@ -165,9 +156,7 @@ pub fn get_limit_order(env: &Env, order_id: u64) -> Option<LimitOrder> {
 
 /// Remove a limit order's persistent storage entry (fill / cancel / refund).
 pub fn remove_limit_order(env: &Env, order_id: u64) {
-    env.storage()
-        .persistent()
-        .remove(&DataKey::LimitOrder(order_id));
+    env.storage().persistent().remove(&DataKey::LimitOrder(order_id));
 }
 
 /// Retrieve the list of open order ids for a call, refreshing TTL if non-empty.

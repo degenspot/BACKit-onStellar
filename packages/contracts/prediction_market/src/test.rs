@@ -168,25 +168,14 @@ fn limit_order_created_escrows_tokens_and_is_listed() {
     let orderer = Address::generate(&env);
     let token = setup_token(&env, &admin);
 
-    let market_id = setup_market(
-        &env,
-        &creator,
-        &outcome_manager,
-        &factory,
-        &token,
-        1,
-        1,
-        0,
-        2,
-    );
+    let market_id = setup_market(&env, &creator, &outcome_manager, &factory, &token, 1, 1, 0, 2);
     let market = PredictionMarketClient::new(&env, &market_id);
     let token_client = TokenClient::new(&env, &token);
 
     token_client.transfer(&admin, &orderer, &5_000);
     assert_eq!(token_client.balance(&orderer), 5_000);
 
-    let order_id =
-        market.create_limit_order(&orderer, &1u64, &1u32, &2_000i128, &3_000u32, &3600u64);
+    let order_id = market.create_limit_order(&orderer, &1u64, &1u32, &2_000i128, &3_000u32, &3600u64);
     assert_eq!(order_id, 1);
 
     // Escrow transferred out of the orderer's wallet into the contract.
@@ -220,28 +209,16 @@ fn limit_order_rejects_invalid_target_and_ttl() {
     let orderer = Address::generate(&env);
     let token = setup_token(&env, &admin);
 
-    let market_id = setup_market(
-        &env,
-        &creator,
-        &outcome_manager,
-        &factory,
-        &token,
-        1,
-        1,
-        0,
-        2,
-    );
+    let market_id = setup_market(&env, &creator, &outcome_manager, &factory, &token, 1, 1, 0, 2);
     let market = PredictionMarketClient::new(&env, &market_id);
     TokenClient::new(&env, &token).transfer(&admin, &orderer, &10_000);
 
     // target_implied_probability_bps > 10_000 is invalid.
-    let result =
-        market.try_create_limit_order(&orderer, &1u64, &1u32, &1_000i128, &10_001u32, &3600u64);
+    let result = market.try_create_limit_order(&orderer, &1u64, &1u32, &1_000i128, &10_001u32, &3600u64);
     assert_eq!(result, Err(Ok(MarketError::InvalidTargetProbability)));
 
     // ttl_secs == 0 is invalid.
-    let result =
-        market.try_create_limit_order(&orderer, &1u64, &1u32, &1_000i128, &3_000u32, &0u64);
+    let result = market.try_create_limit_order(&orderer, &1u64, &1u32, &1_000i128, &3_000u32, &0u64);
     assert_eq!(result, Err(Ok(MarketError::InvalidOrderTTL)));
 
     // ttl_secs beyond MAX_ORDER_TTL_SECS (7 days) is invalid.
@@ -283,17 +260,7 @@ fn limit_order_fills_when_target_probability_reached() {
     let orderer = Address::generate(&env);
     let token = setup_token(&env, &admin);
 
-    let market_id = setup_market(
-        &env,
-        &creator,
-        &outcome_manager,
-        &factory,
-        &token,
-        1,
-        1,
-        0,
-        2,
-    );
+    let market_id = setup_market(&env, &creator, &outcome_manager, &factory, &token, 1, 1, 0, 2);
     let market = PredictionMarketClient::new(&env, &market_id);
     let token_client = TokenClient::new(&env, &token);
 
@@ -306,8 +273,7 @@ fn limit_order_fills_when_target_probability_reached() {
 
     // Pool is 3_000 / 7_000 (30% on outcome 1). Order wants <= 20% — must not
     // fill immediately, and creation only escrows, it never matches itself.
-    let order_id =
-        market.create_limit_order(&orderer, &1u64, &1u32, &1_000i128, &2_000u32, &3600u64);
+    let order_id = market.create_limit_order(&orderer, &1u64, &1u32, &1_000i128, &2_000u32, &3600u64);
     assert_eq!(market.get_staker_stake(&1u64, &orderer, &1u32), 0);
     assert_eq!(market.get_open_orders(&1u64).len(), 1);
 
@@ -345,23 +311,12 @@ fn limit_order_cancelled_before_fill_refunds_escrow() {
     let stranger = Address::generate(&env);
     let token = setup_token(&env, &admin);
 
-    let market_id = setup_market(
-        &env,
-        &creator,
-        &outcome_manager,
-        &factory,
-        &token,
-        1,
-        1,
-        0,
-        2,
-    );
+    let market_id = setup_market(&env, &creator, &outcome_manager, &factory, &token, 1, 1, 0, 2);
     let market = PredictionMarketClient::new(&env, &market_id);
     let token_client = TokenClient::new(&env, &token);
     token_client.transfer(&admin, &orderer, &10_000);
 
-    let order_id =
-        market.create_limit_order(&orderer, &1u64, &1u32, &4_000i128, &3_000u32, &3600u64);
+    let order_id = market.create_limit_order(&orderer, &1u64, &1u32, &4_000i128, &3_000u32, &3600u64);
     assert_eq!(token_client.balance(&orderer), 6_000);
 
     // Only the owner may cancel.
@@ -396,17 +351,7 @@ fn limit_order_expired_is_not_matched_and_is_refundable_with_reward() {
     let staker = Address::generate(&env);
     let token = setup_token(&env, &admin);
 
-    let market_id = setup_market(
-        &env,
-        &creator,
-        &outcome_manager,
-        &factory,
-        &token,
-        1,
-        1,
-        0,
-        2,
-    );
+    let market_id = setup_market(&env, &creator, &outcome_manager, &factory, &token, 1, 1, 0, 2);
     let market = PredictionMarketClient::new(&env, &market_id);
     let token_client = TokenClient::new(&env, &token);
     token_client.transfer(&admin, &orderer, &10_000);
@@ -416,8 +361,7 @@ fn limit_order_expired_is_not_matched_and_is_refundable_with_reward() {
     // Target of 10_000 bps (100%) always matches once any stake exists, so
     // if this order is NOT filled after expiry, that proves the matching
     // loop correctly skips expired orders rather than filling them.
-    let order_id =
-        market.create_limit_order(&orderer, &1u64, &1u32, &4_000i128, &10_000u32, &100u64);
+    let order_id = market.create_limit_order(&orderer, &1u64, &1u32, &4_000i128, &10_000u32, &100u64);
 
     // Refunding before expiry must fail.
     let result = market.try_refund_expired_order(&refunder, &order_id);
@@ -462,17 +406,7 @@ fn limit_order_multiple_orders_fill_in_sequence() {
     let order_c = Address::generate(&env);
     let token = setup_token(&env, &admin);
 
-    let market_id = setup_market(
-        &env,
-        &creator,
-        &outcome_manager,
-        &factory,
-        &token,
-        1,
-        1,
-        0,
-        2,
-    );
+    let market_id = setup_market(&env, &creator, &outcome_manager, &factory, &token, 1, 1, 0, 2);
     let market = PredictionMarketClient::new(&env, &market_id);
     let token_client = TokenClient::new(&env, &token);
     for a in [&seed_staker, &pusher, &order_a, &order_b, &order_c] {
@@ -539,17 +473,7 @@ fn limit_order_matching_cap_leaves_excess_orders_open_for_next_stake() {
     let trigger_staker = Address::generate(&env);
     let token = setup_token(&env, &admin);
 
-    let market_id = setup_market(
-        &env,
-        &creator,
-        &outcome_manager,
-        &factory,
-        &token,
-        1,
-        1,
-        0,
-        2,
-    );
+    let market_id = setup_market(&env, &creator, &outcome_manager, &factory, &token, 1, 1, 0, 2);
     let market = PredictionMarketClient::new(&env, &market_id);
     let token_client = TokenClient::new(&env, &token);
     token_client.transfer(&admin, &seed_staker, &1_000_000);
@@ -624,17 +548,7 @@ fn limit_order_over_cap_is_skipped_without_aborting_triggering_stake() {
     let trigger_staker = Address::generate(&env);
     let token = setup_token(&env, &admin);
 
-    let market_id = setup_market(
-        &env,
-        &creator,
-        &outcome_manager,
-        &factory,
-        &token,
-        1,
-        1,
-        500,
-        2,
-    );
+    let market_id = setup_market(&env, &creator, &outcome_manager, &factory, &token, 1, 1, 500, 2);
     let market = PredictionMarketClient::new(&env, &market_id);
     let token_client = TokenClient::new(&env, &token);
     token_client.transfer(&admin, &capped_orderer, &10_000);
@@ -642,16 +556,8 @@ fn limit_order_over_cap_is_skipped_without_aborting_triggering_stake() {
 
     market.stake_on_call(&capped_orderer, &1u64, &400i128, &1u32);
 
-    let order1 =
-        market.create_limit_order(&capped_orderer, &1u64, &1u32, &50i128, &10_000u32, &3600u64);
-    let order2 = market.create_limit_order(
-        &capped_orderer,
-        &1u64,
-        &1u32,
-        &100i128,
-        &10_000u32,
-        &3600u64,
-    );
+    let order1 = market.create_limit_order(&capped_orderer, &1u64, &1u32, &50i128, &10_000u32, &3600u64);
+    let order2 = market.create_limit_order(&capped_orderer, &1u64, &1u32, &100i128, &10_000u32, &3600u64);
     assert_eq!(market.get_open_orders(&1u64).len(), 2);
 
     // Trigger matching. trigger_staker is unrelated to capped_orderer's cap.

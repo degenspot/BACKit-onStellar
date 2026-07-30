@@ -47,8 +47,6 @@ pub struct Call {
     pub condition: ConditionType,
     pub settled: bool,
     pub voided: bool,
-    /// Whether the call became unresolvable due to incomplete oracle basket data.
-    pub unresolvable: bool,
     pub created_at: u64,
     pub cancelled: bool,
     pub metadata_version: u32,

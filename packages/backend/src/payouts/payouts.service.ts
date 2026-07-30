@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PayoutClaim, PayoutClaimStatus } from './entities/payout-claim.entity';
 
 @Injectable()
@@ -8,6 +9,7 @@ export class PayoutsService {
   constructor(
     @InjectRepository(PayoutClaim)
     private readonly payoutClaimsRepository: Repository<PayoutClaim>,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async listUserPayouts(stakerAddress: string): Promise<PayoutClaim[]> {
@@ -79,7 +81,16 @@ export class PayoutsService {
     claim.txHash = txHash;
     claim.claimedAt = claimedAt;
     claim.status = PayoutClaimStatus.CLAIMED;
-    return this.payoutClaimsRepository.save(claim);
+    const saved = await this.payoutClaimsRepository.save(claim);
+
+    this.eventEmitter.emit('payout.claimed', {
+      userAddress: saved.stakerAddress,
+      callId: saved.callId,
+      amount: Number(saved.amount),
+      txHash: saved.txHash,
+    });
+
+    return saved;
   }
 
   async markFailed(

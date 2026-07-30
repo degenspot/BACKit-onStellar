@@ -14,6 +14,7 @@ members = [
   "parlay_betting",
   "prediction_market",
   "prediction_market_factory",
+  "prediction_market_futures",
   "schelling_oracle",
   "shared",
   "tournament",

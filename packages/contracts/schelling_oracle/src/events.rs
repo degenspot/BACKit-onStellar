@@ -38,12 +38,7 @@ pub fn emit_vote_committed(
 ) {
     env.events().publish(
         ("schelling_oracle", "vote_committed"),
-        (
-            dispute_id,
-            voter.clone(),
-            commitment_hash.clone(),
-            stake_amount,
-        ),
+        (dispute_id, voter.clone(), commitment_hash.clone(), stake_amount),
     );
 }
 

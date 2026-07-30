@@ -15,10 +15,7 @@ mod test;
 
 use conditional_staking::{ConditionalStrategy, StrategyAction, StrategyTrigger};
 use errors::FactoryError;
-use events::{
-    emit_factory_initialized, emit_market_deployed, emit_strategy_cancelled, emit_strategy_created,
-    emit_strategy_executed,
-};
+use events::{emit_factory_initialized, emit_market_deployed, emit_strategy_cancelled, emit_strategy_created, emit_strategy_executed};
 use prediction_market::MarketInitArgs;
 use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, Map, String, Vec};
 use storage::*;
@@ -274,7 +271,10 @@ impl PredictionMarketFactory {
     }
 
     /// #499: Execute a conditional strategy (keeper pattern).
-    pub fn execute_strategy(env: Env, strategy_id: u64) -> Result<(), FactoryError> {
+    pub fn execute_strategy(
+        env: Env,
+        strategy_id: u64,
+    ) -> Result<(), FactoryError> {
         let strategy = get_strategy(&env, strategy_id).ok_or(FactoryError::StrategyNotFound)?;
 
         if strategy.executed {
@@ -301,7 +301,11 @@ impl PredictionMarketFactory {
     }
 
     /// #499: Cancel a conditional strategy before it executes.
-    pub fn cancel_strategy(env: Env, user: Address, strategy_id: u64) -> Result<(), FactoryError> {
+    pub fn cancel_strategy(
+        env: Env,
+        user: Address,
+        strategy_id: u64,
+    ) -> Result<(), FactoryError> {
         user.require_auth();
 
         let strategy = get_strategy(&env, strategy_id).ok_or(FactoryError::StrategyNotFound)?;
@@ -322,7 +326,10 @@ impl PredictionMarketFactory {
     }
 
     /// #499: Get all strategies for a user.
-    pub fn get_user_strategies(env: Env, user: Address) -> Vec<ConditionalStrategy> {
+    pub fn get_user_strategies(
+        env: Env,
+        user: Address,
+    ) -> Vec<ConditionalStrategy> {
         let ids = storage::get_user_strategies(&env, &user);
         let mut result = Vec::new(&env);
         for i in 0..ids.len() {
@@ -354,7 +361,11 @@ impl PredictionMarketFactory {
     }
 
     /// #471: Batch stake across multiple prediction markets.
-    pub fn batch_stake(env: Env, user: Address, stakes_count: u32) -> Result<u32, FactoryError> {
+    pub fn batch_stake(
+        env: Env,
+        user: Address,
+        stakes_count: u32,
+    ) -> Result<u32, FactoryError> {
         user.require_auth();
         if stakes_count > 10 {
             return Err(FactoryError::InvalidStakeAmount);

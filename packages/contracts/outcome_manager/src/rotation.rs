@@ -9,10 +9,9 @@ pub fn schedule_oracle_removal(env: &Env, oracle_pubkey: BytesN<32>, effective_l
         "effective_ledger must be in the future"
     );
 
-    env.storage().persistent().set(
-        &PersistentKey::PendingOracleRemoval(oracle_pubkey),
-        &effective_ledger,
-    );
+    env.storage()
+        .persistent()
+        .set(&PersistentKey::PendingOracleRemoval(oracle_pubkey), &effective_ledger);
 }
 
 /// Execute a scheduled oracle removal once the grace period has elapsed.
@@ -39,9 +38,7 @@ pub fn execute_oracle_removal(env: &Env, oracle_pubkey: BytesN<32>) {
         .unwrap_or_else(|| Map::new(env));
 
     oracles.remove(oracle_pubkey.clone());
-    env.storage()
-        .instance()
-        .set(&InstanceKey::Oracles, &oracles);
+    env.storage().instance().set(&InstanceKey::Oracles, &oracles);
 
     // Clean up the dedicated persistent entry
     env.storage().persistent().remove(&key);

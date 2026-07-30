@@ -140,7 +140,9 @@ fn other_position(position: u32) -> u32 {
 fn compute_tvl(env: &Env, config: &PoolConfig) -> Result<i128, LendingPoolError> {
     let liquid = token_balance(env, &config.stake_token);
     let locked = get_total_allocated_locked(env);
-    liquid.checked_add(locked).ok_or(LendingPoolError::Overflow)
+    liquid
+        .checked_add(locked)
+        .ok_or(LendingPoolError::Overflow)
 }
 
 /// Appends a yield event and prunes entries older than [`APY_WINDOW_SECS`],
@@ -285,13 +287,7 @@ impl LendingPool {
             return Err(LendingPoolError::InvalidAmount);
         }
 
-        transfer_token(
-            &env,
-            &config.stake_token,
-            &user,
-            &env.current_contract_address(),
-            amount,
-        );
+        transfer_token(&env, &config.stake_token, &user, &env.current_contract_address(), amount);
 
         set_total_lp_shares(
             &env,
@@ -368,13 +364,7 @@ impl LendingPool {
                 .ok_or(LendingPoolError::Overflow)?,
         );
 
-        transfer_token(
-            &env,
-            &config.stake_token,
-            &env.current_contract_address(),
-            &user,
-            amount_out,
-        );
+        transfer_token(&env, &config.stake_token, &env.current_contract_address(), &user, amount_out);
 
         emit_withdrawn(&env, &user, lp_amount, amount_out);
         Ok(amount_out)
@@ -474,11 +464,7 @@ impl LendingPool {
                 results.push_back(AllocationOutcome::SkippedNotBinary);
                 continue;
             }
-            if call.settled
-                || call.cancelled
-                || call.voided
-                || call.outcome != 0
-                || now >= call.end_ts
+            if call.settled || call.cancelled || call.voided || call.outcome != 0 || now >= call.end_ts
             {
                 results.push_back(AllocationOutcome::SkippedMarketUnavailable);
                 continue;
@@ -514,11 +500,7 @@ impl LendingPool {
                 continue;
             }
 
-            let position: u32 = if oracle_bps > market_implied_bps {
-                1
-            } else {
-                2
-            };
+            let position: u32 = if oracle_bps > market_implied_bps { 1 } else { 2 };
 
             let raw_alloc = match tvl
                 .checked_mul(edge_bps as i128)
@@ -542,13 +524,7 @@ impl LendingPool {
                 continue;
             }
 
-            authorize_stake_transfer(
-                &env,
-                &call.stake_token,
-                &contract_address,
-                &market_address,
-                amount,
-            );
+            authorize_stake_transfer(&env, &call.stake_token, &contract_address, &market_address, amount);
             match market.try_stake_on_call(&contract_address, &input.call_id, &amount, &position) {
                 Ok(Ok(_)) => {
                     liquid_remaining = match liquid_remaining.checked_sub(amount) {
@@ -558,9 +534,7 @@ impl LendingPool {
                     let locked = get_total_allocated_locked(&env);
                     set_total_allocated_locked(
                         &env,
-                        locked
-                            .checked_add(amount)
-                            .ok_or(LendingPoolError::Overflow)?,
+                        locked.checked_add(amount).ok_or(LendingPoolError::Overflow)?,
                     );
                     set_allocation(
                         &env,
@@ -595,8 +569,7 @@ impl LendingPool {
     /// recorded for this allocation (can be negative on a loss).
     pub fn harvest_yield(env: Env, call_id: u64) -> Result<i128, LendingPoolError> {
         let config = get_config(&env).ok_or(LendingPoolError::NotInitialized)?;
-        let mut allocation =
-            get_allocation(&env, call_id).ok_or(LendingPoolError::AllocationNotFound)?;
+        let mut allocation = get_allocation(&env, call_id).ok_or(LendingPoolError::AllocationNotFound)?;
         if allocation.settled {
             return Err(LendingPoolError::AlreadyHarvested);
         }
@@ -662,24 +635,11 @@ impl LendingPool {
                 .ok_or(LendingPoolError::Overflow)?
                 .checked_div(BPS_SCALE)
                 .ok_or(LendingPoolError::Overflow)?;
-            let net = gross_change
-                .checked_sub(fee)
-                .ok_or(LendingPoolError::Overflow)?;
+            let net = gross_change.checked_sub(fee).ok_or(LendingPoolError::Overflow)?;
             if fee > 0 {
-                transfer_token(
-                    &env,
-                    &config.stake_token,
-                    &contract_address,
-                    &config.treasury,
-                    fee,
-                );
+                transfer_token(&env, &config.stake_token, &contract_address, &config.treasury, fee);
                 let total_fees = get_total_fees_paid(&env);
-                set_total_fees_paid(
-                    &env,
-                    total_fees
-                        .checked_add(fee)
-                        .ok_or(LendingPoolError::Overflow)?,
-                );
+                set_total_fees_paid(&env, total_fees.checked_add(fee).ok_or(LendingPoolError::Overflow)?);
             }
             (fee, net)
         } else {
@@ -705,9 +665,7 @@ impl LendingPool {
         let config = get_config(&env).ok_or(LendingPoolError::NotInitialized)?;
         let liquid = token_balance(&env, &config.stake_token);
         let locked = get_total_allocated_locked(&env);
-        let tvl = liquid
-            .checked_add(locked)
-            .ok_or(LendingPoolError::Overflow)?;
+        let tvl = liquid.checked_add(locked).ok_or(LendingPoolError::Overflow)?;
 
         Ok(PoolStats {
             total_deposited: get_total_deposited(&env),

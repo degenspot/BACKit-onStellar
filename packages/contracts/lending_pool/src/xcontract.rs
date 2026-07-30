@@ -135,14 +135,8 @@ pub fn claim_payout_for_market(
         total_losing_stake,
     )
         .into_val(env);
-    let result: Result<
-        Result<(), soroban_sdk::ConversionError>,
-        Result<OutcomeMirrorError, soroban_sdk::InvokeError>,
-    > = env.try_invoke_contract(
-        &config.outcome_manager,
-        &Symbol::new(env, "claim_payout_for_market"),
-        args,
-    );
+    let result: Result<Result<(), soroban_sdk::ConversionError>, Result<OutcomeMirrorError, soroban_sdk::InvokeError>> =
+        env.try_invoke_contract(&config.outcome_manager, &Symbol::new(env, "claim_payout_for_market"), args);
     match result {
         Ok(Ok(())) => Ok(()),
         _ => Err(LendingPoolError::MarketCallFailed),

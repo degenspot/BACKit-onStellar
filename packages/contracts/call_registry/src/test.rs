@@ -29,7 +29,7 @@ impl MockToken {
 mod call_registry {
     use super::*;
     use crate::storage::DataKey;
-    use crate::types::{AssetCondition, BasketCall, BasketLogic, ConditionType, LeafConditionType};
+    use crate::types::ConditionType;
     use crate::{CallRegistry, CallRegistryClient};
     use ed25519_dalek::{Signer, SigningKey};
 
@@ -936,15 +936,8 @@ mod call_registry {
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
         let call = create_call_with_default_condition(
-            &client,
-            &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &metadata_hash,
-            &2,
+            &client, &creator, &stake_token, &100_000_000_i128,
+            &2000u64, &token_address, &pair_id, &metadata_hash, &2,
         );
         client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
         let (refund, penalty) = client.withdraw_stake(&staker, &call.id, &1);
@@ -968,15 +961,8 @@ mod call_registry {
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
         let call = create_call_with_default_condition(
-            &client,
-            &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &metadata_hash,
-            &2,
+            &client, &creator, &stake_token, &100_000_000_i128,
+            &2000u64, &token_address, &pair_id, &metadata_hash, &2,
         );
         client.stake_on_call(&staker, &call.id, &10_000_001_i128, &1);
         let (refund, penalty) = client.withdraw_stake(&staker, &call.id, &1);
@@ -1000,15 +986,8 @@ mod call_registry {
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
         let call = create_call_with_default_condition(
-            &client,
-            &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &metadata_hash,
-            &2,
+            &client, &creator, &stake_token, &100_000_000_i128,
+            &2000u64, &token_address, &pair_id, &metadata_hash, &2,
         );
         client.withdraw_stake(&staker, &call.id, &1);
     }
@@ -1028,15 +1007,8 @@ mod call_registry {
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
         let call = create_call_with_default_condition(
-            &client,
-            &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &metadata_hash,
-            &2,
+            &client, &creator, &stake_token, &100_000_000_i128,
+            &2000u64, &token_address, &pair_id, &metadata_hash, &2,
         );
         client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
         env.ledger().set_timestamp(3000);
@@ -1058,15 +1030,8 @@ mod call_registry {
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
         let call = create_call_with_default_condition(
-            &client,
-            &creator,
-            &stake_token,
-            &100_000_000_i128,
-            &2000u64,
-            &token_address,
-            &pair_id,
-            &metadata_hash,
-            &2,
+            &client, &creator, &stake_token, &100_000_000_i128,
+            &2000u64, &token_address, &pair_id, &metadata_hash, &2,
         );
         client.stake_on_call(&staker1, &call.id, &50_000_000_i128, &1);
         client.stake_on_call(&staker2, &call.id, &30_000_000_i128, &1);
@@ -2685,15 +2650,13 @@ mod call_registry {
         env: &Env,
         topic1: &str,
         topic2: &str,
-    ) -> Option<(
-        Address,
-        soroban_sdk::Vec<soroban_sdk::Val>,
-        soroban_sdk::Val,
-    )> {
+    ) -> Option<(Address, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val)> {
         let events = env.events().all();
         for i in 0..events.len() {
             let e = events.get(i).unwrap();
-            if e.1 == soroban_sdk::vec![env, topic1.into_val(env), topic2.into_val(env),] {
+            if e.1
+                == soroban_sdk::vec![env, topic1.into_val(env), topic2.into_val(env),]
+            {
                 return Some(e);
             }
         }
@@ -3029,8 +2992,8 @@ mod call_registry {
         // most recent top-level contract invocation, so this check must
         // happen immediately after `set_reputation_params` and before any
         // other client call (even read-only views like `get_config`).
-        let has_base_limit_event =
-            find_event(&env, "call_registry", "admin_params_changed").is_some();
+        let has_base_limit_event = find_event(&env, "call_registry", "admin_params_changed")
+            .is_some();
         assert!(has_base_limit_event);
 
         let config_after = client.get_config();
@@ -3112,85 +3075,6 @@ mod call_registry {
             &2,
         );
         client.stake_on_call(&user, &call.id, &300_000_001_i128, &1);
-    }
-
-    #[test]
-    fn test_empty_basket_rejected() {
-        let (env, client, _admin, _om) = setup();
-        env.ledger().set_timestamp(1000);
-
-        let creator = Address::generate(&env);
-        let stake_token = env.register_contract(None, MockToken);
-        client.whitelist_token(&stake_token);
-
-        let result = client.try_create_call(
-            &creator,
-            &crate::types::CallInitArgs {
-                stake_token,
-                stake_amount: 100_000_000,
-                start_price: TEST_START_PRICE,
-                end_ts: 2000,
-                token_address: Address::generate(&env),
-                pair_id: Bytes::from_slice(&env, b"BASKET"),
-                ipfs_cid: Bytes::from_slice(&env, b"QmBasket"),
-                metadata_hash: BytesN::from_array(&env, &[1u8; 32]),
-                condition: ConditionType::Basket(BasketCall {
-                    conditions: soroban_sdk::Vec::new(&env),
-                    logic: BasketLogic::AllOf,
-                }),
-                outcome_count: 2,
-            },
-        );
-
-        assert_eq!(result, Err(Ok(CallRegistryError::EmptyBasket)));
-    }
-
-    #[test]
-    fn test_get_basket_conditions_returns_configured_conditions() {
-        let (env, client, _admin, _om) = setup();
-        env.ledger().set_timestamp(1000);
-
-        let creator = Address::generate(&env);
-        let stake_token = env.register_contract(None, MockToken);
-        client.whitelist_token(&stake_token);
-
-        let mut conditions = soroban_sdk::Vec::new(&env);
-        conditions.push_back(AssetCondition {
-            token_address: Address::generate(&env),
-            pair_id: Bytes::from_slice(&env, b"XLM-USDC"),
-            condition: LeafConditionType::TargetAbove(150_000_000),
-            weight_bps: 5_000,
-        });
-        conditions.push_back(AssetCondition {
-            token_address: Address::generate(&env),
-            pair_id: Bytes::from_slice(&env, b"BTC-USDC"),
-            condition: LeafConditionType::TargetAbove(60000_0000000),
-            weight_bps: 5_000,
-        });
-
-        let call = client.create_call(
-            &creator,
-            &crate::types::CallInitArgs {
-                stake_token,
-                stake_amount: 100_000_000,
-                start_price: TEST_START_PRICE,
-                end_ts: 2000,
-                token_address: Address::generate(&env),
-                pair_id: Bytes::from_slice(&env, b"BASKET"),
-                ipfs_cid: Bytes::from_slice(&env, b"QmBasket"),
-                metadata_hash: BytesN::from_array(&env, &[2u8; 32]),
-                condition: ConditionType::Basket(BasketCall {
-                    conditions: conditions.clone(),
-                    logic: BasketLogic::AllOf,
-                }),
-                outcome_count: 2,
-            },
-        );
-
-        let fetched = client.get_basket_conditions(&call.id);
-        assert_eq!(fetched.len(), 2);
-        assert_eq!(fetched.get(0).unwrap().weight_bps, 5_000);
-        assert_eq!(fetched.get(1).unwrap().weight_bps, 5_000);
     }
 }
 
@@ -3687,4 +3571,6 @@ mod sep10_tests {
         let user = Address::generate(&env);
         assert_eq!(client.get_sep10_home_domain(&user), None);
     }
+
+
 }

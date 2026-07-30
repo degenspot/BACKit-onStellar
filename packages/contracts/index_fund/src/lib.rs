@@ -108,13 +108,7 @@ impl IndexFund {
             .ok_or(IndexFundError::InvalidAmount)?;
 
         // Transfer USDC into this contract
-        transfer_token(
-            &env,
-            &config.stake_token,
-            &user,
-            &env.current_contract_address(),
-            usdc_amount,
-        );
+        transfer_token(&env, &config.stake_token, &user, &env.current_contract_address(), usdc_amount);
 
         // Mint INDEX tokens
         let total_supply = get_total_index_supply(&env);
