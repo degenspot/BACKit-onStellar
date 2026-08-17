@@ -1,20 +1,27 @@
 "use client";
 
-import { Fragment } from 'react';
-import { Dialog, Transition } from '@headlessui/react';
-import { XMarkIcon } from '@heroicons/react/24/outline';
-import StakingInterface from './StakingInterface';
-import { CallDetailData } from '@/types';
+import { Fragment } from "react";
+import { Dialog, Transition } from "@headlessui/react";
+import { XMarkIcon } from "@heroicons/react/24/outline";
+import StakingInterface from "./StakingInterface";
+import { CallDetailData } from "@/types";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   call: CallDetailData;
-  onStake: (amount: number, side: 'YES' | 'NO') => Promise<void>;
+  /** Amount is a 7-decimal string so no precision is lost. */
+  onStake: (amount: string, side: "YES" | "NO") => Promise<void>;
   odds: { yes: number; no: number } | null;
 }
 
-export default function StakingDrawer({ isOpen, onClose, call, onStake, odds }: Props) {
+export default function StakingDrawer({
+  isOpen,
+  onClose,
+  call,
+  onStake,
+  odds,
+}: Props) {
   return (
     <Transition.Root show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
@@ -47,10 +54,12 @@ export default function StakingDrawer({ isOpen, onClose, call, onStake, odds }: 
                     <div className="p-6 sm:p-8 bg-white border-b border-gray-100">
                       <div className="flex items-start justify-between">
                         <div>
-                            <Dialog.Title className="text-2xl font-black text-gray-900 leading-tight">
+                          <Dialog.Title className="text-2xl font-black text-gray-900 leading-tight">
                             Market Staking
-                            </Dialog.Title>
-                            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Transaction Portal</p>
+                          </Dialog.Title>
+                          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">
+                            Transaction Portal
+                          </p>
                         </div>
                         <button
                           onClick={onClose}
@@ -61,28 +70,47 @@ export default function StakingDrawer({ isOpen, onClose, call, onStake, odds }: 
                       </div>
                     </div>
                     <div className="relative flex-1 p-6 sm:p-8">
-                       <div className="mb-10 p-6 rounded-3xl bg-indigo-600 text-white shadow-xl shadow-indigo-200">
-                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200 mb-2">Market Target</p>
-                          <h4 className="text-2xl font-black leading-tight mb-4">{call.condition}</h4>
-                          <div className="flex gap-4">
-                             <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
-                                <span className="text-[10px] font-bold text-indigo-200 block mb-0.5 uppercase tracking-widest leading-none">Price Target</span>
-                                <span className="text-sm font-black text-white">${call.conditionJson?.targetPrice?.toLocaleString() || (call.token.price * 1.5).toLocaleString()}</span>
-                             </div>
-                             <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
-                                <span className="text-[10px] font-bold text-indigo-200 block mb-0.5 uppercase tracking-widest leading-none">Pool Cap</span>
-                                <span className="text-sm font-black text-white">$100,000</span>
-                             </div>
-                          </div>
-                       </div>
-                       
-                       <StakingInterface call={call} onStake={onStake} odds={odds} />
-                    </div>
-                    
-                    <div className="p-8 border-t border-gray-100 bg-white/50">
-                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.1em] text-center">
-                            By clicking stake you agree to the protocol&apos;s decentralized settlement mechanisms.
+                      <div className="mb-10 p-6 rounded-3xl bg-indigo-600 text-white shadow-xl shadow-indigo-200">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200 mb-2">
+                          Market Target
                         </p>
+                        <h4 className="text-2xl font-black leading-tight mb-4">
+                          {call.condition}
+                        </h4>
+                        <div className="flex gap-4">
+                          <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
+                            <span className="text-[10px] font-bold text-indigo-200 block mb-0.5 uppercase tracking-widest leading-none">
+                              Price Target
+                            </span>
+                            <span className="text-sm font-black text-white">
+                              $
+                              {call.conditionJson?.targetPrice?.toLocaleString() ||
+                                (call.token.price * 1.5).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
+                            <span className="text-[10px] font-bold text-indigo-200 block mb-0.5 uppercase tracking-widest leading-none">
+                              Pool Cap
+                            </span>
+                            <span className="text-sm font-black text-white">
+                              $100,000
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <StakingInterface
+                        call={call}
+                        onStake={onStake}
+                        odds={odds}
+                      />
+                    </div>
+
+                    <div className="p-8 border-t border-gray-100 bg-white/50">
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.1em] text-center">
+                        By clicking stake you agree to the protocol&apos;s
+                        decentralized settlement mechanisms.
+                      </p>
                     </div>
                   </div>
                 </Dialog.Panel>

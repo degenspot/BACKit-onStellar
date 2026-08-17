@@ -27,13 +27,13 @@ export default function CallDetail({ call }: { call: CallDetailData }) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [odds, setOdds] = useState<{ yes: number; no: number } | null>(null);
   const [userPosition, setUserPosition] = useState<UserPosition | null>(null);
-  const isMobile = useMediaQuery('(max-width: 768px)');
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const { publicKey } = useWalletContext();
 
   useEffect(() => {
     if (!publicKey) return;
     fetch(`/api/calls/${call.id}/position?address=${publicKey}`)
-      .then((res) => res.ok ? res.json() : null)
+      .then((res) => (res.ok ? res.json() : null))
       .then((data) => data && setUserPosition(data))
       .catch(() => null);
   }, [call.id, publicKey]);
@@ -61,9 +61,9 @@ export default function CallDetail({ call }: { call: CallDetailData }) {
     return () => clearInterval(interval);
   }, [call.endTime, call.id]);
 
-  const handleStake = async (amount: number, side: 'YES' | 'NO') => {
-    // Implement actual staking logic here
-    console.log(`Staking ${amount} USDC on ${side} for call ${call.id}`);
+  const handleStake = async (amount: string, side: "YES" | "NO") => {
+    // Amount arrives as a 7-decimal string; submission is wired up separately.
+    console.log(`Staking ${amount} on ${side} for call ${call.id}`);
     // Close drawer after successful stake on mobile
     if (isMobile) setIsDrawerOpen(false);
   };
@@ -82,7 +82,7 @@ export default function CallDetail({ call }: { call: CallDetailData }) {
               walletAddress={publicKey ?? undefined}
               hasStakeOrBookmark={
                 !!userPosition ||
-                !!((call as { isBookmarked?: boolean }).isBookmarked)
+                !!(call as { isBookmarked?: boolean }).isBookmarked
               }
             />
             <BookmarkButton
@@ -133,15 +133,22 @@ export default function CallDetail({ call }: { call: CallDetailData }) {
           ) : !call.resolved ? (
             <>
               <StakingInterface call={call} onStake={handleStake} odds={odds} />
-              <PriceAlertToggle callId={call.id} walletAddress={publicKey ?? undefined} />
+              <PriceAlertToggle
+                callId={call.id}
+                walletAddress={publicKey ?? undefined}
+              />
             </>
           ) : null}
-          
+
           {/* Pool summary */}
           <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
             <div className="flex justify-between items-center mb-6">
-              <h4 className="font-bold text-gray-900 uppercase tracking-widest text-xs">Market Liquidity</h4>
-              <span className="bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-1 rounded-md">LIVE POOL</span>
+              <h4 className="font-bold text-gray-900 uppercase tracking-widest text-xs">
+                Market Liquidity
+              </h4>
+              <span className="bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-1 rounded-md">
+                LIVE POOL
+              </span>
             </div>
             <StakeDistributionBar
               yes={call.stakes.yes}
@@ -158,7 +165,7 @@ export default function CallDetail({ call }: { call: CallDetailData }) {
               onClick={() => setIsDrawerOpen(true)}
               className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-all"
             >
-              Place Stake — {odds?.yes || '2.0'}x / {odds?.no || '2.0'}x
+              Place Stake — {odds?.yes || "2.0"}x / {odds?.no || "2.0"}x
             </button>
           </div>
         )}
