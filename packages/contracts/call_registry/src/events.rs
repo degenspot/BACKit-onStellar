@@ -224,6 +224,50 @@ pub fn emit_contract_upgraded(env: &Env, old_version: u32, new_version: u32, adm
     );
 }
 
+/// Emitted when an operation is proposed by an admin/proposer
+pub fn emit_operation_proposed(env: &Env, proposal_id: u64, proposer: &Address) {
+    env.events().publish(
+        ("call_registry", "operation_proposed"),
+        (proposal_id, proposer.clone()),
+    );
+}
+
+/// Emitted when an admin approves a proposal
+pub fn emit_proposal_approved(env: &Env, proposal_id: u64, approver: &Address) {
+    env.events().publish(
+        ("call_registry", "proposal_approved"),
+        (proposal_id, approver.clone()),
+    );
+}
+
+/// Emitted when an admin vetoes a proposal
+pub fn emit_proposal_vetoed(env: &Env, proposal_id: u64, vetoer: &Address) {
+    env.events().publish(
+        ("call_registry", "proposal_vetoed"),
+        (proposal_id, vetoer.clone()),
+    );
+}
+
+/// Emitted when a proposal is executed
+pub fn emit_proposal_executed(env: &Env, proposal_id: u64, executor: &Address) {
+    env.events().publish(
+        ("call_registry", "proposal_executed"),
+        (proposal_id, executor.clone()),
+    );
+}
+
+/// Emitted when an admin is added
+pub fn emit_admin_added(env: &Env, added: &Address) {
+    env.events()
+        .publish(("call_registry", "admin_added"), added.clone());
+}
+
+/// Emitted when an admin is removed
+pub fn emit_admin_removed(env: &Env, removed: &Address) {
+    env.events()
+        .publish(("call_registry", "admin_removed"), removed.clone());
+}
+
 /// Emitted when share tokens are minted
 pub fn emit_shares_minted(env: &Env, call_id: u64, staker: &Address, outcome: u32, amount: i128) {
     env.events().publish(

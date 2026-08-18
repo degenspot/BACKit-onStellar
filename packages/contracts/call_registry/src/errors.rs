@@ -22,6 +22,12 @@ pub enum CallRegistryError {
     InvalidPosition = 8,
     /// The caller does not hold the required role (admin / outcome_manager).
     Unauthorized = 9,
+    /// Generic not found error for requested entity (e.g., proposal)
+    NotFound = 20,
+    /// Invalid input was provided to the operation
+    InvalidInput = 21,
+    /// The operation is not ready to be executed yet (timelock not expired)
+    NotReady = 22,
     /// Reserved for a future pause mechanism; no operations are permitted while paused.
     ContractPaused = 10,
     /// `resolve_call` was called before `end_ts` has passed.

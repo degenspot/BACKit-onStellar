@@ -1,8 +1,8 @@
 "use client";
 
-import { Participant } from "@/types";
 import { useEffect, useRef, useState } from "react";
 import { useSocket } from "@/contexts/WebSocketContext";
+import { amountFromApi, formatAmount, type MarketStake } from "@/lib/backend";
 
 const PAGE_SIZE = 10;
 
@@ -17,16 +17,34 @@ function timeAgo(timestamp: string) {
 }
 
 interface Props {
-  participants: Participant[];
-  callId: number;
+  /** Recent stakes loaded from the backend, newest first. */
+  stakes: MarketStake[];
+  callId: string;
+  stakeToken: string;
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
-export default function ActivityLog({ participants, callId }: Props) {
-  const [entries, setEntries] = useState<Participant[]>(participants.slice(0, 50));
+export default function ActivityLog({
+  stakes,
+  callId,
+  stakeToken,
+  loading = false,
+  error = null,
+  onRetry,
+}: Props) {
+  const [entries, setEntries] = useState<MarketStake[]>(stakes);
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
-  const seenTxHashes = useRef<Set<string>>(new Set(participants.map((p) => p.txHash)));
+  const seenTxHashes = useRef<Set<string>>(new Set());
   const { status, send } = useSocket();
+
+  // Keep the log in sync with the backend-loaded page of stakes.
+  useEffect(() => {
+    setEntries(stakes);
+    seenTxHashes.current = new Set(stakes.map((s) => s.txHash));
+  }, [stakes]);
 
   // Subscribe to call-specific stake events when connected
   useEffect(() => {
@@ -40,16 +58,39 @@ export default function ActivityLog({ participants, callId }: Props) {
     function handleMessage(e: MessageEvent) {
       try {
         const msg = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
-        if (msg.event === "call:stake" && msg.data?.callId === callId) {
-          const incoming: Participant = msg.data.stake;
-          if (seenTxHashes.current.has(incoming.txHash)) return;
-          seenTxHashes.current.add(incoming.txHash);
-          setNewIds(new Set([incoming.txHash]));
-          setEntries((prev) => [incoming, ...prev].slice(0, 50));
-          setTimeout(() => setNewIds(new Set()), 600);
+        if (msg.event !== "call:stake" || String(msg.data?.callId) !== callId) {
+          return;
         }
+        const raw = msg.data.stake as {
+          address?: string;
+          userAddress?: string;
+          side?: "YES" | "NO";
+          position?: "YES" | "NO";
+          amount?: string | number;
+          timestamp?: string;
+          createdAt?: string;
+          txHash?: string;
+          transactionHash?: string;
+          comment?: string;
+        };
+        const txHash = raw.txHash ?? raw.transactionHash;
+        if (!txHash || seenTxHashes.current.has(txHash)) return;
+
+        const incoming: MarketStake = {
+          address: raw.address ?? raw.userAddress ?? "",
+          side: raw.side ?? raw.position ?? "YES",
+          amountStroops: amountFromApi(raw.amount ?? "0"),
+          timestamp: raw.timestamp ?? raw.createdAt ?? new Date().toISOString(),
+          txHash,
+          ...(raw.comment ? { comment: raw.comment } : {}),
+        };
+
+        seenTxHashes.current.add(txHash);
+        setNewIds(new Set([txHash]));
+        setEntries((prev) => [incoming, ...prev].slice(0, 50));
+        setTimeout(() => setNewIds(new Set()), 600);
       } catch {
-        // ignore non-JSON messages
+        // ignore non-JSON or malformed messages
       }
     }
 
@@ -65,7 +106,9 @@ export default function ActivityLog({ participants, callId }: Props) {
           <p className="text-xs text-gray-500">Recent stakes</p>
         </div>
         {entries.length > 0 && (
-          <span className="text-xs text-gray-400">{entries.length} entries</span>
+          <span className="text-xs text-gray-400">
+            {entries.length} entries
+          </span>
         )}
       </div>
 
@@ -78,9 +121,27 @@ export default function ActivityLog({ participants, callId }: Props) {
       `}</style>
 
       <div className="divide-y divide-gray-100 max-h-[420px] overflow-y-auto">
-        {entries.length === 0 ? (
+        {loading && entries.length === 0 ? (
+          <div className="py-12 text-center text-gray-400" role="status">
+            <p className="text-sm">Loading recent stakes…</p>
+          </div>
+        ) : error ? (
+          <div className="py-12 text-center text-gray-500" role="alert">
+            <p className="text-sm font-semibold text-gray-700">
+              Activity could not be loaded
+            </p>
+            <p className="text-xs mt-1 text-gray-400">{error}</p>
+            {onRetry && (
+              <button
+                onClick={onRetry}
+                className="mt-3 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        ) : entries.length === 0 ? (
           <div className="py-12 text-center text-gray-400">
-            <p className="text-2xl mb-2">📭</p>
             <p className="text-sm">No activity yet. Be the first to stake!</p>
           </div>
         ) : (
@@ -99,17 +160,25 @@ export default function ActivityLog({ participants, callId }: Props) {
                     <span className="font-mono text-xs text-gray-700 truncate">
                       {entry.address.slice(0, 6)}…{entry.address.slice(-4)}
                     </span>
-                    <span className={`flex-shrink-0 text-xs font-bold px-2 py-0.5 rounded-full ${
-                      isUp ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                    }`}>
+                    <span
+                      className={`flex-shrink-0 text-xs font-bold px-2 py-0.5 rounded-full ${
+                        isUp
+                          ? "bg-green-100 text-green-700"
+                          : "bg-red-100 text-red-700"
+                      }`}
+                    >
                       {isUp ? "▲ UP" : "▼ DOWN"}
                     </span>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className={`text-sm font-semibold ${isUp ? "text-green-600" : "text-red-600"}`}>
-                      {entry.amount} USDC
+                    <p
+                      className={`text-sm font-semibold ${isUp ? "text-green-600" : "text-red-600"}`}
+                    >
+                      {formatAmount(entry.amountStroops)} {stakeToken}
                     </p>
-                    <p className="text-[10px] text-gray-400">{timeAgo(entry.timestamp)}</p>
+                    <p className="text-[10px] text-gray-400">
+                      {timeAgo(entry.timestamp)}
+                    </p>
                   </div>
                 </div>
                 {entry.comment && (
@@ -126,7 +195,9 @@ export default function ActivityLog({ participants, callId }: Props) {
       {visible < entries.length && (
         <div className="px-4 py-3 border-t border-gray-100 text-center">
           <button
-            onClick={() => setVisible((v) => Math.min(v + PAGE_SIZE, entries.length))}
+            onClick={() =>
+              setVisible((v) => Math.min(v + PAGE_SIZE, entries.length))
+            }
             className="text-sm text-indigo-600 hover:text-indigo-800 font-medium transition-colors"
           >
             Load more ({entries.length - visible} remaining)

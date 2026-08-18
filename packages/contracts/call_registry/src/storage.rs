@@ -30,6 +30,10 @@ pub enum DataKey {
     InstanceEntryCount,
     Sep10Domain(Address),
     Locked,
+    AccountFirstSeen(Address),
+    UserTrustlineCount(Address),
+    Proposal(u64),
+    ProposalCounter,
 }
 
 /// Store contract configuration
@@ -503,4 +507,86 @@ pub fn acquire_lock(env: &Env) {
 /// Release the reentrancy lock.
 pub fn release_lock(env: &Env) {
     env.storage().instance().set(&DataKey::Locked, &false);
+}
+
+/// Retrieve the ledger sequence when the user was first seen.
+pub fn get_account_first_seen(env: &Env, user: &Address) -> Option<u32> {
+    let key = DataKey::AccountFirstSeen(user.clone());
+    env.storage().persistent().get(&key)
+}
+
+/// Record the first time the user is seen.
+pub fn set_account_first_seen(env: &Env, user: &Address, sequence: u32) {
+    let key = DataKey::AccountFirstSeen(user.clone());
+    env.storage().persistent().set(&key, &sequence);
+    env.storage().persistent().extend_ttl(
+        &key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
+}
+
+/// Retrieve user trustline count.
+pub fn get_user_trustline_count(env: &Env, user: &Address) -> u32 {
+    let key = DataKey::UserTrustlineCount(user.clone());
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+// ── Proposals ───────────────────────────────────────────────────────────────
+
+pub fn next_proposal_id(env: &Env) -> u64 {
+    let counter: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::ProposalCounter)
+        .unwrap_or(0);
+    let next = counter + 1;
+    if counter == 0 {
+        inc_instance_entry_count(env, 1);
+    }
+    env.storage()
+        .instance()
+        .set(&DataKey::ProposalCounter, &next);
+    next
+}
+
+pub fn set_proposal(env: &Env, proposal: &crate::types::Proposal) {
+    let key = DataKey::Proposal(proposal.id);
+    env.storage().persistent().set(&key, proposal);
+    env.storage().persistent().extend_ttl(
+        &key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
+}
+
+pub fn get_proposal(env: &Env, proposal_id: u64) -> Option<crate::types::Proposal> {
+    let key = DataKey::Proposal(proposal_id);
+    let res: Option<crate::types::Proposal> = env.storage().persistent().get(&key);
+    if res.is_some() {
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+    }
+    res
+}
+
+pub fn remove_proposal(env: &Env, proposal_id: u64) {
+    let key = DataKey::Proposal(proposal_id);
+    if env.storage().persistent().has(&key) {
+        env.storage().persistent().remove(&key);
+    }
+}
+
+/// Record user trustline count.
+pub fn set_user_trustline_count(env: &Env, user: &Address, count: u32) {
+    let key = DataKey::UserTrustlineCount(user.clone());
+    env.storage().persistent().set(&key, &count);
+    env.storage().persistent().extend_ttl(
+        &key,
+        PERSISTENT_LIFETIME_THRESHOLD,
+        PERSISTENT_BUMP_AMOUNT,
+    );
 }

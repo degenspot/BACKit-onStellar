@@ -4,23 +4,22 @@ import { Fragment } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import StakingInterface from "./StakingInterface";
-import { CallDetailData } from "@/types";
+import { formatAmount, type Market, type MarketOdds } from "@/lib/backend";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  call: CallDetailData;
-  /** Amount is a 7-decimal string so no precision is lost. */
-  onStake: (amount: string, side: "YES" | "NO") => Promise<void>;
-  odds: { yes: number; no: number } | null;
+  market: Market;
+  odds: MarketOdds | null;
+  onStaked?: () => void | Promise<void>;
 }
 
 export default function StakingDrawer({
   isOpen,
   onClose,
-  call,
-  onStake,
+  market,
   odds,
+  onStaked,
 }: Props) {
   return (
     <Transition.Root show={isOpen} as={Fragment}>
@@ -61,6 +60,7 @@ export default function StakingDrawer({
                             Transaction Portal
                           </p>
                         </div>
+
                         <button
                           onClick={onClose}
                           className="rounded-xl bg-gray-100 p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-200 transition-all active:scale-90"
@@ -69,40 +69,53 @@ export default function StakingDrawer({
                         </button>
                       </div>
                     </div>
+
                     <div className="relative flex-1 p-6 sm:p-8">
                       <div className="mb-10 p-6 rounded-3xl bg-indigo-600 text-white shadow-xl shadow-indigo-200">
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-200 mb-2">
                           Market Target
                         </p>
+
                         <h4 className="text-2xl font-black leading-tight mb-4">
-                          {call.condition}
+                          {market.condition || market.title}
                         </h4>
+
                         <div className="flex gap-4">
+                          {market.targetPrice && (
+                            <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
+                              <span className="text-[10px] font-bold text-indigo-200 block mb-0.5 uppercase tracking-widest leading-none">
+                                Price Target
+                              </span>
+
+                              <span className="text-sm font-black text-white">
+                                $
+                                {Number(
+                                  market.targetPrice,
+                                ).toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+
                           <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
                             <span className="text-[10px] font-bold text-indigo-200 block mb-0.5 uppercase tracking-widest leading-none">
-                              Price Target
+                              Current Pool
                             </span>
+
                             <span className="text-sm font-black text-white">
-                              $
-                              {call.conditionJson?.targetPrice?.toLocaleString() ||
-                                (call.token.price * 1.5).toLocaleString()}
-                            </span>
-                          </div>
-                          <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10">
-                            <span className="text-[10px] font-bold text-indigo-200 block mb-0.5 uppercase tracking-widest leading-none">
-                              Pool Cap
-                            </span>
-                            <span className="text-sm font-black text-white">
-                              $100,000
+                              {formatAmount(
+                                market.totalYesStroops +
+                                  market.totalNoStroops,
+                              )}{" "}
+                              {market.stakeToken}
                             </span>
                           </div>
                         </div>
                       </div>
 
                       <StakingInterface
-                        call={call}
-                        onStake={onStake}
+                        market={market}
                         odds={odds}
+                        onStaked={onStaked}
                       />
                     </div>
 

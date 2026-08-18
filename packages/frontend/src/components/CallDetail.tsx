@@ -1,72 +1,176 @@
 "use client";
 
 import ReactMarkdown from "react-markdown";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import CallDetailHeader from "./CallDetailHeader";
 import StakeDistributionBar from "./StakeDistributionBar";
 import ActivityLog from "./ActivityLog";
 import StakingInterface from "./StakingInterface";
 import StakingDrawer from "./StakingDrawer";
 import PriceChart from "./PriceChart";
-import { CallDetailData } from "@/types";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useWalletContext } from "./WalletContext";
 import ClaimPayout from "./ClaimPayout";
 import PriceAlertToggle from "./PriceAlertToggle";
 import BookmarkButton from "./BookmarkButton";
 import ClosingAlertToggle from "./ClosingAlertToggle";
+import {
+  deriveOdds,
+  describeApiError,
+  fetchMarketStakes,
+  fetchPortfolio,
+  formatAmount,
+  stroopsToNumber,
+  type Market,
+  type MarketStake,
+  type PortfolioStake,
+} from "@/lib/backend";
 
-interface UserPosition {
-  stake: number;
-  side: "YES" | "NO";
-  payout: number;
+interface Props {
+  market: Market;
+  /** Re-reads the market after a stake or claim changes on-chain state. */
+  onRefresh?: () => void;
 }
 
-export default function CallDetail({ call }: { call: CallDetailData }) {
+export default function CallDetail({ market, onRefresh }: Props) {
   const [timeLeft, setTimeLeft] = useState("");
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [odds, setOdds] = useState<{ yes: number; no: number } | null>(null);
-  const [userPosition, setUserPosition] = useState<UserPosition | null>(null);
+  const [position, setPosition] = useState<PortfolioStake | null>(null);
+  const [recentStakes, setRecentStakes] = useState<MarketStake[]>([]);
+  const [stakesError, setStakesError] = useState<string | null>(null);
+  const [stakesLoading, setStakesLoading] = useState(true);
+
   const isMobile = useMediaQuery("(max-width: 768px)");
   const { publicKey } = useWalletContext();
 
-  useEffect(() => {
-    if (!publicKey) return;
-    fetch(`/api/calls/${call.id}/position?address=${publicKey}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => data && setUserPosition(data))
-      .catch(() => null);
-  }, [call.id, publicKey]);
+  const odds = useMemo(
+    () => deriveOdds(market.totalYesStroops, market.totalNoStroops),
+    [market.totalYesStroops, market.totalNoStroops],
+  );
+
+  const loadRecentStakes = useCallback(
+    async (signal?: AbortSignal) => {
+      setStakesLoading(true);
+
+      try {
+        const stakes = await fetchMarketStakes(market.id, 50, { signal });
+
+        if (signal?.aborted) return;
+
+        setRecentStakes(stakes);
+        setStakesError(null);
+      } catch (err) {
+        if (signal?.aborted) return;
+
+        // No fake activity: the log renders its own error/empty state instead.
+        setRecentStakes([]);
+        setStakesError(describeApiError(err));
+      } finally {
+        if (!signal?.aborted) {
+          setStakesLoading(false);
+        }
+      }
+    },
+    [market.id],
+  );
 
   useEffect(() => {
-    // Fetch odds from backend
-    fetch(`/api/calls/${call.id}/odds`)
-      .then((res) => res.json())
-      .then((data) => setOdds(data))
-      .catch(() => setOdds({ yes: 2.0, no: 2.0 }));
+    const controller = new AbortController();
+
+    loadRecentStakes(controller.signal);
+
+    return () => controller.abort();
+  }, [loadRecentStakes]);
+
+  const loadPosition = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!publicKey) {
+        setPosition(null);
+        return;
+      }
+
+      try {
+        const portfolio = await fetchPortfolio(publicKey, { signal });
+
+        if (signal?.aborted) return;
+
+        setPosition(
+          portfolio.stakes.find((stake) => stake.callId === market.id) ?? null,
+        );
+      } catch {
+        if (!signal?.aborted) {
+          setPosition(null);
+        }
+      }
+    },
+    [publicKey, market.id],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    loadPosition(controller.signal);
+
+    return () => controller.abort();
+  }, [loadPosition]);
+
+  useEffect(() => {
+    if (!market.endTime) {
+      setTimeLeft(market.resolved ? "Resolved" : "No deadline");
+      return;
+    }
+
+    const tick = () => {
+      const diff =
+        new Date(market.endTime as string).getTime() - Date.now();
+
+      if (diff <= 0) {
+        setTimeLeft(market.resolved ? "Resolved" : "Closed");
+        return false;
+      }
+
+      const hrs = Math.floor(diff / 36e5);
+      const mins = Math.floor((diff % 36e5) / 6e4);
+      const secs = Math.floor((diff % 6e4) / 1000);
+
+      setTimeLeft(`${hrs}h ${mins}m ${secs}s`);
+
+      return true;
+    };
+
+    tick();
 
     const interval = setInterval(() => {
-      const diff = new Date(call.endTime).getTime() - Date.now();
-      if (diff <= 0) {
-        setTimeLeft("Resolved");
+      if (!tick()) {
         clearInterval(interval);
-      } else {
-        const hrs = Math.floor(diff / 36e5);
-        const mins = Math.floor((diff % 36e5) / 6e4);
-        const secs = Math.floor((diff % 6e4) / 1000);
-        setTimeLeft(`${hrs}h ${mins}m ${secs}s`);
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [call.endTime, call.id]);
+  }, [market.endTime, market.resolved]);
 
-  const handleStake = async (amount: string, side: "YES" | "NO") => {
-    // Amount arrives as a 7-decimal string; submission is wired up separately.
-    console.log(`Staking ${amount} on ${side} for call ${call.id}`);
-    // Close drawer after successful stake on mobile
-    if (isMobile) setIsDrawerOpen(false);
-  };
+  const handleStaked = useCallback(async () => {
+    if (isMobile) {
+      setIsDrawerOpen(false);
+    }
+
+    onRefresh?.();
+
+    await Promise.all([loadRecentStakes(), loadPosition()]);
+  }, [
+    isMobile,
+    onRefresh,
+    loadRecentStakes,
+    loadPosition,
+  ]);
+
+  const handleClaimed = useCallback(async () => {
+    onRefresh?.();
+    await loadPosition();
+  }, [onRefresh, loadPosition]);
+
+  const poolStroops =
+    market.totalYesStroops + market.totalNoStroops;
 
   return (
     <main className="max-w-7xl mx-auto p-4 lg:py-10">
@@ -74,67 +178,95 @@ export default function CallDetail({ call }: { call: CallDetailData }) {
       <div className="lg:grid lg:grid-cols-3 lg:gap-10">
         {/* Left column - Main content */}
         <div className="lg:col-span-2 space-y-8">
-          <CallDetailHeader call={call} timeLeft={timeLeft} odds={odds} />
+          <CallDetailHeader
+            market={market}
+            timeLeft={timeLeft}
+            odds={odds}
+          />
 
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <ClosingAlertToggle
-              callId={call.id}
+              callId={market.id}
               walletAddress={publicKey ?? undefined}
               hasStakeOrBookmark={
-                !!userPosition ||
-                !!(call as { isBookmarked?: boolean }).isBookmarked
+                !!position || market.isBookmarked
               }
             />
+
             <BookmarkButton
-              callId={String(call.id)}
-              initialBookmarked={
-                (call as { isBookmarked?: boolean }).isBookmarked ?? false
-              }
-              initialCount={
-                (call as { bookmarkCount?: number }).bookmarkCount ?? 0
-              }
+              callId={market.id}
+              initialBookmarked={market.isBookmarked}
+              initialCount={market.bookmarkCount}
             />
           </div>
 
           {/* Historical Price Chart */}
-          <PriceChart
-            pairId={call.pairId}
-            startPrice={call.startPrice}
-            createdAt={call.createdAt}
-            currentPrice={call.token.price}
-          />
+          {market.pairId && (
+            <PriceChart
+              pairId={market.pairId}
+              startPrice={
+                market.startPrice
+                  ? Number(market.startPrice)
+                  : undefined
+              }
+              createdAt={market.createdAt}
+              currentPrice={
+                market.currentPrice
+                  ? Number(market.currentPrice)
+                  : 0
+              }
+            />
+          )}
 
           {/* Condition/Thesis section */}
           <div className="bg-white rounded-2xl border border-gray-100 p-8 shadow-sm">
             <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
               <span className="w-1.5 h-6 bg-indigo-600 rounded-full" />
-              Analysis & Thesis
+              Analysis &amp; Thesis
             </h2>
+
             <div className="prose prose-slate max-w-none prose-headings:font-bold prose-a:text-indigo-600">
-              <ReactMarkdown>{call.thesis}</ReactMarkdown>
+              {market.thesis ? (
+                <ReactMarkdown>{market.thesis}</ReactMarkdown>
+              ) : (
+                <p className="text-sm text-gray-400">
+                  The creator did not publish a thesis for this market.
+                </p>
+              )}
             </div>
           </div>
 
           {/* Activity Log - Desktop */}
           <div className="hidden lg:block">
-            <ActivityLog participants={call.participants} callId={call.id} />
+            <ActivityLog
+              stakes={recentStakes}
+              callId={market.id}
+              stakeToken={market.stakeToken}
+              loading={stakesLoading}
+              error={stakesError}
+              onRetry={() => loadRecentStakes()}
+            />
           </div>
         </div>
 
         {/* Right column - Staking / Claim (Desktop) */}
         <div className="hidden lg:block space-y-8">
-          {call.resolved && userPosition ? (
+          {market.resolved && position ? (
             <ClaimPayout
-              call={call}
-              userStake={userPosition.stake}
-              userSide={userPosition.side}
-              payoutAmount={userPosition.payout}
+              market={market}
+              stake={position}
+              onClaimed={handleClaimed}
             />
-          ) : !call.resolved ? (
+          ) : !market.resolved ? (
             <>
-              <StakingInterface call={call} onStake={handleStake} odds={odds} />
+              <StakingInterface
+                market={market}
+                odds={odds}
+                onStaked={handleStaked}
+              />
+
               <PriceAlertToggle
-                callId={call.id}
+                callId={market.id}
                 walletAddress={publicKey ?? undefined}
               />
             </>
@@ -146,26 +278,37 @@ export default function CallDetail({ call }: { call: CallDetailData }) {
               <h4 className="font-bold text-gray-900 uppercase tracking-widest text-xs">
                 Market Liquidity
               </h4>
+
               <span className="bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-1 rounded-md">
                 LIVE POOL
               </span>
             </div>
+
             <StakeDistributionBar
-              yes={call.stakes.yes}
-              no={call.stakes.no}
+              yes={stroopsToNumber(market.totalYesStroops)}
+              no={stroopsToNumber(market.totalNoStroops)}
+              currency={market.stakeToken}
               variant="lg"
             />
+
+            <p className="mt-4 text-xs text-gray-500">
+              Total pool:{" "}
+              <span className="font-bold text-gray-800">
+                {formatAmount(poolStroops)} {market.stakeToken}
+              </span>
+            </p>
           </div>
         </div>
 
         {/* Mobile Staking Button */}
-        {isMobile && !call.resolved && (
+        {isMobile && !market.resolved && (
           <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-xl border-t border-gray-200 z-50">
             <button
               onClick={() => setIsDrawerOpen(true)}
               className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-indigo-100 active:scale-95 transition-all"
             >
-              Place Stake — {odds?.yes || "2.0"}x / {odds?.no || "2.0"}x
+              Place Stake — {Number(odds.yes).toFixed(2)}x /{" "}
+              {Number(odds.no).toFixed(2)}x
             </button>
           </div>
         )}
@@ -174,17 +317,24 @@ export default function CallDetail({ call }: { call: CallDetailData }) {
       {/* Activity Log - Mobile */}
       {isMobile && (
         <div className="mt-10 pb-24">
-          {call.resolved && userPosition && (
+          {market.resolved && position && (
             <div className="mb-6">
               <ClaimPayout
-                call={call}
-                userStake={userPosition.stake}
-                userSide={userPosition.side}
-                payoutAmount={userPosition.payout}
+                market={market}
+                stake={position}
+                onClaimed={handleClaimed}
               />
             </div>
           )}
-          <ActivityLog participants={call.participants} callId={call.id} />
+
+          <ActivityLog
+            stakes={recentStakes}
+            callId={market.id}
+            stakeToken={market.stakeToken}
+            loading={stakesLoading}
+            error={stakesError}
+            onRetry={() => loadRecentStakes()}
+          />
         </div>
       )}
 
@@ -192,9 +342,9 @@ export default function CallDetail({ call }: { call: CallDetailData }) {
       <StakingDrawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
-        call={call}
-        onStake={handleStake}
+        market={market}
         odds={odds}
+        onStaked={handleStaked}
       />
     </main>
   );

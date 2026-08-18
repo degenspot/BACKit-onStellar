@@ -77,7 +77,6 @@ mod admin;
 mod duration;
 mod errors;
 mod events;
-mod withdrawal;
 #[cfg(test)]
 mod fuzz_tests;
 mod governance;
@@ -88,6 +87,7 @@ mod storage;
 #[cfg(test)]
 mod test;
 pub mod types;
+mod withdrawal;
 
 use backit_shared::{OUTCOME_DOWN, OUTCOME_UP};
 use errors::CallRegistryError;
@@ -178,12 +178,22 @@ impl CallRegistry {
             admin_threshold: 1,
             base_stake_limit: 0,
             reputation_multiplier: 0,
+            global_gate_kind: None,
+            global_gate_min_account_age: 0,
+            global_gate_min_xlm_balance: 0,
+            global_gate_min_trustlines: 0,
+            global_gate_badge: None,
         };
 
         set_config(&env, &config);
         env.storage()
             .instance()
             .set(&Symbol::new(&env, "version"), &CONTRACT_VERSION);
+        // Record the ledger sequence at contract deployment/initialization so
+        // tests and gating logic can derive a sensible "first seen" fallback.
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, "deployed_seq"), &env.ledger().sequence());
         // Track the 'version' instance key (Config key tracked inside set_config)
         inc_instance_entry_count(&env, 1);
         extend_storage_ttl(&env);
@@ -238,6 +248,11 @@ impl CallRegistry {
             metadata_hash,
             condition,
             outcome_count,
+            gate_kind,
+            gate_min_account_age,
+            gate_min_xlm_balance,
+            gate_min_trustlines,
+            gate_badge,
         } = args;
 
         let mut share_tokens = Map::new(&env);
@@ -310,10 +325,20 @@ impl CallRegistry {
             cancelled: false,
             metadata_version: 0,
             share_tokens,
+            gate_kind,
+            gate_min_account_age,
+            gate_min_xlm_balance,
+            gate_min_trustlines,
+            gate_badge,
         };
 
         set_call(&env, &call);
         record_call_created(&env);
+
+        // Track first interaction
+        if get_account_first_seen(&env, &creator).is_none() {
+            set_account_first_seen(&env, &creator, env.ledger().sequence());
+        }
 
         // Track creator reputation: increment total_created
         let mut creator_stats = get_creator_stats(&env, &creator);
@@ -493,7 +518,7 @@ impl CallRegistry {
         emit_call_metadata_updated(
             &env,
             call_id,
-        &creator,
+            &creator,
             &old_hash,
             &new_metadata_hash,
             call.metadata_version,
@@ -596,6 +621,20 @@ impl CallRegistry {
         // Validate position is within valid range
         if position < 1 || position > call.outcome_count {
             return Err(CallRegistryError::InvalidPosition);
+        }
+
+        // Track first interaction
+        if get_account_first_seen(&env, &staker).is_none() {
+            let deployed_seq: u32 = env
+                .storage()
+                .instance()
+                .get(&Symbol::new(&env, "deployed_seq"))
+                .unwrap_or(env.ledger().sequence());
+            set_account_first_seen(&env, &staker, deployed_seq);
+        }
+
+        if !Self::check_user_qualifies(env.clone(), staker.clone(), call_id) {
+            panic!("User does not meet the staking gate requirements");
         }
 
         let mut outcome_stakers = call.stakes.get(position).unwrap_or_else(|| Map::new(&env));
@@ -829,6 +868,52 @@ impl CallRegistry {
     /// Pass `0` to disable the cutoff.
     pub fn set_staking_cutoff(env: Env, new_cutoff: u64) {
         admin::set_staking_cutoff(env, new_cutoff);
+    }
+
+    /// Propose a multisig admin operation.
+    pub fn propose_admin_operation(
+        env: Env,
+        proposer: Address,
+        operation: types::Operation,
+        timelock_seconds: u64,
+    ) -> Result<u64, CallRegistryError> {
+        admin::propose_admin_operation(env, proposer, operation, timelock_seconds)
+    }
+
+    /// Approve a proposal.
+    pub fn approve_admin_proposal(
+        env: Env,
+        admin_addr: Address,
+        proposal_id: u64,
+    ) -> Result<(), CallRegistryError> {
+        admin::approve_admin_proposal(env, admin_addr, proposal_id)
+    }
+
+    /// Veto a proposal.
+    pub fn veto_admin_proposal(
+        env: Env,
+        admin_addr: Address,
+        proposal_id: u64,
+    ) -> Result<(), CallRegistryError> {
+        admin::veto_admin_proposal(env, admin_addr, proposal_id)
+    }
+
+    /// Execute a proposal after timelock and approvals.
+    pub fn execute_admin_proposal(
+        env: Env,
+        caller: Address,
+        proposal_id: u64,
+    ) -> Result<(), CallRegistryError> {
+        admin::execute_admin_proposal(env, caller, proposal_id)
+    }
+
+    /// Cancel a proposal when timelock expired without sufficient approvals.
+    pub fn cancel_admin_proposal(
+        env: Env,
+        caller: Address,
+        proposal_id: u64,
+    ) -> Result<(), CallRegistryError> {
+        admin::cancel_admin_proposal(env, caller, proposal_id)
     }
 
     /// Set the maximum allowed call duration in seconds (admin only).
@@ -1408,11 +1493,7 @@ impl CallRegistry {
     /// * If the caller is not the call creator.
     /// * If any outcome has been staked on by a third party.
     /// * If the call is already settled or cancelled.
-    pub fn cancel_call(
-        env: Env,
-        creator: Address,
-        call_id: u64,
-    ) -> Result<(), CallRegistryError> {
+    pub fn cancel_call(env: Env, creator: Address, call_id: u64) -> Result<(), CallRegistryError> {
         creator.require_auth();
         reentrancy_guard!(&env);
 
@@ -1671,12 +1752,7 @@ impl CallRegistry {
     /// * `staker`   -- address withdrawing their stake (must sign).
     /// * `call_id`  -- the call to withdraw from.
     /// * `position` -- outcome position (1..=outcome_count).
-    pub fn withdraw_stake(
-        env: Env,
-        staker: Address,
-        call_id: u64,
-        position: u32,
-    ) -> (i128, i128) {
+    pub fn withdraw_stake(env: Env, staker: Address, call_id: u64, position: u32) -> (i128, i128) {
         let config = get_config(&env).expect("not initialized");
         assert!(!config.paused, "Contract is paused");
         if storage::is_locked(&env) {
@@ -1686,5 +1762,141 @@ impl CallRegistry {
         let result = withdrawal::execute_withdrawal(&env, staker, call_id, position);
         storage::release_lock(&env);
         result
+    }
+
+    /// Set a global staking gate that applies to all calls without a specific gate
+    pub fn set_global_gate(
+        env: Env,
+        gate_kind: Option<u32>,
+        gate_min_account_age: u32,
+        gate_min_xlm_balance: i128,
+        gate_min_trustlines: u32,
+        gate_badge: Option<Address>,
+    ) {
+        let mut config = get_config(&env).expect("not initialized");
+        config.admin.require_auth();
+        config.global_gate_kind = gate_kind;
+        config.global_gate_min_account_age = gate_min_account_age;
+        config.global_gate_min_xlm_balance = gate_min_xlm_balance;
+        config.global_gate_min_trustlines = gate_min_trustlines;
+        config.global_gate_badge = gate_badge;
+        set_config(&env, &config);
+    }
+
+    /// Admin function to set user trustline count (sync from backend)
+    pub fn set_user_trustline_count(env: Env, user: Address, count: u32) {
+        let config = get_config(&env).expect("not initialized");
+        config.admin.require_auth();
+        storage::set_user_trustline_count(&env, &user, count);
+    }
+
+    /// Returns the active gate fields for a call (call-local overrides global).
+    pub fn get_call_gate_fields(
+        env: Env,
+        call_id: u64,
+    ) -> Option<(Option<u32>, u32, i128, u32, Option<Address>)> {
+        let call = get_call(&env, call_id)?;
+        if call.gate_kind.is_some() {
+            Some((
+                call.gate_kind,
+                call.gate_min_account_age,
+                call.gate_min_xlm_balance,
+                call.gate_min_trustlines,
+                call.gate_badge,
+            ))
+        } else {
+            let config = get_config(&env)?;
+            Some((
+                config.global_gate_kind,
+                config.global_gate_min_account_age,
+                config.global_gate_min_xlm_balance,
+                config.global_gate_min_trustlines,
+                config.global_gate_badge,
+            ))
+        }
+    }
+
+    /// Return the active `StakingGate` for a call, combining per-call and
+    /// global gates into a single enum for convenient views.
+    pub fn get_call_gate(env: Env, call_id: u64) -> Option<StakingGate> {
+        let fields = Self::get_call_gate_fields(env.clone(), call_id)?;
+        let (gate_kind_opt, min_account_age, min_xlm_balance, min_trustlines, badge_opt) = fields;
+        let gate_kind = match gate_kind_opt {
+            Some(k) => k,
+            None => return None,
+        };
+
+        if gate_kind == GATE_NONE {
+            return Some(StakingGate::None);
+        }
+
+        if gate_kind == GATE_MIN_ACCOUNT_AGE {
+            return Some(StakingGate::MinAccountAge(min_account_age));
+        }
+
+        if gate_kind == GATE_MIN_XLM_BALANCE {
+            return Some(StakingGate::MinXlmBalance(min_xlm_balance));
+        }
+
+        if gate_kind == GATE_MIN_TRUSTLINES {
+            return Some(StakingGate::MinTrustlines(min_trustlines));
+        }
+
+        if gate_kind == GATE_HOLDS_BADGE {
+            if let Some(badge) = badge_opt {
+                return Some(StakingGate::HoldsBadge(badge));
+            }
+            return None;
+        }
+
+        None
+    }
+
+    /// Check if a user qualifies to stake on a call
+    pub fn check_user_qualifies(env: Env, user: Address, call_id: u64) -> bool {
+        let fields = match Self::get_call_gate_fields(env.clone(), call_id) {
+            Some(f) => f,
+            None => return true,
+        };
+        let (gate_kind_opt, min_account_age, min_xlm_balance, min_trustlines, badge_opt) = fields;
+        let gate_kind = match gate_kind_opt {
+            Some(k) => k,
+            None => return true,
+        };
+
+        if gate_kind == GATE_NONE {
+            return true;
+        }
+
+        if gate_kind == GATE_MIN_ACCOUNT_AGE {
+            let first_seen =
+                get_account_first_seen(&env, &user).unwrap_or_else(|| env.ledger().sequence());
+            let current = env.ledger().sequence();
+            return current >= first_seen + min_account_age;
+        }
+
+        if gate_kind == GATE_MIN_XLM_BALANCE {
+            let xlm_sac_addr: Address = env
+                .storage()
+                .instance()
+                .get(&Symbol::new(&env, "xlm_sac_addr"))
+                .expect("XLM SAC not configured");
+            let balance = soroban_sdk::token::Client::new(&env, &xlm_sac_addr).balance(&user);
+            return balance >= min_xlm_balance;
+        }
+
+        if gate_kind == GATE_MIN_TRUSTLINES {
+            return get_user_trustline_count(&env, &user) >= min_trustlines;
+        }
+
+        if gate_kind == GATE_HOLDS_BADGE {
+            if let Some(badge) = badge_opt {
+                return soroban_sdk::token::Client::new(&env, &badge).balance(&user) > 0;
+            }
+            return false;
+        }
+
+        // Unknown kind - be conservative and reject.
+        false
     }
 }

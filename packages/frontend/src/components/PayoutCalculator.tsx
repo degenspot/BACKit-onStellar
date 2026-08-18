@@ -1,72 +1,71 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-interface Odds {
-  yes: number;
-  no: number;
-  totalPool: number;
-}
+import { divideToDecimalString, formatAmount } from "@/lib/backend";
 
 interface Props {
-  callId: number | string;
-  amount: number;
+  /** Persisted YES pool in stroops. */
+  yesPoolStroops: bigint;
+  /** Persisted NO pool in stroops. */
+  noPoolStroops: bigint;
+  /** Stake amount in stroops, or `null` when the input is empty/invalid. */
+  amountStroops: bigint | null;
   side: "YES" | "NO" | null;
+  stakeToken: string;
 }
 
-const PLATFORM_FEE = 0.01; // 1%
+/** Platform fee in basis points (1%). */
+const PLATFORM_FEE_BPS = 100n;
+const BPS = 10_000n;
 
-// Recalculate multiplier accounting for the user's stake changing the pool.
-function calcMultiplier(
-  odds: Odds,
-  side: "YES" | "NO",
-  stakeAmount: number
-): number {
-  if (stakeAmount <= 0) return side === "YES" ? odds.yes : odds.no;
-
-  // Simple AMM-style adjustment: new multiplier = totalPool / (side pool + stake)
-  // We approximate the side pool from the base multiplier and total pool.
-  const baseMultiplier = side === "YES" ? odds.yes : odds.no;
-  const sidePool = odds.totalPool / baseMultiplier;
-  const newMultiplier = (odds.totalPool + stakeAmount) / (sidePool + stakeAmount);
-  return Math.max(1.01, newMultiplier);
+/**
+ * Parimutuel payout including the user's own stake:
+ * `stake * (pool + stake) / (sidePool + stake)`.
+ *
+ * Everything is integer math on stroops, so the preview matches what the
+ * contract pays out for the same pool state.
+ */
+export function calculateGrossPayout(
+  amountStroops: bigint,
+  sidePoolStroops: bigint,
+  poolStroops: bigint,
+): bigint {
+  const newSidePool = sidePoolStroops + amountStroops;
+  if (newSidePool <= 0n) return amountStroops;
+  return (amountStroops * (poolStroops + amountStroops)) / newSidePool;
 }
 
-export default function PayoutCalculator({ callId, amount, side }: Props) {
-  const [odds, setOdds] = useState<Odds | null>(null);
-  const [loading, setLoading] = useState(false);
+export default function PayoutCalculator({
+  yesPoolStroops,
+  noPoolStroops,
+  amountStroops,
+  side,
+  stakeToken,
+}: Props) {
+  if (!side || amountStroops === null || amountStroops <= 0n) return null;
 
-  useEffect(() => {
-    if (!callId) return;
-    setLoading(true);
-    fetch(`/api/calls/${callId}/odds`)
-      .then((r) => r.json())
-      .then(setOdds)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [callId]);
-
-  if (!side || amount <= 0) return null;
-
-  const multiplier = odds ? calcMultiplier(odds, side, amount) : (side === "YES" ? 2.0 : 2.0);
-  const grossPayout = amount * multiplier;
-  const fee = grossPayout * PLATFORM_FEE;
-  const netPayout = grossPayout - fee;
-  const profit = netPayout - amount;
-  const isProfit = profit > 0;
+  const pool = yesPoolStroops + noPoolStroops;
+  const sidePool = side === "YES" ? yesPoolStroops : noPoolStroops;
+  const gross = calculateGrossPayout(amountStroops, sidePool, pool);
+  const fee = (gross * PLATFORM_FEE_BPS) / BPS;
+  const net = gross - fee;
+  const profit = net - amountStroops;
+  const isProfit = profit > 0n;
+  const effectiveMultiplier = divideToDecimalString(gross, amountStroops, 2);
 
   return (
     <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 space-y-3 text-sm">
-      {loading && (
-        <p className="text-[10px] text-indigo-400 uppercase tracking-widest font-bold animate-pulse">
-          Fetching live odds…
+      {pool === 0n && (
+        <p className="text-[10px] text-indigo-400 uppercase tracking-widest font-bold">
+          Empty pool — you would be the first staker
         </p>
       )}
 
-      {/* Main sentence */}
       <p className="text-gray-700 font-medium leading-snug">
         If you stake{" "}
-        <span className="font-black text-gray-900">{amount} USDC</span> on{" "}
+        <span className="font-black text-gray-900">
+          {formatAmount(amountStroops)} {stakeToken}
+        </span>{" "}
+        on{" "}
         <span
           className={`font-black ${side === "YES" ? "text-green-600" : "text-red-600"}`}
         >
@@ -74,18 +73,18 @@ export default function PayoutCalculator({ callId, amount, side }: Props) {
         </span>
         , your potential payout is{" "}
         <span className="font-black text-indigo-700">
-          {grossPayout.toFixed(2)} USDC ({multiplier.toFixed(2)}x)
+          {formatAmount(gross)} {stakeToken} ({effectiveMultiplier}x)
         </span>
         .
       </p>
 
-      {/* Fee row */}
       <div className="flex justify-between text-[11px] font-semibold text-gray-500">
         <span>Platform fee: 1%</span>
-        <span className="text-red-500">−{fee.toFixed(2)} USDC</span>
+        <span className="text-red-500">
+          −{formatAmount(fee)} {stakeToken}
+        </span>
       </div>
 
-      {/* Net payout */}
       <div className="flex justify-between items-center border-t border-indigo-100 pt-3">
         <span className="text-[11px] font-black uppercase tracking-widest text-gray-500">
           Net payout
@@ -93,11 +92,10 @@ export default function PayoutCalculator({ callId, amount, side }: Props) {
         <span
           className={`text-xl font-black ${isProfit ? "text-emerald-600" : "text-red-500"}`}
         >
-          {netPayout.toFixed(2)} USDC
+          {formatAmount(net)} {stakeToken}
         </span>
       </div>
 
-      {/* Profit / loss badge */}
       <div
         className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black ${
           isProfit
@@ -108,7 +106,7 @@ export default function PayoutCalculator({ callId, amount, side }: Props) {
         <span>{isProfit ? "▲" : "▼"}</span>
         <span>
           {isProfit ? "+" : ""}
-          {profit.toFixed(2)} USDC profit
+          {formatAmount(profit)} {stakeToken} profit
         </span>
       </div>
     </div>

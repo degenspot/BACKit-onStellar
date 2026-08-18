@@ -49,7 +49,7 @@ mod call_registry {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register(CallRegistry, ());
+        let contract_id = env.register_contract(None, CallRegistry);
         let client = CallRegistryClient::new(&env, &contract_id);
 
         let admin = Address::generate(&env);
@@ -127,6 +127,11 @@ mod call_registry {
                 metadata_hash: metadata_hash.clone(),
                 condition: ConditionType::TargetAbove(100_000_000_i128),
                 outcome_count: *outcome_count,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         )
     }
@@ -155,7 +160,7 @@ mod call_registry {
     #[test]
     fn test_initialize() {
         let (env, admin, outcome_manager, _) = create_test_env();
-        let contract_id = env.register(CallRegistry, ());
+        let contract_id = env.register_contract(None, CallRegistry);
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
@@ -278,6 +283,11 @@ mod call_registry {
                 metadata_hash: metadata_hash.clone(),
                 condition: crate::types::ConditionType::TargetAbove(100_000_000_i128),
                 outcome_count: 2u32,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
 
@@ -370,6 +380,169 @@ mod call_registry {
             Err(Ok(CallRegistryError::FeeTooHigh)),
             "fee > 10_000 should return FeeTooHigh"
         );
+    }
+
+    #[test]
+    fn test_multisig_n_of_m_approval_exec() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let outcome_manager = Address::generate(&env);
+        client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
+
+        // configure multisig: 3 admins, threshold 2
+        let admin_a = Address::generate(&env);
+        let admin_b = Address::generate(&env);
+        let admin_c = Address::generate(&env);
+
+        let mut cfg = client.get_config();
+        let mut v = soroban_sdk::Vec::new(&env);
+        v.push_back(admin_a.clone());
+        v.push_back(admin_b.clone());
+        v.push_back(admin_c.clone());
+        cfg.admin_set = v;
+        cfg.admin_threshold = 2;
+        env.as_contract(&contract_id, || crate::storage::set_config(&env, &cfg));
+
+        // Propose set_fee to 123 bps with 1-second timelock
+        let proposal_id =
+            client.propose_admin_operation(&admin, &crate::types::Operation::SetFee(123u32), &1u64);
+
+        // Approve by two admins
+        client.approve_admin_proposal(&admin_a, &proposal_id);
+        client.approve_admin_proposal(&admin_b, &proposal_id);
+
+        // advance ledger past timelock
+        env.ledger().set_timestamp(env.ledger().timestamp() + 2);
+
+        // execute (any caller)
+        let caller = Address::generate(&env);
+        client.execute_admin_proposal(&caller, &proposal_id);
+
+        let cfg2 = client.get_config();
+        assert_eq!(cfg2.fee_bps, 123u32);
+    }
+
+    #[test]
+    fn test_multisig_veto_kills_proposal() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let outcome_manager = Address::generate(&env);
+        client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
+
+        let admin_a = Address::generate(&env);
+        let admin_b = Address::generate(&env);
+        let mut cfg = client.get_config();
+        let mut v = soroban_sdk::Vec::new(&env);
+        v.push_back(admin_a.clone());
+        v.push_back(admin_b.clone());
+        cfg.admin_set = v;
+        cfg.admin_threshold = 2;
+        env.as_contract(&contract_id, || crate::storage::set_config(&env, &cfg));
+
+        let proposal_id = client.propose_admin_operation(
+            &admin,
+            &crate::types::Operation::SetMinStake(5_000_000_i128),
+            &1u64,
+        );
+
+        // veto by admin_a
+        client.veto_admin_proposal(&admin_a, &proposal_id);
+
+        // advance past timelock
+        env.ledger().set_timestamp(env.ledger().timestamp() + 2);
+
+        let caller = Address::generate(&env);
+        let res = client.try_execute_admin_proposal(&caller, &proposal_id);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_cancel_after_timelock_insufficient_approvals() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let outcome_manager = Address::generate(&env);
+        client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
+
+        let admin_a = Address::generate(&env);
+        let admin_b = Address::generate(&env);
+        let mut cfg = client.get_config();
+        let mut v = soroban_sdk::Vec::new(&env);
+        v.push_back(admin_a.clone());
+        v.push_back(admin_b.clone());
+        cfg.admin_set = v;
+        cfg.admin_threshold = 2;
+        env.as_contract(&contract_id, || crate::storage::set_config(&env, &cfg));
+
+        let proposal_id = client.propose_admin_operation(
+            &admin,
+            &crate::types::Operation::SetMinStake(7_000_000_i128),
+            &1u64,
+        );
+
+        // only one approval
+        client.approve_admin_proposal(&admin_a, &proposal_id);
+
+        // advance past timelock and cancel
+        env.ledger().set_timestamp(env.ledger().timestamp() + 2);
+        let caller = Address::generate(&env);
+        client.cancel_admin_proposal(&caller, &proposal_id);
+
+        let res: Option<crate::types::Proposal> = env.as_contract(&contract_id, || {
+            crate::storage::get_proposal(&env, proposal_id)
+        });
+        assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_admin_add_remove_via_proposal() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, CallRegistry);
+        let client = CallRegistryClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let outcome_manager = Address::generate(&env);
+        client.initialize(&admin, &outcome_manager, &TEST_MIN_STAKE);
+
+        let admin_a = Address::generate(&env);
+        let admin_b = Address::generate(&env);
+        let mut cfg = client.get_config();
+        let mut v = soroban_sdk::Vec::new(&env);
+        v.push_back(admin_a.clone());
+        v.push_back(admin_b.clone());
+        cfg.admin_set = v;
+        cfg.admin_threshold = 2;
+        env.as_contract(&contract_id, || crate::storage::set_config(&env, &cfg));
+
+        let new_admin = Address::generate(&env);
+        let proposal_id = client.propose_admin_operation(
+            &admin,
+            &crate::types::Operation::AddAdmin(new_admin.clone()),
+            &1u64,
+        );
+        client.approve_admin_proposal(&admin_a, &proposal_id);
+        client.approve_admin_proposal(&admin_b, &proposal_id);
+        env.ledger().set_timestamp(env.ledger().timestamp() + 2);
+        let caller = Address::generate(&env);
+        client.execute_admin_proposal(&caller, &proposal_id);
+
+        let cfg2 = client.get_config();
+        // new_admin should be present
+        let mut found = false;
+        for a in cfg2.admin_set.iter() {
+            if a == new_admin {
+                found = true;
+            }
+        }
+        assert!(found, "new admin should be added");
     }
 
     // ── extend_call_ttl ───────────────────────────────────────────────────────
@@ -656,6 +829,11 @@ mod call_registry {
                 metadata_hash: metadata_hash.clone(),
                 condition: ConditionType::TargetAbove(100_000_000_i128),
                 outcome_count: 2,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
 
@@ -725,6 +903,11 @@ mod call_registry {
                 metadata_hash: metadata_hash.clone(),
                 condition: ConditionType::TargetAbove(100_000_000_i128),
                 outcome_count: 2,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
 
@@ -763,6 +946,11 @@ mod call_registry {
                 metadata_hash: metadata_hash.clone(),
                 condition: ConditionType::TargetAbove(100_000_000_i128),
                 outcome_count: 2,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
 
@@ -936,8 +1124,15 @@ mod call_registry {
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
         let call = create_call_with_default_condition(
-            &client, &creator, &stake_token, &100_000_000_i128,
-            &2000u64, &token_address, &pair_id, &metadata_hash, &2,
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &2000u64,
+            &token_address,
+            &pair_id,
+            &metadata_hash,
+            &2,
         );
         client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
         let (refund, penalty) = client.withdraw_stake(&staker, &call.id, &1);
@@ -961,8 +1156,15 @@ mod call_registry {
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
         let call = create_call_with_default_condition(
-            &client, &creator, &stake_token, &100_000_000_i128,
-            &2000u64, &token_address, &pair_id, &metadata_hash, &2,
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &2000u64,
+            &token_address,
+            &pair_id,
+            &metadata_hash,
+            &2,
         );
         client.stake_on_call(&staker, &call.id, &10_000_001_i128, &1);
         let (refund, penalty) = client.withdraw_stake(&staker, &call.id, &1);
@@ -986,8 +1188,15 @@ mod call_registry {
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
         let call = create_call_with_default_condition(
-            &client, &creator, &stake_token, &100_000_000_i128,
-            &2000u64, &token_address, &pair_id, &metadata_hash, &2,
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &2000u64,
+            &token_address,
+            &pair_id,
+            &metadata_hash,
+            &2,
         );
         client.withdraw_stake(&staker, &call.id, &1);
     }
@@ -1007,8 +1216,15 @@ mod call_registry {
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
         let call = create_call_with_default_condition(
-            &client, &creator, &stake_token, &100_000_000_i128,
-            &2000u64, &token_address, &pair_id, &metadata_hash, &2,
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &2000u64,
+            &token_address,
+            &pair_id,
+            &metadata_hash,
+            &2,
         );
         client.stake_on_call(&staker, &call.id, &50_000_000_i128, &1);
         env.ledger().set_timestamp(3000);
@@ -1030,8 +1246,15 @@ mod call_registry {
         let pair_id = Bytes::from_slice(&env, b"USDC/XLM");
         let metadata_hash = BytesN::from_array(&env, &[0u8; 32]);
         let call = create_call_with_default_condition(
-            &client, &creator, &stake_token, &100_000_000_i128,
-            &2000u64, &token_address, &pair_id, &metadata_hash, &2,
+            &client,
+            &creator,
+            &stake_token,
+            &100_000_000_i128,
+            &2000u64,
+            &token_address,
+            &pair_id,
+            &metadata_hash,
+            &2,
         );
         client.stake_on_call(&staker1, &call.id, &50_000_000_i128, &1);
         client.stake_on_call(&staker2, &call.id, &30_000_000_i128, &1);
@@ -1704,6 +1927,11 @@ mod call_registry {
                 metadata_hash: metadata_hash.clone(),
                 condition: ConditionType::TargetAbove(100_000_000_i128),
                 outcome_count: 3,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
 
@@ -1744,6 +1972,11 @@ mod call_registry {
                 metadata_hash: metadata_hash.clone(),
                 condition: ConditionType::TargetAbove(100_000_000_i128),
                 outcome_count: 3,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
 
@@ -1788,6 +2021,11 @@ mod call_registry {
                 metadata_hash: metadata_hash.clone(),
                 condition: ConditionType::TargetAbove(100_000_000_i128),
                 outcome_count: 3,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
 
@@ -1828,6 +2066,11 @@ mod call_registry {
                 metadata_hash: metadata_hash.clone(),
                 condition: ConditionType::TargetAbove(100_000_000_i128),
                 outcome_count: 3,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
 
@@ -1872,6 +2115,11 @@ mod call_registry {
                 metadata_hash: metadata_hash.clone(),
                 condition: ConditionType::TargetAbove(100_000_000_i128),
                 outcome_count: 3,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
 
@@ -1912,6 +2160,11 @@ mod call_registry {
                 metadata_hash: metadata_hash.clone(),
                 condition: ConditionType::TargetAbove(100_000_000_i128),
                 outcome_count: 3,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
 
@@ -1956,6 +2209,11 @@ mod call_registry {
                 metadata_hash: metadata_hash.clone(),
                 condition: ConditionType::TargetAbove(100_000_000_i128),
                 outcome_count: 3,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
 
@@ -2007,6 +2265,11 @@ mod call_registry {
                 metadata_hash: metadata_hash.clone(),
                 condition: ConditionType::TargetAbove(100_000_000_i128),
                 outcome_count: 3,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
 
@@ -2589,6 +2852,11 @@ mod call_registry {
                 metadata_hash,
                 condition: ConditionType::TargetAbove(100_000_000),
                 outcome_count: 2,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
     }
@@ -2623,6 +2891,11 @@ mod call_registry {
                 metadata_hash,
                 condition: ConditionType::TargetAbove(100_000_000),
                 outcome_count: 2,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         );
         assert_eq!(call.end_ts, end_ts);
@@ -2650,13 +2923,15 @@ mod call_registry {
         env: &Env,
         topic1: &str,
         topic2: &str,
-    ) -> Option<(Address, soroban_sdk::Vec<soroban_sdk::Val>, soroban_sdk::Val)> {
+    ) -> Option<(
+        Address,
+        soroban_sdk::Vec<soroban_sdk::Val>,
+        soroban_sdk::Val,
+    )> {
         let events = env.events().all();
         for i in 0..events.len() {
             let e = events.get(i).unwrap();
-            if e.1
-                == soroban_sdk::vec![env, topic1.into_val(env), topic2.into_val(env),]
-            {
+            if e.1 == soroban_sdk::vec![env, topic1.into_val(env), topic2.into_val(env),] {
                 return Some(e);
             }
         }
@@ -2992,8 +3267,8 @@ mod call_registry {
         // most recent top-level contract invocation, so this check must
         // happen immediately after `set_reputation_params` and before any
         // other client call (even read-only views like `get_config`).
-        let has_base_limit_event = find_event(&env, "call_registry", "admin_params_changed")
-            .is_some();
+        let has_base_limit_event =
+            find_event(&env, "call_registry", "admin_params_changed").is_some();
         assert!(has_base_limit_event);
 
         let config_after = client.get_config();
@@ -3124,7 +3399,7 @@ mod native_xlm {
         let admin = Address::generate(&env);
         let outcome_manager = Address::generate(&env);
 
-        let contract_id = env.register(CallRegistry, ());
+        let contract_id = env.register_contract(None, CallRegistry);
         let client = CallRegistryClient::new(&env, &contract_id);
 
         client.initialize(&admin, &outcome_manager, &MIN_STAKE);
@@ -3166,6 +3441,11 @@ mod native_xlm {
                 metadata_hash,
                 condition: ConditionType::TargetAbove(105_000_000_i128),
                 outcome_count: 2u32,
+                gate_kind: None,
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
             },
         )
     }
@@ -3447,7 +3727,7 @@ mod sep10_tests {
     fn setup() -> (Env, CallRegistryClient<'static>, Address, Address) {
         let env = Env::default();
         env.mock_all_auths();
-        let contract_id = env.register(CallRegistry, ());
+        let contract_id = env.register_contract(None, CallRegistry);
         let client = CallRegistryClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
         let outcome_manager = Address::generate(&env);
@@ -3571,6 +3851,270 @@ mod sep10_tests {
         let user = Address::generate(&env);
         assert_eq!(client.get_sep10_home_domain(&user), None);
     }
+}
 
+// ── Staking Gates tests ────────────────────────────────────────────────────────
 
+mod staking_gates_tests {
+    use super::*;
+    use crate::{CallRegistry, CallRegistryClient};
+    use soroban_sdk::{
+        testutils::Ledger as _, token::StellarAssetClient, Address, Bytes, BytesN, Env,
+    };
+
+    fn setup() -> (Env, CallRegistryClient<'static>, Address, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.ledger().set_sequence_number(100);
+        let contract_id = env.register(CallRegistry, ());
+        let client = CallRegistryClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let outcome_manager = Address::generate(&env);
+        client.initialize(&admin, &outcome_manager, &0i128);
+
+        let token_admin = Address::generate(&env);
+        let xlm_addr = env.register_stellar_asset_contract(token_admin);
+        client.set_xlm_sac_address(&xlm_addr);
+
+        (env, client, admin, outcome_manager)
+    }
+
+    #[test]
+    fn test_gate_min_account_age() {
+        let (env, client, _admin, _) = setup();
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let xlm_addr = client.native_xlm_address();
+
+        StellarAssetClient::new(&env, &xlm_addr).mint(&staker, &1000);
+
+        let call = client.create_call(
+            &creator,
+            &crate::types::CallInitArgs {
+                stake_token: xlm_addr.clone(),
+                stake_amount: 100,
+                start_price: 100_000,
+                end_ts: 10_000,
+                token_address: Address::generate(&env),
+                pair_id: Bytes::from_slice(&env, b"XLM/USD"),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: BytesN::from_array(&env, &[0u8; 32]),
+                condition: crate::types::ConditionType::TargetAbove(105_000),
+                outcome_count: 2,
+                gate_kind: Some(crate::types::GATE_MIN_ACCOUNT_AGE),
+                gate_min_account_age: 10u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
+            },
+        );
+
+        // Staker first interaction at seq 100
+        let res1 = client.try_stake_on_call(&staker, &call.id, &100, &1);
+        assert!(res1.is_err(), "should fail MinAccountAge gate");
+
+        // Advance ledger by 10
+        env.ledger().set_sequence_number(110);
+
+        // Should succeed now
+        client.stake_on_call(&staker, &call.id, &100, &1);
+    }
+
+    #[test]
+    fn test_gate_min_xlm_balance() {
+        let (env, client, _admin, _) = setup();
+        let creator = Address::generate(&env);
+        let staker1 = Address::generate(&env);
+        let staker2 = Address::generate(&env);
+        let xlm_addr = client.native_xlm_address();
+
+        // Staker 1 has 500, Staker 2 has 2000
+        StellarAssetClient::new(&env, &xlm_addr).mint(&staker1, &500);
+        StellarAssetClient::new(&env, &xlm_addr).mint(&staker2, &2000);
+
+        let call = client.create_call(
+            &creator,
+            &crate::types::CallInitArgs {
+                stake_token: xlm_addr.clone(),
+                stake_amount: 100,
+                start_price: 100_000,
+                end_ts: 10_000,
+                token_address: Address::generate(&env),
+                pair_id: Bytes::from_slice(&env, b"XLM/USD"),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: BytesN::from_array(&env, &[0u8; 32]),
+                condition: crate::types::ConditionType::TargetAbove(105_000),
+                outcome_count: 2,
+                gate_kind: Some(crate::types::GATE_MIN_XLM_BALANCE),
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 1000i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None,
+            },
+        );
+
+        assert!(client
+            .try_stake_on_call(&staker1, &call.id, &100, &1)
+            .is_err());
+        let _ = client.stake_on_call(&staker2, &call.id, &100, &1); // succeeds
+    }
+
+    #[test]
+    fn test_gate_min_trustlines() {
+        let (env, client, _admin, _) = setup();
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let xlm_addr = client.native_xlm_address();
+
+        StellarAssetClient::new(&env, &xlm_addr).mint(&staker, &1000);
+
+        client.set_user_trustline_count(&staker, &2);
+
+        let call = client.create_call(
+            &creator,
+            &crate::types::CallInitArgs {
+                stake_token: xlm_addr.clone(),
+                stake_amount: 100,
+                start_price: 100_000,
+                end_ts: 10_000,
+                token_address: Address::generate(&env),
+                pair_id: Bytes::from_slice(&env, b"XLM/USD"),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: BytesN::from_array(&env, &[0u8; 32]),
+                condition: crate::types::ConditionType::TargetAbove(105_000),
+                outcome_count: 2,
+                gate_kind: Some(crate::types::GATE_MIN_TRUSTLINES),
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 3u32,
+                gate_badge: None,
+            },
+        );
+
+        // Has 2, needs 3
+        assert!(client
+            .try_stake_on_call(&staker, &call.id, &100, &1)
+            .is_err());
+
+        // Update to 4
+        client.set_user_trustline_count(&staker, &4);
+        client.stake_on_call(&staker, &call.id, &100, &1); // succeeds
+    }
+
+    #[test]
+    fn test_gate_holds_badge() {
+        let (env, client, _admin, _) = setup();
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let xlm_addr = client.native_xlm_address();
+
+        StellarAssetClient::new(&env, &xlm_addr).mint(&staker, &1000);
+
+        // Create a mock badge contract
+        let badge_token_admin = Address::generate(&env);
+        let badge_addr = env.register_stellar_asset_contract(badge_token_admin);
+
+        let call = client.create_call(
+            &creator,
+            &crate::types::CallInitArgs {
+                stake_token: xlm_addr.clone(),
+                stake_amount: 100,
+                start_price: 100_000,
+                end_ts: 10_000,
+                token_address: Address::generate(&env),
+                pair_id: Bytes::from_slice(&env, b"XLM/USD"),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: BytesN::from_array(&env, &[0u8; 32]),
+                condition: crate::types::ConditionType::TargetAbove(105_000),
+                outcome_count: 2,
+                gate_kind: Some(crate::types::GATE_HOLDS_BADGE),
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: Some(badge_addr.clone()),
+            },
+        );
+
+        // Does not have badge
+        assert!(client
+            .try_stake_on_call(&staker, &call.id, &100, &1)
+            .is_err());
+
+        // Mint badge
+        StellarAssetClient::new(&env, &badge_addr).mint(&staker, &1);
+
+        // Has badge, succeeds
+        client.stake_on_call(&staker, &call.id, &100, &1);
+    }
+
+    #[test]
+    fn test_global_gate_override() {
+        let (env, client, _admin, _) = setup();
+        let creator = Address::generate(&env);
+        let staker = Address::generate(&env);
+        let xlm_addr = client.native_xlm_address();
+
+        StellarAssetClient::new(&env, &xlm_addr).mint(&staker, &1000);
+
+        // Set global gate
+        client.set_global_gate(
+            &Some(crate::types::GATE_MIN_TRUSTLINES),
+            &0u32,
+            &0i128,
+            &5u32,
+            &Option::<Address>::None,
+        );
+
+        // Call has NO gate
+        let call = client.create_call(
+            &creator,
+            &crate::types::CallInitArgs {
+                stake_token: xlm_addr.clone(),
+                stake_amount: 100,
+                start_price: 100_000,
+                end_ts: 10_000,
+                token_address: Address::generate(&env),
+                pair_id: Bytes::from_slice(&env, b"XLM/USD"),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: BytesN::from_array(&env, &[0u8; 32]),
+                condition: crate::types::ConditionType::TargetAbove(105_000),
+                outcome_count: 2,
+                gate_kind: None, // relies on global
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None, // relies on global
+            },
+        );
+
+        // Fails because staker has 0 trustlines
+        assert!(client
+            .try_stake_on_call(&staker, &call.id, &100, &1)
+            .is_err());
+
+        // Call has its own gate which overrides the global one
+        let call2 = client.create_call(
+            &creator,
+            &crate::types::CallInitArgs {
+                stake_token: xlm_addr.clone(),
+                stake_amount: 100,
+                start_price: 100_000,
+                end_ts: 10_000,
+                token_address: Address::generate(&env),
+                pair_id: Bytes::from_slice(&env, b"XLM/USD"),
+                ipfs_cid: Bytes::from_slice(&env, b"QmXxxx"),
+                metadata_hash: BytesN::from_array(&env, &[0u8; 32]),
+                condition: crate::types::ConditionType::TargetAbove(105_000),
+                outcome_count: 2,
+                gate_kind: Some(crate::types::GATE_NONE), // Overrides global MinTrustlines(5)
+                gate_min_account_age: 0u32,
+                gate_min_xlm_balance: 0i128,
+                gate_min_trustlines: 0u32,
+                gate_badge: None, // Overrides global MinTrustlines(5)
+            },
+        );
+
+        // Succeeds because call gate is None
+        client.stake_on_call(&staker, &call2.id, &100, &1);
+    }
 }

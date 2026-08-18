@@ -23,6 +23,28 @@ pub enum ConditionType {
     Range(i128, i128),
 }
 
+/// Requirements that a user must meet to stake on a call.
+// Staking gate fields are flattened into call/config types to avoid
+// contracttype derivation issues for nested option/enums. A gate is
+// represented by an optional `gate_kind` discriminant plus auxiliary
+// fields carrying gate parameters.
+pub const GATE_NONE: u32 = 0;
+pub const GATE_MIN_ACCOUNT_AGE: u32 = 1;
+pub const GATE_MIN_XLM_BALANCE: u32 = 2;
+pub const GATE_MIN_TRUSTLINES: u32 = 3;
+pub const GATE_HOLDS_BADGE: u32 = 4;
+
+/// Human-friendly staking gate enum for view helpers.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum StakingGate {
+    None,
+    MinAccountAge(u32),
+    MinXlmBalance(i128),
+    MinTrustlines(u32),
+    HoldsBadge(Address),
+}
+
 /// Arguments for initializing a new Call
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -37,6 +59,13 @@ pub struct CallInitArgs {
     pub metadata_hash: BytesN<32>,
     pub condition: ConditionType,
     pub outcome_count: u32,
+    // Optional gate discriminant and parameters. If `gate_kind` is `None` then
+    // no gate is applied to this call and the global gate (if any) is used.
+    pub gate_kind: Option<u32>,
+    pub gate_min_account_age: u32,
+    pub gate_min_xlm_balance: i128,
+    pub gate_min_trustlines: u32,
+    pub gate_badge: Option<Address>,
 }
 
 /// Represents a prediction call with all its metadata
@@ -85,6 +114,12 @@ pub struct Call {
     pub metadata_version: u32,
     /// Map of outcome indices to the deployed share token contract addresses
     pub share_tokens: Map<u32, Address>,
+    /// Optional staking gate for this call
+    pub gate_kind: Option<u32>,
+    pub gate_min_account_age: u32,
+    pub gate_min_xlm_balance: i128,
+    pub gate_min_trustlines: u32,
+    pub gate_badge: Option<Address>,
 }
 
 /// Enum representing stake positions on a call
@@ -159,8 +194,52 @@ pub struct ContractConfig {
     /// Reputation multiplier in basis points (`10_000` == `1.0`) applied to a
     /// user's on-chain prediction accuracy when computing their individual
     /// reputation-weighted stake limit. See `crate::reputation` for the exact
-    /// fixed-point formula. Default: 0.
     pub reputation_multiplier: u32,
+    /// Backwards-compatible optional global gate field
+
+    /// Optional global gate applying to all calls
+    pub global_gate_kind: Option<u32>,
+    pub global_gate_min_account_age: u32,
+    pub global_gate_min_xlm_balance: i128,
+    pub global_gate_min_trustlines: u32,
+    pub global_gate_badge: Option<Address>,
+}
+
+/// Operations that can be proposed and executed by the multisig admin set.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Operation {
+    SetFee(u32),
+    SetMinStake(i128),
+    SetAdminThreshold(u32),
+    Pause,
+    Unpause,
+    Upgrade(BytesN<32>),
+    WithdrawFees(Address, i128),
+    AddAdmin(Address),
+    RemoveAdmin(Address),
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum ProposalStatus {
+    Active,
+    Vetoed,
+    Executed,
+    Cancelled,
+}
+
+/// Proposal struct stored in persistent storage
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Proposal {
+    pub id: u64,
+    pub proposer: Address,
+    pub operation: Operation,
+    pub approvals: Vec<Address>,
+    pub created_at: u64,
+    pub timelock_until: u64,
+    pub status: ProposalStatus,
 }
 
 /// Contract-wide aggregated statistics for dashboards.

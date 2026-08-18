@@ -36,3 +36,9 @@ Stake amounts are derived from the connected wallet's live Stellar balances. See
 [docs/wallet-balances.md](docs/wallet-balances.md) for the stake-asset
 configuration variables, the MAX calculation and the states the staking UI
 distinguishes.
+## Backend data
+
+Market detail, staking, portfolio and payout screens read from the NestJS API
+via the typed clients in `src/lib/backend`. Set `NEXT_PUBLIC_BACKEND_URL` to
+point at it. See [docs/market-portfolio-data.md](docs/market-portfolio-data.md)
+for the endpoints used, the monetary-unit rules and how to seed local data.

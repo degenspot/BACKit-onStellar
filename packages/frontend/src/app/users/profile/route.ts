@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateUserProfile } from "@/lib/mockDb";
+import { updateUserProfile } from "@/lib/fixtures/profileFixtures";
 
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
     const { address, displayName, bio, avatarUrl } = body;
 
-    const userAddress = address || "GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ";
+    const userAddress =
+      address || "GD5DQ6KQZYZ2JY5YKZ7XQYBZQZQZQZQZQZQZQZQZQZQZQZQZQZQZQ";
 
     const updatedProfile = updateUserProfile(userAddress, {
       displayName,
@@ -21,8 +22,8 @@ export async function PATCH(request: NextRequest) {
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || "Failed to update profile" },
-      { status: 500 }
-    )
+      { status: 500 },
+    );
   }
 }
 

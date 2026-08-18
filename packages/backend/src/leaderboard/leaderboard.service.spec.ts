@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, SelectQueryBuilder } from 'typeorm';
 import { LeaderboardService } from './leaderboard.service';
+import { LeaderboardCacheService } from './leaderboard-cache.service';
 import {
   PredictionCall,
   LeaderboardSnapshot,
@@ -77,6 +78,15 @@ describe('LeaderboardService', () => {
           useValue: {},
         },
         { provide: DataSource, useValue: dataSourceMock },
+        {
+          provide: LeaderboardCacheService,
+          useValue: {
+            isHealthy: jest.fn().mockResolvedValue(false),
+            getTopEntries: jest.fn().mockResolvedValue([]),
+            getCount: jest.fn().mockResolvedValue(0),
+            getContextualRanking: jest.fn().mockResolvedValue(null),
+          },
+        },
       ],
     }).compile();
 
