@@ -31,6 +31,10 @@ export enum AuditActionType {
   USER_BANNED = 'USER_BANNED',
   USER_UNBANNED = 'USER_UNBANNED',
 
+  // Dead-letter queue operations
+  DEAD_LETTER_REPLAYED = 'DEAD_LETTER_REPLAYED',
+  DEAD_LETTER_DISMISSED = 'DEAD_LETTER_DISMISSED',
+
   // Generic admin actions (extend as needed)
   ADMIN_ACTION = 'ADMIN_ACTION',
 }

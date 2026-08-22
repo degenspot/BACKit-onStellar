@@ -27,6 +27,7 @@ describe('IpfsPinningQueueProcessor', () => {
     expect(deadLetter.moveToDeadLetter).toHaveBeenCalledWith(
       QUEUE_IPFS_PINNING,
       job,
+      new Error('boom'),
     );
   });
 });

@@ -29,7 +29,11 @@ export class OracleSigningQueueProcessor extends WorkerHost {
   async onFailed(job: Job<OracleSigningJob>, err: Error) {
     if (!job) return;
     if (!this.deadLetterService.isFinalAttempt(job)) return;
-    await this.deadLetterService.moveToDeadLetter(QUEUE_ORACLE_SIGNING, job);
+    await this.deadLetterService.moveToDeadLetter(
+      QUEUE_ORACLE_SIGNING,
+      job,
+      err,
+    );
     this.logger.error(`Oracle signing job permanently failed`, err.stack);
   }
 }

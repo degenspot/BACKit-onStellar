@@ -29,6 +29,7 @@ describe('NotificationsQueueProcessor', () => {
     expect(deadLetter.moveToDeadLetter).toHaveBeenCalledWith(
       QUEUE_NOTIFICATIONS,
       job,
+      new Error('boom'),
     );
   });
 

@@ -27,6 +27,7 @@ describe('OracleSigningQueueProcessor', () => {
     expect(deadLetter.moveToDeadLetter).toHaveBeenCalledWith(
       QUEUE_ORACLE_SIGNING,
       job,
+      new Error('boom'),
     );
   });
 });

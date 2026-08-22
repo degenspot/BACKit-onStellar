@@ -34,7 +34,7 @@ export class IpfsPinningQueueProcessor extends WorkerHost {
   async onFailed(job: Job<IpfsPinJob>, err: Error) {
     if (!job) return;
     if (!this.deadLetterService.isFinalAttempt(job)) return;
-    await this.deadLetterService.moveToDeadLetter(QUEUE_IPFS_PINNING, job);
+    await this.deadLetterService.moveToDeadLetter(QUEUE_IPFS_PINNING, job, err);
     this.logger.error(`IPFS pinning job permanently failed`, err.stack);
   }
 }

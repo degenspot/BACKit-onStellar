@@ -70,7 +70,11 @@ export class NotificationsQueueProcessor extends WorkerHost {
   async onFailed(job: Job<DispatchNotificationJob>, err: Error) {
     if (!job) return;
     if (!this.deadLetterService.isFinalAttempt(job)) return;
-    await this.deadLetterService.moveToDeadLetter(QUEUE_NOTIFICATIONS, job);
+    await this.deadLetterService.moveToDeadLetter(
+      QUEUE_NOTIFICATIONS,
+      job,
+      err,
+    );
     this.logger.error(
       `Notification job permanently failed (notificationId=${job.data.notificationId})`,
       err.stack,

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { AuditModule } from '../../audit/audit.module';
 import {
   QUEUE_DEAD_LETTER,
   QUEUE_IPFS_PINNING,
@@ -15,6 +16,7 @@ import { AdminQueuesController } from './admin-queues.controller';
 @Module({
   imports: [
     ConfigModule,
+    AuditModule, // provides AuditInterceptor/AuditService for @Audited() on replay/dismiss
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
