@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PayoutCalculator from "./PayoutCalculator";
 import GasFeeDisplay from "./GasFeeDisplay";
 import NetworkMismatchBanner from "./NetworkMismatchBanner";
+import WalletBalancePanel from "./WalletBalancePanel";
 import { useWalletContext } from "./WalletContext";
+import { useWalletBalances } from "@/hooks/useWalletBalances";
 import { signTransactionWithWallet } from "@/lib/walletSigning";
 import {
   describeApiError,
@@ -13,6 +15,16 @@ import {
   type Market,
   type MarketOdds,
 } from "@/lib/backend";
+import {
+  computeMaxStakeStroops,
+  computePercentStakeStroops,
+  formatStakeAmount,
+  marketAssetMatches,
+  sanitizeAmountInput,
+  toAmountInputValue,
+  validateStakeAmount,
+  type StakeAmountProblem,
+} from "@/lib/stellar";
 
 interface Props {
   market: Market;
@@ -22,6 +34,12 @@ interface Props {
 }
 
 const MAX_COMMENT = 140;
+const DEFAULT_AMOUNT = "10";
+const PERCENT_PRESETS = [25, 50, 75, 100] as const;
+/** Fixed quick-picks, offered only while they fit inside the spendable balance. */
+const FIXED_PRESETS = ["10", "50", "250", "500"] as const;
+/** Keyboard steps across the slider's range. */
+const SLIDER_POSITIONS = 100n;
 
 /** Parse the amount field without ever routing money through a float. */
 function parseAmount(amount: string): bigint | null {
@@ -34,7 +52,7 @@ function parseAmount(amount: string): bigint | null {
 }
 
 export default function StakingInterface({ market, odds, onStaked }: Props) {
-  const [amount, setAmount] = useState<string>("10");
+  const [amount, setAmount] = useState<string>(DEFAULT_AMOUNT);
   const [selectedSide, setSelectedSide] = useState<"YES" | "NO" | null>(null);
   const [isStaking, setIsStaking] = useState(false);
   const [comment, setComment] = useState<string>("");
@@ -49,35 +67,138 @@ export default function StakingInterface({ market, odds, onStaked }: Props) {
     requireNetworkMatch,
   } = useWalletContext();
 
+  const {
+    state: balanceState,
+    snapshot,
+    asset,
+    limits,
+    isStale,
+    staleReason,
+    isRefreshing,
+    refresh,
+  } = useWalletBalances();
+
   const networkMismatch = networkStatus.status !== "match";
+
+  // The market only reports a symbol. If it disagrees with the asset this
+  // deployment is configured for, we cannot know which issuer's token would
+  // move, so staking stops here rather than at the signature.
+  const assetMismatch =
+    asset !== null && !marketAssetMatches(market.stakeToken, asset);
+  const assetConfigError =
+    balanceState.status === "config-error" && balanceState.scope === "asset";
+  const assetLabel = asset?.code ?? market.stakeToken;
+
+  /**
+   * Spendable stake-asset balance, or `null` when it is genuinely unknown.
+   * `null` is not zero: an unreachable Horizon must not disable staking, while
+   * an unfunded account or a missing trustline really does mean nothing is
+   * available.
+   */
+  const spendableStroops = useMemo<bigint | null>(() => {
+    switch (balanceState.status) {
+      case "ready":
+        return balanceState.snapshot.spendableStakeStroops;
+      case "no-trustline":
+      case "unfunded":
+        return 0n;
+      default:
+        return null;
+    }
+  }, [balanceState]);
+
+  const hasFeeBuffer =
+    balanceState.status === "unfunded"
+      ? false
+      : (snapshot?.hasFeeBuffer ?? true);
 
   const amountStroops = parseAmount(amount);
   const marketClosed =
     market.resolved ||
     (market.endTime !== null &&
       new Date(market.endTime).getTime() <= Date.now());
+
+  const maxStakeStroops =
+    spendableStroops !== null
+      ? computeMaxStakeStroops(spendableStroops, limits)
+      : null;
+
+  const validation = validateStakeAmount({
+    amountStroops,
+    spendableStroops,
+    limits,
+    hasFeeBuffer,
+    marketActive: !marketClosed,
+  });
+
+  // Shown next to the field, so a closed market — which is about the market,
+  // not the number typed — is reported by the submit button instead.
+  const amountValidation = validateStakeAmount({
+    amountStroops,
+    spendableStroops,
+    limits,
+    hasFeeBuffer,
+    marketActive: true,
+  });
+  const amountProblem: StakeAmountProblem | null =
+    amountValidation.status === "error" ? amountValidation.problem : null;
+
   const canSubmit =
     !!selectedSide &&
-    amountStroops !== null &&
     isConnected &&
     !networkMismatch &&
-    !marketClosed &&
-    !isStaking;
+    !assetMismatch &&
+    !assetConfigError &&
+    !isStaking &&
+    validation.status === "ok";
+
+  /** Plain-language reason an amount cannot be submitted. */
+  const amountProblemMessage = (problem: StakeAmountProblem): string => {
+    switch (problem) {
+      case "market-closed":
+        return "This market is closed, so it can no longer be staked on.";
+      case "invalid-amount":
+        return "Enter a stake amount greater than zero.";
+      case "below-minimum":
+        return `The minimum stake is ${formatStakeAmount(limits.minStroops)} ${assetLabel}.`;
+      case "above-maximum":
+        return `The maximum stake is ${formatStakeAmount(limits.maxStroops ?? 0n)} ${assetLabel}.`;
+      case "exceeds-balance":
+        return `You can stake at most ${formatStakeAmount(spendableStroops ?? 0n)} ${assetLabel}.`;
+      case "insufficient-fee":
+        return "Your wallet does not hold enough XLM to pay the network fee.";
+    }
+  };
 
   // A disabled control that does not say why it is disabled leaves the user
   // guessing, and a screen reader announces only "dimmed". The first unmet
   // condition is surfaced, in the order a user would hit them.
-  const disabledReason = (() => {
+  const gateReason = (() => {
     if (isStaking) return "Your stake is being submitted.";
     if (marketClosed)
       return "This market is closed, so it can no longer be staked on.";
     if (!isConnected) return "Connect a wallet to stake.";
     if (networkMismatch)
       return "Switch your wallet to the correct network to stake.";
+    if (assetMismatch)
+      return `This market is denominated in ${market.stakeToken}, which is not the configured stake asset.`;
+    if (assetConfigError)
+      return "The stake asset is not configured, so balances cannot be verified.";
+    if (balanceState.status === "unfunded")
+      return "This Stellar account is not funded yet.";
+    if (balanceState.status === "no-trustline")
+      return `Add a ${assetLabel} trustline in your wallet to stake.`;
     if (!selectedSide) return "Choose an outcome to stake on.";
-    if (amountStroops === null) return "Enter a valid stake amount.";
     return null;
   })();
+
+  // An amount problem already has a visible message beside the field, so the
+  // button points at that rather than repeating the sentence off-screen.
+  const submitDescribedBy = gateReason
+    ? "stake-submit-reason"
+    : amountProblem
+      ? "stake-amount-problem"
+      : undefined;
 
   // Clear cached transaction state whenever the account or network changes so
   // a stale hash/error from a previous wallet cannot linger in the view.
@@ -88,7 +209,8 @@ export default function StakingInterface({ market, odds, onStaked }: Props) {
   }, [publicKey, network]);
 
   const handleStake = async () => {
-    if (!selectedSide || amountStroops === null || !publicKey) return;
+    if (!canSubmit || !selectedSide || amountStroops === null || !publicKey)
+      return;
     requireNetworkMatch();
 
     setIsStaking(true);
@@ -104,10 +226,12 @@ export default function StakingInterface({ market, odds, onStaked }: Props) {
         signTransaction: (xdr) => signTransactionWithWallet(walletType, xdr),
       });
       setTxHash(result.hash);
-      setAmount("10");
+      setAmount(DEFAULT_AMOUNT);
       setSelectedSide(null);
       setComment("");
-      await onStaked?.();
+      // The balance moved on-chain, so re-read it. `refresh` joins an
+      // in-flight read, so this never duplicates the parent's own reload.
+      await Promise.all([refresh(), onStaked?.()]);
     } catch (err) {
       setError(describeApiError(err));
     } finally {
@@ -115,9 +239,54 @@ export default function StakingInterface({ market, odds, onStaked }: Props) {
     }
   };
 
+  // Slider bounds follow the spendable balance; with no balance to work from
+  // the slider is disabled rather than inviting an unaffordable amount.
+  const sliderMaxStroops =
+    maxStakeStroops !== null && maxStakeStroops > 0n ? maxStakeStroops : null;
+  const sliderDisabled = sliderMaxStroops === null;
+  const sliderValueStroops =
+    amountStroops !== null && amountStroops > 0n
+      ? sliderMaxStroops !== null && amountStroops > sliderMaxStroops
+        ? sliderMaxStroops
+        : amountStroops
+      : 0n;
+  const sliderStep = sliderMaxStroops
+    ? toAmountInputValue(
+        sliderMaxStroops / SLIDER_POSITIONS > 0n
+          ? sliderMaxStroops / SLIDER_POSITIONS
+          : 1n,
+      )
+    : "1";
+
+  const percentPresets = PERCENT_PRESETS.map((pct) => {
+    const stroops =
+      spendableStroops !== null
+        ? computePercentStakeStroops(spendableStroops, pct, limits)
+        : null;
+    const usable = stroops !== null && stroops >= limits.minStroops;
+    return {
+      pct,
+      stroops,
+      usable,
+      value: stroops !== null ? toAmountInputValue(stroops) : null,
+    };
+  });
+
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-8 shadow-sm">
       <h3 className="text-xl font-bold text-gray-900 mb-8">Place Your Stake</h3>
+
+      <WalletBalancePanel
+        state={balanceState}
+        snapshot={snapshot}
+        asset={asset}
+        isStale={isStale}
+        staleReason={staleReason}
+        isRefreshing={isRefreshing}
+        onRefresh={() => void refresh()}
+        marketStakeToken={market.stakeToken}
+        assetMismatch={assetMismatch}
+      />
 
       {/* Side selection */}
       <div className="grid grid-cols-2 gap-4 mb-10">
@@ -166,74 +335,108 @@ export default function StakingInterface({ market, odds, onStaked }: Props) {
 
       {/* Amount input & Slider */}
       <div className="mb-10">
-        <div className="flex justify-between items-end mb-4">
+        <div className="flex justify-between items-end mb-4 gap-4">
           <label
             htmlFor="stake-amount"
             className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em]"
           >
-            Stake Amount ({market.stakeToken})
+            Stake Amount ({assetLabel})
           </label>
-          <span className="text-3xl font-black text-gray-900 leading-none">
-            {amount || "0"}
-          </span>
-        </div>
-
-        <div className="slider-container relative mb-8 flex items-center h-10">
+          {/* Editable so an exact, 7-decimal amount can be entered — the
+              slider alone cannot express every stroop. */}
           <input
             id="stake-amount"
-            type="range"
-            min="1"
-            max="1000"
-            step="1"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            aria-invalid={error ? true : undefined}
-            aria-describedby={error ? "stake-error" : undefined}
-            className="w-full h-1.5 bg-gray-100 rounded-full appearance-none cursor-pointer accent-indigo-600 hover:accent-indigo-700 transition-all"
+            onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
+            aria-invalid={amountProblem ? true : undefined}
+            aria-describedby={
+              amountProblem ? "stake-amount-problem" : undefined
+            }
+            className="w-40 bg-transparent text-right text-3xl font-black text-gray-900 leading-none focus:outline-none focus:ring-2 focus:ring-indigo-300 rounded-lg"
           />
         </div>
 
-        <div className="grid grid-cols-4 gap-3">
-          {["10", "50", "250", "500"].map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setAmount(v)}
-              // Without aria-pressed the selected preset is conveyed only by
-              // its indigo fill, which is invisible to anyone not seeing colour.
-              aria-pressed={amount === v}
-              aria-label={`Stake ${v} ${market.stakeToken}`}
-              className="py-2.5 text-xs font-bold border border-gray-100 rounded-xl hover:bg-indigo-50 hover:border-indigo-100 hover:text-indigo-600 transition-all text-gray-500 bg-white"
-            >
-              {v}
-            </button>
-          ))}
+        <div className="slider-container relative mb-4 flex items-center h-10">
+          <input
+            id="stake-amount-slider"
+            type="range"
+            min="0"
+            max={sliderMaxStroops ? toAmountInputValue(sliderMaxStroops) : "0"}
+            step={sliderStep}
+            value={toAmountInputValue(sliderValueStroops)}
+            disabled={sliderDisabled}
+            onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
+            aria-label={`Stake amount in ${assetLabel}`}
+            className="w-full h-1.5 bg-gray-100 rounded-full appearance-none cursor-pointer accent-indigo-600 hover:accent-indigo-700 transition-all disabled:cursor-not-allowed disabled:opacity-50"
+          />
         </div>
 
-        {/* Percentage presets — wired to the live wallet balance in issue #552 */}
+        {amountProblem && (
+          <p
+            id="stake-amount-problem"
+            className="mb-4 text-xs font-medium text-red-600"
+          >
+            {amountProblemMessage(amountProblem)}
+          </p>
+        )}
+
+        <div className="grid grid-cols-4 gap-3">
+          {FIXED_PRESETS.map((v) => {
+            const presetStroops = toStroops(v);
+            const affordable =
+              maxStakeStroops === null || presetStroops <= maxStakeStroops;
+            return (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setAmount(v)}
+                disabled={!affordable}
+                // Without aria-pressed the selected preset is conveyed only by
+                // its indigo fill, which is invisible to anyone not seeing colour.
+                aria-pressed={amount === v}
+                aria-label={`Stake ${v} ${assetLabel}`}
+                title={
+                  affordable
+                    ? undefined
+                    : `More than your spendable ${assetLabel} balance`
+                }
+                className="py-2.5 text-xs font-bold border border-gray-100 rounded-xl hover:bg-indigo-50 hover:border-indigo-100 hover:text-indigo-600 transition-all text-gray-500 bg-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white disabled:hover:border-gray-100 disabled:hover:text-gray-500"
+              >
+                {v}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Percentage presets, derived from the live spendable balance. */}
         <div className="mt-3 grid grid-cols-4 gap-2">
-          {[25, 50, 75, 100].map((pct) => {
-            const BALANCE = 1000; // placeholder; replaced by the wallet balance hook (#552)
-            const val = Math.floor((BALANCE * pct) / 100);
-            const active = amount === String(val);
+          {percentPresets.map(({ pct, value, usable }) => {
+            const active = value !== null && amount === value;
+            const label = pct === 100 ? "MAX" : `${pct}%`;
             return (
               <button
                 key={pct}
                 type="button"
-                onClick={() => setAmount(String(val))}
+                onClick={() => value !== null && setAmount(value)}
+                disabled={!usable}
                 aria-pressed={active}
                 aria-label={
-                  pct === 100
-                    ? `Stake maximum, ${val} ${market.stakeToken}`
-                    : `Stake ${pct} percent, ${val} ${market.stakeToken}`
+                  usable && value !== null
+                    ? pct === 100
+                      ? `Stake maximum, ${value} ${assetLabel}`
+                      : `Stake ${pct} percent, ${value} ${assetLabel}`
+                    : `${label} — no spendable ${assetLabel} balance`
                 }
-                className={`py-2 text-xs font-bold rounded-xl border transition-all ${
+                className={`py-2 text-xs font-bold rounded-xl border transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
                   active
                     ? "bg-indigo-600 text-white border-indigo-600"
-                    : "border-gray-100 text-gray-500 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 bg-white"
+                    : "border-gray-100 text-gray-500 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 bg-white disabled:hover:bg-white disabled:hover:border-gray-100 disabled:hover:text-gray-500"
                 }`}
               >
-                {pct === 100 ? "MAX" : `${pct}%`}
+                {label}
               </button>
             );
           })}
@@ -247,7 +450,7 @@ export default function StakingInterface({ market, odds, onStaked }: Props) {
           noPoolStroops={market.totalNoStroops}
           amountStroops={amountStroops}
           side={selectedSide}
-          stakeToken={market.stakeToken}
+          stakeToken={assetLabel}
         />
       </div>
 
@@ -297,9 +500,9 @@ export default function StakingInterface({ market, odds, onStaked }: Props) {
       {/* Stake button */}
       {/* Announced via aria-describedby rather than a live region: it is a
           static explanation of the button's state, not a change to report. */}
-      {disabledReason && (
+      {gateReason && (
         <p id="stake-submit-reason" className="sr-only">
-          {disabledReason}
+          {gateReason}
         </p>
       )}
 
@@ -307,7 +510,7 @@ export default function StakingInterface({ market, odds, onStaked }: Props) {
         type="button"
         onClick={handleStake}
         disabled={!canSubmit}
-        aria-describedby={disabledReason ? "stake-submit-reason" : undefined}
+        aria-describedby={submitDescribedBy}
         className={`w-full py-6 rounded-3xl font-black text-xl shadow-2xl transition-all duration-300 transform active:scale-95 flex items-center justify-center gap-3 ${
           !canSubmit
             ? "bg-gray-100 text-gray-400 cursor-not-allowed shadow-none"
