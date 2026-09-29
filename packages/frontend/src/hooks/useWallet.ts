@@ -5,7 +5,7 @@ import albedo from "@albedo-link/intent";
 
 // ─── Wallet type declarations ────────────────────────────────────────────────
 
-export type WalletType = "freighter" | "lobstr" | "albedo";
+export type WalletType = "freighter" | "lobstr" | "albedo" | "hana" | "rabet";
 
 declare global {
   interface Window {
@@ -21,6 +21,20 @@ declare global {
       isConnected: () => Promise<boolean>;
       getPublicKey: () => Promise<string>;
       signTransaction: (xdr: string) => Promise<{ signedXDR: string }>;
+    };
+    /** Hana wallet extension */
+    hanaWallet?: {
+      isConnected?: () => Promise<boolean>;
+      getPublicKey?: () => Promise<string>;
+      getAddress?: () => Promise<string>;
+      signTransaction?: (xdr: string) => Promise<{ signedXDR?: string } | string>;
+    };
+    /** Rabet wallet extension */
+    rabet?: {
+      isConnected?: () => Promise<boolean>;
+      connect?: () => Promise<{ publicKey: string }>;
+      getPublicKey?: () => Promise<string>;
+      sign?: (xdr: string, network?: string) => Promise<{ xdr?: string } | string>;
     };
   }
 }
@@ -96,13 +110,52 @@ export async function detectWallets(): Promise<Record<WalletType, boolean>> {
     return false;
   };
 
-  const [freighter, lobstr] = await Promise.all([
-    poll(() => typeof window !== "undefined" && !!window.freighter),
-    poll(() => typeof window !== "undefined" && !!window.lobstr),
+  if (typeof window === "undefined") {
+    return {
+      freighter: false,
+      lobstr: false,
+      albedo: true,
+      hana: false,
+      rabet: false,
+    };
+  }
+
+  const [freighter, lobstr, hana, rabet] = await Promise.all([
+    poll(() => !!window.freighter),
+    poll(() => !!window.lobstr),
+    poll(() => !!window.hanaWallet),
+    poll(() => !!window.rabet),
   ]);
 
-  // Albedo is web-based, always "available"
-  return { freighter, lobstr, albedo: true };
+  // Albedo is web-based / deep-link capable — always offered
+  return { freighter, lobstr, albedo: true, hana, rabet };
+}
+
+/** Deep-link / QR payload for mobile wallets that are not installed as extensions. */
+export function buildWalletConnectUri(
+  walletType: WalletType,
+  publicKeyHint?: string,
+): string {
+  const origin =
+    typeof window !== "undefined" ? window.location.origin : "https://backit.app";
+  const params = new URLSearchParams({
+    app: "BACKit",
+    origin,
+    ...(publicKeyHint ? { account: publicKeyHint } : {}),
+  });
+  switch (walletType) {
+    case "lobstr":
+      return `lobstr://connect?${params.toString()}`;
+    case "hana":
+      return `hana://connect?${params.toString()}`;
+    case "rabet":
+      return `rabet://connect?${params.toString()}`;
+    case "freighter":
+      return `https://freighter.app`;
+    case "albedo":
+    default:
+      return `https://albedo.link/connect?${params.toString()}`;
+  }
 }
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
@@ -210,6 +263,25 @@ export function useWallet() {
         if (!window.lobstr) throw new Error("Lobstr not installed");
         publicKey = await window.lobstr.getPublicKey();
         // Lobstr doesn't support signMessage; use publicKey as signature placeholder
+        signature = publicKey;
+      } else if (walletType === "hana") {
+        if (!window.hanaWallet) throw new Error("Hana wallet not installed");
+        publicKey =
+          (await window.hanaWallet.getPublicKey?.()) ??
+          (await window.hanaWallet.getAddress?.()) ??
+          "";
+        if (!publicKey) throw new Error("Hana did not return a public key");
+        signature = publicKey;
+      } else if (walletType === "rabet") {
+        if (!window.rabet) throw new Error("Rabet not installed");
+        if (window.rabet.connect) {
+          const res = await window.rabet.connect();
+          publicKey = res.publicKey;
+        } else if (window.rabet.getPublicKey) {
+          publicKey = await window.rabet.getPublicKey();
+        } else {
+          throw new Error("Rabet API unavailable");
+        }
         signature = publicKey;
       } else {
         // Albedo
