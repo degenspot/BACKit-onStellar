@@ -1,0 +1,21 @@
+[package]
+name = "BACKit-onStellar-fuzz"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+soroban-sdk = { version = "20.0.0", features = ["testutils"] }
+shared = { path = "../packages/contracts/shared" }
+call_registry = { path = "../packages/contracts/call_registry" }
+outcome_manager = { path = "../packages/contracts/outcome_manager" }
+
+[profile.release]
+debug = 1
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[workspace]
