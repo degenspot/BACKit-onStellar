@@ -1,41 +1,21 @@
-[workspace]
-resolver = "2"
-members = [
-  "backit_token",
-  "call_registry",
-  "charity_markets",
-  "contracts/hello-world",
-  "dutch_auction",
-  "gas_station",
-  "index_fund",
-  "invariant_tests",
-  "launchpad",
-  "lending_pool",
-  "oracle_marketplace",
-  "outcome_manager",
-  "parlay_betting",
-  "prediction_market",
-  "prediction_market_factory",
-  "prediction_market_futures",
-  "schelling_oracle",
-  "shared",
-  "tournament",
-]
+[package]
+name = "reputation_nft"
+version = "0.1.0"
+edition = "2021"
 
-[workspace.dependencies]
-soroban-sdk = "23.0.0"
-backit-shared = { path = "shared" }
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = { version = "20.0.0", features = ["testutils"] }
+
+[dev-dependencies]
+soroban-sdk = { version = "20.0.0", features = ["testutils"] }
 
 [profile.release]
 opt-level = "z"
 overflow-checks = true
-debug = 0
-strip = "symbols"
-debug-assertions = false
-panic = "abort"
+lto = "thin"
 codegen-units = 1
-lto = true
-
-[profile.release-with-logs]
-inherits = "release"
-debug-assertions = true
+panic = "abort"
+strip = true
